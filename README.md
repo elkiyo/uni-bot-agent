@@ -26,9 +26,13 @@ Full design rationale, decision history, and the reasoning behind every guardrai
 
 - [x] `PlatformConfig`, `RangeVault`, `VaultFactory` — written, compiling, 15/15 tests
       passing against a live Celo mainnet fork (see `contracts/test/`).
-- [ ] `agent/` keeper loop (discovery, uni-lab integration, monitor, rebalancer)
-- [ ] `frontend/`
-- [ ] Mainnet deployment + live operation
+- [x] `agent/` keeper loop (discovery, uni-lab integration, monitor, rebalancer) —
+      confirmed running against live Celo RPC.
+- [x] `frontend/` — Mis vaults, crear vault, detalle de vault, panel admin. Builds,
+      lints, and all four routes render.
+- [ ] Mainnet deployment — `contracts/script/Deploy.s.sol` is ready; pending the
+      Ledger-signed transaction (see PR/commit history for the exact command).
+- [ ] Point `agent/.env` and `frontend/.env.local` at the deployed addresses
 - [ ] Hackathon registration (`celobuilders.xyz`) — deliberately last, see `PLAN.md` Context
 
 ## Quickstart
@@ -37,5 +41,4 @@ Full design rationale, decision history, and the reasoning behind every guardrai
 cd contracts && forge install && CELO_RPC_URL=https://forno.celo.org forge test
 ```
 
-See `contracts/README.md` for contract details. `agent/README.md` will follow once the
-keeper loop is built.
+See `contracts/README.md`, `agent/README.md`, and `frontend/README.md` for each piece.

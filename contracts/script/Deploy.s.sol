@@ -9,14 +9,19 @@ import {VaultFactory} from "../src/VaultFactory.sol";
 /// implementation is deployed automatically inside VaultFactory's constructor
 /// (see VaultFactory.sol) — every vault is a clone of that one instance.
 ///
-/// Required env vars: DEPLOYER_PRIVATE_KEY, CELO_RPC_URL,
-/// PLATFORM_OWNER (defaults to the deployer), DEFAULT_OPERATOR (the keeper wallet),
+/// Signer-agnostic: uses `vm.startBroadcast()` with no explicit key, so the
+/// actual signer comes from whatever `forge script` CLI flags you pass
+/// (--ledger --sender ..., --private-key ..., --account ..., etc).
+///
+/// Required env vars: CELO_RPC_URL, PLATFORM_OWNER (your Ledger address —
+/// no default, deliberately explicit), DEFAULT_OPERATOR (the platform's
+/// keeper wallet — see PLAN.md "Los 3 roles del sistema"),
 /// REBALANCE_FEE_USDT (6 decimals, e.g. 1_000_000 = 1 USDT),
 /// MAX_DEPOSIT_USD (6 decimals, hard cap per vault while unaudited — see PLAN.md "Riesgos").
 ///
-/// Usage:
+/// Usage (Ledger):
 ///   forge script script/Deploy.s.sol:Deploy --rpc-url $CELO_RPC_URL \
-///     --private-key $DEPLOYER_PRIVATE_KEY --broadcast --verify
+///     --ledger --sender $PLATFORM_OWNER --broadcast
 contract Deploy is Script {
     address constant USDT = 0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e;
     address constant POSITION_MANAGER = 0x3d79EdAaBC0EaB6F08ED885C05Fc0B014290D95A;
@@ -24,15 +29,12 @@ contract Deploy is Script {
     address constant UNILAB_PAYMENT_WALLET = 0x4B53D27c81f9E842D50a1940E27B8009B64c615B;
 
     function run() external {
-        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address deployer = vm.addr(deployerKey);
-
-        address platformOwner = vm.envOr("PLATFORM_OWNER", deployer);
+        address platformOwner = vm.envAddress("PLATFORM_OWNER");
         address defaultOperator = vm.envAddress("DEFAULT_OPERATOR");
         uint256 rebalanceFee = vm.envOr("REBALANCE_FEE_USDT", uint256(1_000_000)); // 1 USDT default
         uint256 maxDepositUsd = vm.envOr("MAX_DEPOSIT_USD", uint256(1_000_000_000)); // 1,000 USDT default cap
 
-        vm.startBroadcast(deployerKey);
+        vm.startBroadcast();
 
         PlatformConfig config =
             new PlatformConfig(platformOwner, USDT, defaultOperator, rebalanceFee, maxDepositUsd);
