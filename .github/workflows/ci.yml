@@ -63,6 +63,12 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - run: npm ci
+      # `npm ci` fails here (works locally on macOS, fails on the Ubuntu
+      # runner) — looks like a platform-specific optional-dependency
+      # resolution mismatch in this stack (Tailwind v4/lightningcss + several
+      # wallet connectors all ship native platform binaries as optional
+      # deps). `npm install` re-resolves at install time instead of trusting
+      # the lockfile's platform snapshot, which sidesteps it.
+      - run: npm install
       - run: npm run lint
       - run: npm run build
