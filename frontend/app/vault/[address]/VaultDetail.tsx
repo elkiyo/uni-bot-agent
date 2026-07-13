@@ -8,6 +8,7 @@ import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { rangeVaultAbi, erc20Abi } from "@/lib/contracts";
 import { USDT } from "@/lib/addresses";
+import { ethPriceFromTick } from "@/lib/priceMath";
 
 const reads = (address: `0x${string}`) =>
   [
@@ -190,11 +191,31 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                   Rango objetivo
                 </span>
-                <p className="mt-2 font-mono text-sm text-white/90">
-                  {targetConfigured
-                    ? `ticks [${targetTickLower}, ${targetTickUpper}]`
-                    : "sin configurar"}
-                </p>
+                {targetConfigured ? (
+                  <>
+                    <p className="mt-2 text-sm font-medium text-white/90">
+                      {(() => {
+                        const lo = Number(targetTickLower);
+                        const hi = Number(targetTickUpper);
+                        const priceA = ethPriceFromTick(lo);
+                        const priceB = ethPriceFromTick(hi);
+                        const low = Math.min(priceA, priceB);
+                        const high = Math.max(priceA, priceB);
+                        return `$${low.toFixed(2)} – $${high.toFixed(2)}`;
+                      })()}
+                    </p>
+                    {Number(targetTickLower) > Number(targetTickUpper) && (
+                      <p className="mt-1 text-xs text-negative">
+                        Ticks invertidos on-chain — usá &quot;Reconfigurar agente&quot; para corregir
+                      </p>
+                    )}
+                    <p className="mt-1.5 font-mono text-[11px] text-faint">
+                      ticks [{String(targetTickLower)}, {String(targetTickUpper)}]
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-white/90">sin configurar</p>
+                )}
               </div>
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
