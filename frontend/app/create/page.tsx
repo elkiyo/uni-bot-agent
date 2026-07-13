@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { decodeEventLog, parseUnits } from "viem";
@@ -43,7 +43,11 @@ export default function CreateVault() {
   const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
 
   const [investAmount, setInvestAmount] = useState("100");
-  const [widthPct, setWidthPct] = useState("20");
+  // Min/max are independent — no forced symmetry. Prefilled at ±10% once the
+  // live price loads, but each is freely editable (asymmetric ranges allowed;
+  // the contract has never required symmetry, only the old UI did).
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
   const [maxRebalances, setMaxRebalances] = useState("10");
   const [reinjectionAmount, setReinjectionAmount] = useState("10");
   const [periodicHours, setPeriodicHours] = useState("24");
@@ -52,12 +56,17 @@ export default function CreateVault() {
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (currentPrice === undefined || minPrice !== "" || maxPrice !== "") return;
+    setMinPrice((currentPrice * 0.9).toFixed(2));
+    setMaxPrice((currentPrice * 1.1).toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only prefill once, when price first arrives
+  }, [currentPrice]);
+
   const totalUsdt =
     (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0) + (parseFloat(usdtBudget) || 0);
-  const lowerPreview =
-    currentPrice !== undefined ? currentPrice * (1 - (parseFloat(widthPct) || 0) / 200) : undefined;
-  const upperPreview =
-    currentPrice !== undefined ? currentPrice * (1 + (parseFloat(widthPct) || 0) / 200) : undefined;
+  const lowerPreview = parseFloat(minPrice) || undefined;
+  const upperPreview = parseFloat(maxPrice) || undefined;
 
   async function handleCreate() {
     if (!address || !publicClient || currentPrice === undefined || tickSpacing === undefined) return;
@@ -87,9 +96,11 @@ export default function CreateVault() {
       }
       if (!vaultAddress) throw new Error("VaultCreated event not found in receipt");
 
-      const widthFraction = Number(widthPct) / 100;
-      const lowerPrice = currentPrice * (1 - widthFraction / 2);
-      const upperPrice = currentPrice * (1 + widthFraction / 2);
+      const lowerPrice = Number(minPrice);
+      const upperPrice = Number(maxPrice);
+      if (!(lowerPrice > 0) || !(upperPrice > lowerPrice)) {
+        throw new Error("El precio máximo debe ser mayor al mínimo, ambos positivos");
+      }
       // In this pool a HIGHER USD price of ETH maps to a LOWER tick (token1/token0
       // inversion), so converting the price bounds yields swapped ticks — sort them,
       // Uniswap requires tickLower < tickUpper or every mint reverts.
@@ -199,11 +210,18 @@ export default function CreateVault() {
                   onChange={setInvestAmount}
                 />
                 <Field
-                  label="Ancho del rango"
-                  suffix="%"
-                  value={widthPct}
-                  onChange={setWidthPct}
-                  hint="Alrededor del precio actual"
+                  label="Precio mínimo"
+                  suffix="USD"
+                  value={minPrice}
+                  onChange={setMinPrice}
+                  hint="Piso del rango — no tiene que ser simétrico"
+                />
+                <Field
+                  label="Precio máximo"
+                  suffix="USD"
+                  value={maxPrice}
+                  onChange={setMaxPrice}
+                  hint="Techo del rango"
                 />
                 <Field
                   label="Tope de rebalanceos"

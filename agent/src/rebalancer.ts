@@ -146,12 +146,15 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   }
 
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, reinjectionAmount, positionManager, reinjectionActive] = await Promise.all([
-    vault.read.positionTokenId() as Promise<bigint>,
-    vault.read.reinjectionAmount() as Promise<bigint>,
-    vault.read.positionManager() as Promise<Address>,
-    vault.read.reinjectionActive() as Promise<boolean>,
-  ]);
+  const [positionTokenId, reinjectionAmount, positionManager, reinjectionActive, targetTickLower, targetTickUpper] =
+    await Promise.all([
+      vault.read.positionTokenId() as Promise<bigint>,
+      vault.read.reinjectionAmount() as Promise<bigint>,
+      vault.read.positionManager() as Promise<Address>,
+      vault.read.reinjectionActive() as Promise<boolean>,
+      vault.read.targetTickLower() as Promise<number>,
+      vault.read.targetTickUpper() as Promise<number>,
+    ]);
 
   const [tick, spacing, position] = await Promise.all([
     currentTick(),
@@ -167,8 +170,28 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   ]);
 
   const [, , , , , posTickLower, posTickUpper, liquidity] = position;
-  const width = posTickUpper - posTickLower; // preserve the owner's configured width across rebalances
   const ethPrice = ethPriceFromTick(tick);
+
+  // Anchor the "how far from market are my bounds" policy to the owner's
+  // ORIGINAL configureTarget() range (targetTickLower/Upper), not the live
+  // position's current width. The live position's width can already reflect
+  // an asymmetric answer from a prior uni-lab call — reading it back as the
+  // seed for the next cycle would let any one-off asymmetry compound forever.
+  //
+  // IMPORTANT: in this pool a HIGHER tick means a LOWER USD price (token1/
+  // token0 inversion, same issue fixed elsewhere in this file) — so the tick
+  // that's numerically "lower" (targetTickLower) is actually the USD-price
+  // CEILING, and "targetTickUpper" is the USD-price FLOOR. floorTick/ceilTick
+  // below are named for what they mean in price terms, not by which contract
+  // field they came from, specifically to avoid re-introducing that mix-up.
+  const floorTick = Math.max(targetTickLower, targetTickUpper); // higher tick = lower USD price
+  const ceilTick = Math.min(targetTickLower, targetTickUpper); // lower tick = higher USD price
+  const targetCenterTick = (floorTick + ceilTick) / 2;
+  const downTicks = floorTick - targetCenterTick; // USD downside distance, expressed in ticks
+  const upTicks = targetCenterTick - ceilTick; // USD upside distance, expressed in ticks
+
+  const newFloorTick = tick + downTicks; // recentered floor: higher tick = lower price, so we ADD to go down
+  const newCeilTickFallback = tick - upTicks; // recentered ceiling fallback
 
   const positionValueUsd = estimatePositionValueUsd({
     liquidity,
@@ -178,9 +201,8 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
     ethPriceUsd: ethPrice,
   });
 
-  // width is in ticks; 1 tick == 1 bps of price (see RangeVault._checkRangeNearMarket).
-  const newLowerPrice = ethPrice * (1 - width / 2 / 10_000);
-  let newUpperPrice = ethPrice * (1 + width / 2 / 10_000);
+  const newLowerPrice = ethPriceFromTick(newFloorTick); // the USD floor — this is D1
+  let newUpperPrice = ethPriceFromTick(newCeilTickFallback); // USD ceiling fallback, may be replaced by uni-lab's answer below
 
   // Gate before paying: simulate with the locally computed symmetric range (the
   // API may adjust the upper bound afterwards, but if even this reverts —
@@ -221,8 +243,23 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
       },
       vaultAddress,
     );
-    const upper = (resp as Record<string, unknown>).upper_bound ?? (resp as Record<string, unknown>).newUpperBound;
+    // Confirmed schema (2026-07-13, from a real 200 response — see
+    // agent/data/unilab-calls.log): the upper bound is nested under
+    // `calculation`, and the field name itself differs by mode — RLP
+    // (E1>0) uses new_upper_bound_with_rlp, RC (E1=0) uses new_upper_bound_usd.
+    // The earlier top-level upper_bound/newUpperBound guess never matched
+    // anything, so the API's answer was silently never used.
+    const calc = (resp as Record<string, unknown>).calculation as Record<string, unknown> | undefined;
+    const upper = calc?.new_upper_bound_with_rlp ?? calc?.new_upper_bound_usd;
     if (typeof upper === "number" && upper > newLowerPrice) newUpperPrice = upper;
+    else {
+      logEvent({
+        level: "warn",
+        vault: vaultAddress,
+        msg: "rc-rlp-rebalance responded but no usable upper bound found, using fallback",
+        response: resp,
+      });
+    }
   } catch (err) {
     logEvent({
       level: "warn",
