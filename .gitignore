@@ -9,6 +9,7 @@ node_modules/
 dist/
 .next/
 *.tsbuildinfo
+agent/data/
 
 # env
 .env

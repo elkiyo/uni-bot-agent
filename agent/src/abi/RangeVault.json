@@ -1,0 +1,1049 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "UNILAB_FEE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "configureTarget",
+    "inputs": [
+      {
+        "name": "investmentAmountUsd",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_targetTickLower",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "_targetTickUpper",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "_maxRebalances",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_reinjectionAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_periodicRebalanceInterval",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deposit",
+    "inputs": [
+      {
+        "name": "usdtBudgetAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserveAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "investableAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "emergencyWithdrawPosition",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "feeTier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initPosition",
+    "inputs": [
+      {
+        "name": "swapIx",
+        "type": "tuple",
+        "internalType": "struct RangeVault.SwapInstruction",
+        "components": [
+          {
+            "name": "token0ToToken1",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "amountIn",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "amountOutMinimum",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "amount0Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "_owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_platformConfig",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_pool",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_token0",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_token1",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_feeTier",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
+        "name": "_positionManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_swapRouter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_uniLabPaymentWallet",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "investableUsdt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lastRebalanceTimestamp",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxRangeDeviationBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxRebalances",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxSlippageBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minRebalanceInterval",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "onERC721Received",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "operator",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pause",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "payUniLabFee",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "remainingBudget",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "periodicRebalanceInterval",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "platformConfig",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pool",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IUniswapV3Pool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "positionManager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract INonfungiblePositionManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "positionTokenId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "rebalance",
+    "inputs": [
+      {
+        "name": "newTickLower",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "newTickUpper",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "swapIx",
+        "type": "tuple",
+        "internalType": "struct RangeVault.SwapInstruction",
+        "components": [
+          {
+            "name": "token0ToToken1",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "amountIn",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "amountOutMinimum",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "amount0Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "newTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "rebalanceCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reinjectionActive",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reinjectionAmount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reserveBalance",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setOperator",
+    "inputs": [
+      {
+        "name": "newOperator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRiskParams",
+    "inputs": [
+      {
+        "name": "_maxSlippageBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_minRebalanceInterval",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_maxRangeDeviationBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "swapRouter",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ISwapRouter02"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "targetConfigured",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "targetTickLower",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "targetTickUpper",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "token0",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "token1",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "uniLabPaymentWallet",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "unpause",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "usdtBudget",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "withdrawAll",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "Deposited",
+    "inputs": [
+      {
+        "name": "investableAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "usdtBudgetAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserveAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EmergencyWithdraw",
+    "inputs": [
+      {
+        "name": "amount0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OperatorUpdated",
+    "inputs": [
+      {
+        "name": "newOperator",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PausedSet",
+    "inputs": [
+      {
+        "name": "isPaused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionInitialized",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Rebalanced",
+    "inputs": [
+      {
+        "name": "newTokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "tickLower",
+        "type": "int24",
+        "indexed": false,
+        "internalType": "int24"
+      },
+      {
+        "name": "tickUpper",
+        "type": "int24",
+        "indexed": false,
+        "internalType": "int24"
+      },
+      {
+        "name": "reinjected",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "feePaid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RiskParamsUpdated",
+    "inputs": [
+      {
+        "name": "maxSlippageBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "minRebalanceInterval",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxRangeDeviationBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TargetConfigured",
+    "inputs": [
+      {
+        "name": "investmentAmountUsd",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "targetTickLower",
+        "type": "int24",
+        "indexed": false,
+        "internalType": "int24"
+      },
+      {
+        "name": "targetTickUpper",
+        "type": "int24",
+        "indexed": false,
+        "internalType": "int24"
+      },
+      {
+        "name": "maxRebalances",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "reinjectionAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "periodicRebalanceInterval",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UniLabFeePaid",
+    "inputs": [
+      {
+        "name": "remainingBudget",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Withdrawn",
+    "inputs": [
+      {
+        "name": "amount0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyInitializedPosition",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DepositExceedsPlatformCap",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientInvestableBalance",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientReserve",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientUsdtBudget",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSwapInstruction",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoPosition",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotOperator",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotPositionManager",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Paused",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RangeTooFarFromMarket",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RebalanceLimitReached",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TargetNotConfigured",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooSoonToRebalance",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": []
+  }
+]
