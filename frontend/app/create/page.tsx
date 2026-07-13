@@ -105,6 +105,25 @@ export default function CreateVault() {
       });
       await publicClient.waitForTransactionReceipt({ hash: configureHash });
 
+      // setRiskParams is mandatory, not optional: the vault initializes with
+      // maxRangeDeviationBps = 0, and RangeVault._checkRangeNearMarket rejects
+      // any range whose center isn't exactly the current tick under that value
+      // — so without this call the agent's initPosition() would revert with
+      // RangeTooFarFromMarket almost every time. maxRangeDeviationBps is set to
+      // the range's half-width (1 tick == 1 bps), so the recentered range the
+      // agent proposes always fits while genuinely wild ranges stay blocked.
+      const halfWidthTicks = Math.max(
+        100,
+        Math.round(Math.abs(targetTickUpper - targetTickLower) / 2),
+      );
+      const riskHash = await writeContractAsync({
+        address: vaultAddress,
+        abi: rangeVaultAbi,
+        functionName: "setRiskParams",
+        args: [500n, 0n, BigInt(halfWidthTicks)], // 5% slippage cap, no extra cooldown, half-width deviation
+      });
+      await publicClient.waitForTransactionReceipt({ hash: riskHash });
+
       setStep("depositing");
       const depositHash = await writeContractAsync({
         address: vaultAddress,
