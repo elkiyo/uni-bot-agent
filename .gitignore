@@ -2,7 +2,12 @@
 contracts/cache/
 contracts/out/
 contracts/broadcast/
-contracts/lib/
+# contracts/lib/ is intentionally committed, not ignored: dependencies were
+# installed with `forge install --no-git` (see contracts/README.md — avoids the
+# OZ default-branch/submodule-conflict issues we hit), so there is no manifest
+# a fresh clone or CI run could use to reinstall them. Committing them directly
+# makes `forge build`/`forge test` work immediately after checkout, no install
+# step, no version-drift risk.
 
 # agent / frontend (Node)
 node_modules/
