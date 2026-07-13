@@ -60,4 +60,20 @@ export async function discoverAndRegisterVaults(factoryAddress: Address, store: 
     store.setLastProcessedBlock(toBlock);
     fromBlock = toBlock + 1n;
   }
+
+  // Retry registration for vaults that were discovered but whose uni-lab
+  // registration failed at the time (e.g. the API being unreachable) — without
+  // this, a vault would stay keyless forever since the event scan above skips
+  // already-known vaults.
+  for (const record of store.listVaults()) {
+    if (record.uniLabApiKey) continue;
+    console.log(`Retrying uni-lab.xyz registration for vault ${record.address}`);
+    try {
+      const reg = await registerAgent(`uni-bot-agent-${record.address.slice(2, 8)}`, record.address);
+      store.upsertVault({ ...record, uniLabApiKey: reg.api_key });
+      console.log(`Registered vault ${record.address} with uni-lab.xyz`);
+    } catch (err) {
+      console.error(`Retry registration failed for ${record.address}:`, err);
+    }
+  }
 }

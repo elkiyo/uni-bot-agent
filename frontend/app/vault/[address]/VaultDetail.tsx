@@ -52,7 +52,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   );
   const hasPosition = Boolean(positionTokenId && (positionTokenId as bigint) > 0n);
 
-  const [depositAmount, setDepositAmount] = useState("0");
+  const [depInvestable, setDepInvestable] = useState("0");
+  const [depReserve, setDepReserve] = useState("0");
+  const [depBudget, setDepBudget] = useState("0");
+  const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
+  const [cfgReinjection, setCfgReinjection] = useState("");
+  const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,12 +77,45 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleDepositMore() {
-    const amount = parseUnits(depositAmount, 6);
+    // The vault keeps three separate internal ledgers — the deposit has to say
+    // how the USDT splits across them, otherwise the uni-lab budget/reinjection
+    // reserve never get funded and the agent can't operate.
+    const investable = parseUnits(depInvestable || "0", 6);
+    const reserve = parseUnits(depReserve || "0", 6);
+    const budget = parseUnits(depBudget || "0", 6);
+    const total = investable + reserve + budget;
+    if (total === 0n) return;
     await withTx("Aprobando", () =>
-      writeContractAsync({ address: USDT, abi: erc20Abi, functionName: "approve", args: [address, amount] }),
+      writeContractAsync({ address: USDT, abi: erc20Abi, functionName: "approve", args: [address, total] }),
     );
     await withTx("Depositando", () =>
-      writeContractAsync({ address, abi: rangeVaultAbi, functionName: "deposit", args: [0n, 0n, amount] }),
+      writeContractAsync({
+        address,
+        abi: rangeVaultAbi,
+        functionName: "deposit",
+        args: [budget, reserve, investable],
+      }),
+    );
+  }
+
+  async function handleReconfigure() {
+    // Re-calls configureTarget keeping the existing on-chain tick range, so the
+    // owner can tune cadence/caps without recomputing prices.
+    if (targetTickLower === undefined || targetTickUpper === undefined) return;
+    await withTx("Reconfigurando", () =>
+      writeContractAsync({
+        address,
+        abi: rangeVaultAbi,
+        functionName: "configureTarget",
+        args: [
+          (investableUsdt as bigint) ?? 0n,
+          targetTickLower,
+          targetTickUpper,
+          BigInt(cfgMaxRebalances || String(maxRebalances ?? 0)),
+          parseUnits(cfgReinjection || "0", 6),
+          BigInt(Math.round(Number(cfgPeriodicHours || "24") * 3600)),
+        ],
+      }),
     );
   }
 
@@ -166,21 +204,36 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </h2>
                 <p className="mt-1 text-sm text-muted">Solo el owner puede ejecutar estas acciones.</p>
 
-                <div className="mt-6 flex flex-wrap items-end gap-3">
-                  <label className="flex min-w-56 flex-1 flex-col gap-1.5">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                      Depositar más USDT
-                    </span>
-                    <input
-                      className="field-input"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      inputMode="decimal"
+                <div className="mt-6">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                    Depositar USDT (repartido en los 3 ledgers del vault)
+                  </span>
+                  <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <MiniField label="Invertible" value={depInvestable} onChange={setDepInvestable} />
+                    <MiniField label="Reserva" value={depReserve} onChange={setDepReserve} />
+                    <MiniField label="Presupuesto uni-lab" value={depBudget} onChange={setDepBudget} />
+                    <button onClick={handleDepositMore} disabled={Boolean(busy)} className="btn-primary !py-3">
+                      Depositar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                    Reconfigurar agente (mantiene el rango actual)
+                  </span>
+                  <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <MiniField
+                      label={`Tope rebalanceos (hoy: ${maxRebalances ?? "…"})`}
+                      value={cfgMaxRebalances}
+                      onChange={setCfgMaxRebalances}
                     />
-                  </label>
-                  <button onClick={handleDepositMore} disabled={Boolean(busy)} className="btn-primary !py-3">
-                    Depositar
-                  </button>
+                    <MiniField label="Reinyección (USDT)" value={cfgReinjection} onChange={setCfgReinjection} />
+                    <MiniField label="Periódico (horas)" value={cfgPeriodicHours} onChange={setCfgPeriodicHours} />
+                    <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
+                      Actualizar
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
@@ -257,6 +310,28 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         )}
       </main>
     </>
+  );
+}
+
+function MiniField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex min-w-36 flex-1 flex-col gap-1.5">
+      <span className="text-xs text-faint">{label}</span>
+      <input
+        className="field-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        inputMode="decimal"
+      />
+    </label>
   );
 }
 

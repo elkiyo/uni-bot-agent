@@ -11,4 +11,8 @@ export const SWAP_ROUTER02 = "0x5615CDAb10dc425a742d643d949a7F474C01abc4" as con
 // Per uni-lab.xyz's API docs (https://uni-lab-xyz.vercel.app/api-docs).
 export const UNILAB_PAYMENT_WALLET = "0x4B53D27c81f9E842D50a1940E27B8009B64c615B" as const;
 export const UNILAB_FEE_USDT = 500_000n; // 0.5 USDT, 6 decimals
-export const UNILAB_BASE_URL = "https://uni-lab.xyz/api/v1";
+// The docs say uni-lab.xyz, but that domain serves only the static site
+// (POST /api/v1/* returns 405 from the host) — the live API answers on the
+// Vercel domain. Verified 2026-07-13 during the first real registration.
+export const UNILAB_BASE_URL =
+  process.env.UNILAB_BASE_URL ?? "https://uni-lab-xyz.vercel.app/api/v1";
