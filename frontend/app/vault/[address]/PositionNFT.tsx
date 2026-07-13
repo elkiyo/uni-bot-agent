@@ -6,12 +6,13 @@ import { formatUnits } from "viem";
 import { positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
 import { POSITION_MANAGER, POOL } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
+import { positionAmounts } from "@/lib/positionMath";
 
 /**
  * Renders the actual Uniswap V3 position NFT — the SVG art is generated fully
  * on-chain by the NonfungiblePositionManager and shipped inside tokenURI() as
- * base64 JSON — alongside the live position data (range in USD, current price,
- * in/out-of-range status, liquidity, last-recorded uncollected fees).
+ * base64 JSON — plus a composition breakdown styled after Uniswap's own
+ * position page (value + WETH/USDT split bar, fees-earned card).
  */
 export function PositionNFT({ tokenId }: { tokenId: bigint }) {
   const { data: uri } = useReadContract({
@@ -26,6 +27,7 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
       { address: POSITION_MANAGER, abi: positionManagerAbi, functionName: "positions", args: [tokenId] },
       { address: POOL, abi: uniswapV3PoolAbi, functionName: "slot0" },
     ],
+    query: { refetchInterval: 15_000 },
   });
 
   const image = useMemo(() => {
@@ -54,9 +56,28 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
   const priceB = ethPriceFromTick(tickUpper);
   const rangeLow = Math.min(priceA, priceB);
   const rangeHigh = Math.max(priceA, priceB);
-  const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
-  const inRange =
-    currentTick !== undefined && currentTick >= tickLower && currentTick <= tickUpper;
+  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
+  const inRange = currentTick !== undefined && currentTick >= tickLower && currentTick <= tickUpper;
+
+  // Same standard concentrated-liquidity formulas Uniswap's own UI uses to
+  // show "how much of each token is my position worth right now".
+  const amounts =
+    currentTick !== undefined ? positionAmounts(liquidity, currentTick, tickLower, tickUpper) : undefined;
+  const usdtAmount = amounts ? amounts.amount0Raw / 1e6 : 0;
+  const wethAmount = amounts ? amounts.amount1Raw / 1e18 : 0;
+  const usdtValue = usdtAmount; // USDT ~= $1
+  const wethValue = ethPrice !== undefined ? wethAmount * ethPrice : 0;
+  const totalValue = usdtValue + wethValue;
+  const wethPct = totalValue > 0 ? (wethValue / totalValue) * 100 : 0;
+  const usdtPct = totalValue > 0 ? 100 - wethPct : 0;
+
+  const feesUsdtAmount = Number(formatUnits(tokensOwed0, 6));
+  const feesWethAmount = Number(formatUnits(tokensOwed1, 18));
+  const feesUsdtValue = feesUsdtAmount;
+  const feesWethValue = ethPrice !== undefined ? feesWethAmount * ethPrice : 0;
+  const feesTotal = feesUsdtValue + feesWethValue;
+  const feesWethPct = feesTotal > 0 ? (feesWethValue / feesTotal) * 100 : 50;
+  const feesUsdtPct = feesTotal > 0 ? 100 - feesWethPct : 50;
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
@@ -68,19 +89,20 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
           Posición NFT #{String(tokenId)}
         </h2>
         {inRange ? (
-          <span className="eyebrow !border-positive/40 !text-positive">En rango · generando fees</span>
+          <span className="eyebrow !border-positive/40 !text-positive">Dentro del rango</span>
         ) : (
           <span className="eyebrow !border-negative/40 !text-negative">Fuera de rango</span>
         )}
+        <span className="eyebrow">USDT / WETH · 0.3%</span>
       </div>
       <p className="mt-1 text-sm text-muted">
         Arte generado 100% on-chain por el contrato de Uniswap V3 — el NFT vive dentro del
         vault, nunca en la wallet del operador.
       </p>
 
-      <div className="mt-6 grid gap-8 sm:grid-cols-[280px_1fr]">
+      <div className="mt-6 grid gap-8 lg:grid-cols-[260px_1fr]">
         {/* On-chain NFT art */}
-        <div className="mx-auto w-full max-w-70">
+        <div className="mx-auto w-full max-w-64">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element -- data: URI SVG from chain, next/image can't optimize it
             <img
@@ -95,47 +117,117 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
               </span>
             </div>
           )}
-        </div>
-
-        {/* Position data */}
-        <dl className="flex flex-col gap-3 self-center text-sm">
-          <InfoRow k="Rango de precio" v={`$${rangeLow.toFixed(2)} – $${rangeHigh.toFixed(2)}`} strong />
-          <InfoRow
-            k="Precio actual ETH"
-            v={currentPrice !== undefined ? `$${currentPrice.toFixed(2)}` : "…"}
-          />
-          <InfoRow k="Ticks" v={`[${tickLower}, ${tickUpper}]`} mono />
-          <div className="my-1 border-t border-hairline" />
-          <InfoRow k="Liquidez (L)" v={liquidity.toString()} mono />
-          <InfoRow
-            k="Fees sin cobrar (últ. registro)"
-            v={`${formatUnits(tokensOwed0, 6)} USDT · ${Number(formatUnits(tokensOwed1, 18)).toFixed(6)} WETH`}
-          />
-          <div className="my-1 border-t border-hairline" />
-          <InfoRow k="Par" v="USDT / WETH · 0.3%" />
           <a
             href={`https://celoscan.io/nft/${POSITION_MANAGER}/${String(tokenId)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted underline-offset-4 hover:text-accent hover:underline"
+            className="mt-3 block text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted underline-offset-4 hover:text-accent hover:underline"
           >
             Ver NFT en Celoscan →
           </a>
-        </dl>
+        </div>
+
+        {/* Uniswap-style breakdown */}
+        <div className="flex flex-col gap-4">
+          <div className="glass rounded-2xl p-5">
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">Posición</span>
+            <p
+              className="mt-1 text-2xl font-semibold tabular-nums"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              ${totalValue.toFixed(2)}
+            </p>
+            <CompositionBar leftPct={wethPct} />
+            <div className="mt-3 flex flex-col gap-2 text-sm">
+              <TokenRow label="WETH" pct={wethPct} usd={wethValue} native={`${wethAmount.toFixed(4)} WETH`} />
+              <TokenRow label="USDT" pct={usdtPct} usd={usdtValue} native={`${usdtAmount.toFixed(2)} USDT`} />
+            </div>
+          </div>
+
+          <div className="glass rounded-2xl p-5">
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+              Comisiones ganadas
+            </span>
+            <p
+              className="mt-1 text-2xl font-semibold tabular-nums text-accent"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              ${feesTotal.toFixed(4)}
+            </p>
+            <CompositionBar leftPct={feesWethPct} />
+            <div className="mt-3 flex flex-col gap-2 text-sm">
+              <TokenRow
+                label="WETH"
+                pct={feesWethPct}
+                usd={feesWethValue}
+                native={`${feesWethAmount.toFixed(6)} WETH`}
+              />
+              <TokenRow
+                label="USDT"
+                pct={feesUsdtPct}
+                usd={feesUsdtValue}
+                native={`${feesUsdtAmount.toFixed(4)} USDT`}
+              />
+            </div>
+            <p className="mt-3 text-xs text-faint">
+              Se acredita al cerrar la posición en cada rebalanceo — puede no reflejar fees
+              acumuladas desde el último evento en tiempo real.
+            </p>
+          </div>
+
+          <div className="glass rounded-2xl p-5">
+            <div className="flex items-baseline justify-between">
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                Rango de precio
+              </span>
+              <span className="font-mono text-[11px] text-faint">ticks [{tickLower}, {tickUpper}]</span>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between text-sm">
+              <span className="text-white/90">
+                Mín. <span className="font-semibold">${rangeLow.toFixed(2)}</span>
+              </span>
+              <span className="text-white/90">
+                Máx. <span className="font-semibold">${rangeHigh.toFixed(2)}</span>
+              </span>
+            </div>
+            {ethPrice !== undefined && (
+              <p className="mt-2 text-xs text-faint">Precio actual: ${ethPrice.toFixed(2)} · USDT/WETH</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function InfoRow({ k, v, strong, mono }: { k: string; v: string; strong?: boolean; mono?: boolean }) {
+function CompositionBar({ leftPct }: { leftPct: number }) {
   return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-muted">{k}</dt>
-      <dd
-        className={`text-right ${strong ? "font-semibold text-accent" : "text-white/90"} ${mono ? "font-mono text-xs" : ""}`}
-      >
-        {v}
-      </dd>
+    <div className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+      <div className="h-full bg-accent" style={{ width: `${Math.min(100, Math.max(0, leftPct))}%` }} />
+      <div className="h-full flex-1 bg-white/25" />
+    </div>
+  );
+}
+
+function TokenRow({
+  label,
+  pct,
+  usd,
+  native,
+}: {
+  label: string;
+  pct: number;
+  usd: number;
+  native: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted">
+        {label} <span className="text-faint">· {pct.toFixed(1)}%</span>
+      </span>
+      <span className="text-right text-white/90">
+        ${usd.toFixed(2)} <span className="text-faint">· {native}</span>
+      </span>
     </div>
   );
 }
