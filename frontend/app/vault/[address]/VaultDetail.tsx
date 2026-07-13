@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAccount, usePublicClient, useReadContracts, useWriteContract } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 import { Header } from "../../components/Header";
+import { PositionNFT } from "./PositionNFT";
 import { rangeVaultAbi, erc20Abi } from "@/lib/contracts";
 import { USDT } from "@/lib/addresses";
 
@@ -132,6 +133,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 accent
               />
             </div>
+
+            {hasPosition && <PositionNFT tokenId={positionTokenId as bigint} />}
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div className="glass rounded-2xl p-5">
