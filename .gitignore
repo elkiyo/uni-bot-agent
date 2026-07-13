@@ -1,0 +1,24 @@
+# contracts (Foundry)
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/lib/
+
+# agent / frontend (Node)
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+*.env.local
+
+# OS
+.DS_Store
+
+# agent skill installer artifacts (npx skills add) — reinstall via PLAN.md step 1
+.agents/
+.claude/
+skills-lock.json
