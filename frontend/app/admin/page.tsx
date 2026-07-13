@@ -23,7 +23,8 @@ export default function Admin() {
     query: { enabled: Boolean(PLATFORM_CONFIG_ADDRESS && FACTORY_ADDRESS) },
   });
 
-  const [owner, rebalanceFee, defaultOperator, maxDepositUsd, vaultCount] = data?.map((d) => d.result) ?? [];
+  const [owner, rebalanceFee, defaultOperator, maxDepositUsd, vaultCount] =
+    data?.map((d) => d.result) ?? [];
   const isPlatformOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
   );
@@ -52,140 +53,174 @@ export default function Admin() {
   return (
     <>
       <Header />
-      <main className="mx-auto max-w-2xl w-full flex-1 px-6 py-10">
-        <h1 className="text-2xl font-semibold mb-2">Panel admin</h1>
-        <p className="opacity-70 mb-8">
-          Configuración global de la plataforma (PlatformConfig). Ver PLAN.md &quot;Los 3
-          roles del sistema&quot;.
+      <main className="section flex-1 pb-24 pt-32">
+        <span className="eyebrow">Plataforma</span>
+        <h1
+          className="mt-5 text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          Panel de administración
+        </h1>
+        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
+          Configuración global que aplica en vivo a todos los vaults: precio por rebalanceo,
+          operador por defecto y tope de depósito por vault.
         </p>
 
         {(!PLATFORM_CONFIG_ADDRESS || !FACTORY_ADDRESS) && (
-          <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm">
-            Contratos no configurados todavía — deploy pendiente.
+          <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
+            Los contratos todavía no están configurados en este entorno.
           </div>
         )}
 
-        {PLATFORM_CONFIG_ADDRESS && !data && <p className="opacity-70">Cargando...</p>}
-
-        {data && !isPlatformOwner && (
-          <p className="opacity-70">
-            Conectá la wallet dueña de la plataforma (<code className="text-xs">{String(owner)}</code>) para
-            administrar esta configuración.
-          </p>
+        {data && (
+          <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <Stat label="Vaults totales" value={String(vaultCount ?? 0)} accent />
+            <Stat
+              label="Fee por rebalanceo"
+              value={`${formatUnits((rebalanceFee as bigint) ?? 0n, 6)} USDT`}
+            />
+            <Stat
+              label="Tope por vault"
+              value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} USDT`}
+            />
+            <div className="glass rounded-2xl p-5">
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                Operador por defecto
+              </span>
+              <p className="mt-2 break-all font-mono text-xs text-white/90">
+                {String(defaultOperator)}
+              </p>
+            </div>
+          </div>
         )}
 
-        {data && (
-          <section className="rounded-lg border border-black/10 dark:border-white/10 p-4 text-sm flex flex-col gap-2 mb-6">
-            <Row label="Vaults totales" value={String(vaultCount)} />
-            <Row label="Rebalance fee actual" value={`${formatUnits((rebalanceFee as bigint) ?? 0n, 6)} USDT`} />
-            <Row label="Operador por defecto" value={String(defaultOperator)} mono />
-            <Row label="Tope de depósito por vault" value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} USDT`} />
-          </section>
+        {data && !isPlatformOwner && (
+          <div className="glass mt-8 rounded-2xl p-6">
+            <p className="text-sm text-muted">
+              Conectá la wallet dueña de la plataforma (
+              <code className="break-all font-mono text-xs">{String(owner)}</code>) para editar
+              esta configuración.
+            </p>
+          </div>
         )}
 
         {isPlatformOwner && (
-          <section className="rounded-lg border border-black/10 dark:border-white/10 p-4 flex flex-col gap-5">
-            <FieldWithAction
-              label="Nuevo rebalance fee (USDT)"
-              value={newFee}
-              onChange={setNewFee}
-              actionLabel="Actualizar fee"
-              disabled={Boolean(busy)}
-              onSubmit={() =>
-                withTx("fee", () =>
-                  writeContractAsync({
-                    address: PLATFORM_CONFIG_ADDRESS,
-                    abi: platformConfigAbi,
-                    functionName: "setRebalanceFee",
-                    args: [parseUnits(newFee || "0", 6)],
-                  }),
-                )
-              }
-            />
-            <FieldWithAction
-              label="Nuevo operador por defecto (address)"
-              value={newOperator}
-              onChange={setNewOperator}
-              actionLabel="Actualizar operador"
-              disabled={Boolean(busy)}
-              onSubmit={() =>
-                withTx("operator", () =>
-                  writeContractAsync({
-                    address: PLATFORM_CONFIG_ADDRESS,
-                    abi: platformConfigAbi,
-                    functionName: "setDefaultOperator",
-                    args: [newOperator as `0x${string}`],
-                  }),
-                )
-              }
-            />
-            <FieldWithAction
-              label="Nuevo tope de depósito por vault (USDT)"
-              value={newCap}
-              onChange={setNewCap}
-              actionLabel="Actualizar tope"
-              disabled={Boolean(busy)}
-              onSubmit={() =>
-                withTx("cap", () =>
-                  writeContractAsync({
-                    address: PLATFORM_CONFIG_ADDRESS,
-                    abi: platformConfigAbi,
-                    functionName: "setMaxDepositUsd",
-                    args: [parseUnits(newCap || "0", 6)],
-                  }),
-                )
-              }
-            />
+          <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
+            <h2
+              className="text-xl font-semibold tracking-tight"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Editar configuración
+            </h2>
 
-            {busy && <p className="text-sm opacity-70">Procesando: {busy}...</p>}
-            {error && <p className="text-sm text-red-500">{error}</p>}
-          </section>
+            <div className="mt-6 flex flex-col gap-6">
+              <AdminField
+                label="Nuevo fee por rebalanceo (USDT)"
+                value={newFee}
+                onChange={setNewFee}
+                action="Actualizar"
+                disabled={Boolean(busy)}
+                onSubmit={() =>
+                  withTx("fee", () =>
+                    writeContractAsync({
+                      address: PLATFORM_CONFIG_ADDRESS,
+                      abi: platformConfigAbi,
+                      functionName: "setRebalanceFee",
+                      args: [parseUnits(newFee || "0", 6)],
+                    }),
+                  )
+                }
+              />
+              <AdminField
+                label="Nuevo operador por defecto (address)"
+                value={newOperator}
+                onChange={setNewOperator}
+                action="Actualizar"
+                disabled={Boolean(busy)}
+                onSubmit={() =>
+                  withTx("operator", () =>
+                    writeContractAsync({
+                      address: PLATFORM_CONFIG_ADDRESS,
+                      abi: platformConfigAbi,
+                      functionName: "setDefaultOperator",
+                      args: [newOperator as `0x${string}`],
+                    }),
+                  )
+                }
+              />
+              <AdminField
+                label="Nuevo tope de depósito por vault (USDT)"
+                value={newCap}
+                onChange={setNewCap}
+                action="Actualizar"
+                disabled={Boolean(busy)}
+                onSubmit={() =>
+                  withTx("cap", () =>
+                    writeContractAsync({
+                      address: PLATFORM_CONFIG_ADDRESS,
+                      abi: platformConfigAbi,
+                      functionName: "setMaxDepositUsd",
+                      args: [parseUnits(newCap || "0", 6)],
+                    }),
+                  )
+                }
+              />
+            </div>
+
+            {busy && (
+              <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                Procesando: {busy}… firmá en tu wallet
+              </p>
+            )}
+            {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
+          </div>
         )}
       </main>
     </>
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="flex justify-between gap-4">
-      <span className="opacity-60">{label}</span>
-      <span className={mono ? "font-mono text-xs break-all text-right" : "text-right"}>{value}</span>
+    <div
+      className={
+        accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"
+      }
+    >
+      <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
+      <p
+        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent" : "text-white/90"}`}
+        style={{ fontFamily: "var(--font-display)" }}
+      >
+        {value}
+      </p>
     </div>
   );
 }
 
-function FieldWithAction({
+function AdminField({
   label,
   value,
   onChange,
-  actionLabel,
+  action,
   onSubmit,
   disabled,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  actionLabel: string;
+  action: string;
   onSubmit: () => void;
   disabled: boolean;
 }) {
   return (
-    <div className="flex gap-2 items-end">
-      <label className="flex flex-col gap-1 text-sm flex-1">
-        <span className="opacity-70">{label}</span>
-        <input
-          className="rounded-md border border-black/10 dark:border-white/10 bg-transparent px-3 py-2"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
+    <div className="flex flex-wrap items-end gap-3">
+      <label className="flex min-w-64 flex-1 flex-col gap-1.5">
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{label}</span>
+        <input className="field-input" value={value} onChange={(e) => onChange(e.target.value)} />
       </label>
-      <button
-        onClick={onSubmit}
-        disabled={disabled}
-        className="rounded-md bg-foreground text-background px-4 py-2 text-sm font-medium disabled:opacity-40"
-      >
-        {actionLabel}
+      <button onClick={onSubmit} disabled={disabled} className="btn-secondary !py-3">
+        {action}
       </button>
     </div>
   );

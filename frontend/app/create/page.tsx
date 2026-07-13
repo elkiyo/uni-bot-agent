@@ -9,7 +9,18 @@ import { vaultFactoryAbi, rangeVaultAbi, erc20Abi, uniswapV3PoolAbi } from "@/li
 import { FACTORY_ADDRESS, USDT, WETH, POOL, FEE_TIER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 
-type Step = "idle" | "creating" | "approving" | "configuring" | "depositing" | "done" | "error";
+type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
+
+const stepLabel: Record<Step, string> = {
+  idle: "Crear vault",
+  creating: "1/5 · Creando vault…",
+  approving: "2/5 · Aprobando USDT…",
+  configuring: "3/5 · Configurando objetivo…",
+  risk: "4/5 · Fijando límites de riesgo…",
+  depositing: "5/5 · Depositando…",
+  done: "Listo ✓",
+  error: "Reintentar",
+};
 
 export default function CreateVault() {
   const router = useRouter();
@@ -32,14 +43,21 @@ export default function CreateVault() {
   const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
 
   const [investAmount, setInvestAmount] = useState("100");
-  const [widthPct, setWidthPct] = useState("20"); // range width as % around current price
+  const [widthPct, setWidthPct] = useState("20");
   const [maxRebalances, setMaxRebalances] = useState("10");
   const [reinjectionAmount, setReinjectionAmount] = useState("10");
   const [periodicHours, setPeriodicHours] = useState("24");
-  const [usdtBudget, setUsdtBudget] = useState("5"); // covers ~10 uni-lab.xyz calls at 0.5 USDT each
+  const [usdtBudget, setUsdtBudget] = useState("5");
 
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  const totalUsdt =
+    (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0) + (parseFloat(usdtBudget) || 0);
+  const lowerPreview =
+    currentPrice !== undefined ? currentPrice * (1 - (parseFloat(widthPct) || 0) / 200) : undefined;
+  const upperPreview =
+    currentPrice !== undefined ? currentPrice * (1 + (parseFloat(widthPct) || 0) / 200) : undefined;
 
   async function handleCreate() {
     if (!address || !publicClient || currentPrice === undefined || tickSpacing === undefined) return;
@@ -112,10 +130,8 @@ export default function CreateVault() {
       // RangeTooFarFromMarket almost every time. maxRangeDeviationBps is set to
       // the range's half-width (1 tick == 1 bps), so the recentered range the
       // agent proposes always fits while genuinely wild ranges stay blocked.
-      const halfWidthTicks = Math.max(
-        100,
-        Math.round(Math.abs(targetTickUpper - targetTickLower) / 2),
-      );
+      setStep("risk");
+      const halfWidthTicks = Math.max(100, Math.round(Math.abs(targetTickUpper - targetTickLower) / 2));
       const riskHash = await writeContractAsync({
         address: vaultAddress,
         abi: rangeVaultAbi,
@@ -147,69 +163,123 @@ export default function CreateVault() {
   return (
     <>
       <Header />
-      <main className="mx-auto max-w-2xl w-full flex-1 px-6 py-10">
-        <h1 className="text-2xl font-semibold mb-2">Crear vault</h1>
-        <p className="opacity-70 mb-8">
-          Par USDT/WETH, pool <code className="text-xs">{POOL}</code> (0.3%). El agente arma la
-          posición inicial y la rebalancea según lo que configures acá — ver PLAN.md.
+      <main className="section flex-1 pb-24 pt-32">
+        <span className="eyebrow">Nuevo vault</span>
+        <h1
+          className="mt-5 text-balance text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          Configurá tu posición
+        </h1>
+        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
+          Par USDT/WETH (0.3%). El agente arma la posición inicial con estos parámetros y la
+          rebalancea automáticamente — vos mantenés el control y la custodia.
         </p>
 
         {!FACTORY_ADDRESS && (
-          <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm mb-6">
-            <code>NEXT_PUBLIC_FACTORY_ADDRESS</code> no está configurado — el deploy está pendiente.
+          <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
+            Los contratos todavía no están configurados en este entorno.
           </div>
         )}
 
-        {!isConnected && <p className="opacity-70">Conectá tu wallet primero.</p>}
+        {isConnected ? (
+          <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_360px]">
+            {/* Form */}
+            <div className="glass rounded-2xl p-6 sm:p-8">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <Field
+                  label="Monto de inversión"
+                  suffix="USDT"
+                  value={investAmount}
+                  onChange={setInvestAmount}
+                />
+                <Field
+                  label="Ancho del rango"
+                  suffix="%"
+                  value={widthPct}
+                  onChange={setWidthPct}
+                  hint="Alrededor del precio actual"
+                />
+                <Field
+                  label="Tope de rebalanceos"
+                  value={maxRebalances}
+                  onChange={setMaxRebalances}
+                  hint="Tu techo de gasto en fees"
+                />
+                <Field
+                  label="Reinyección alternada"
+                  suffix="USDT"
+                  value={reinjectionAmount}
+                  onChange={setReinjectionAmount}
+                  hint="Entra y sale de la posición en ciclos"
+                />
+                <Field
+                  label="Rebalanceo periódico"
+                  suffix="horas"
+                  value={periodicHours}
+                  onChange={setPeriodicHours}
+                />
+                <Field
+                  label="Presupuesto uni-lab.xyz"
+                  suffix="USDT"
+                  value={usdtBudget}
+                  onChange={setUsdtBudget}
+                  hint="0.5 USDT por consulta"
+                />
+              </div>
 
-        {isConnected && (
-          <div className="flex flex-col gap-5">
-            {currentPrice !== undefined && (
-              <p className="text-sm opacity-70">Precio actual de ETH: ${currentPrice.toFixed(2)}</p>
-            )}
+              <button onClick={handleCreate} disabled={busy || !FACTORY_ADDRESS} className="btn-primary mt-8 w-full">
+                {stepLabel[step]}
+              </button>
 
-            <Field label="Monto de inversión (USDT)" value={investAmount} onChange={setInvestAmount} />
-            <Field
-              label="Ancho del rango (% alrededor del precio actual)"
-              value={widthPct}
-              onChange={setWidthPct}
-            />
-            <Field
-              label="Tope de rebalanceos (maxRebalances)"
-              value={maxRebalances}
-              onChange={setMaxRebalances}
-            />
-            <Field
-              label="Monto de reinyección alternada (USDT)"
-              value={reinjectionAmount}
-              onChange={setReinjectionAmount}
-            />
-            <Field
-              label="Rebalanceo periódico cada (horas)"
-              value={periodicHours}
-              onChange={setPeriodicHours}
-            />
-            <Field
-              label="Presupuesto para uni-lab.xyz (USDT, 0.5 USDT por consulta)"
-              value={usdtBudget}
-              onChange={setUsdtBudget}
-            />
+              {busy && (
+                <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                  Firmá cada transacción en tu wallet — son 5 en total
+                </p>
+              )}
+              {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
+            </div>
 
-            <button
-              onClick={handleCreate}
-              disabled={busy || !FACTORY_ADDRESS}
-              className="rounded-md bg-foreground text-background px-4 py-2 text-sm font-medium disabled:opacity-40"
-            >
-              {step === "idle" && "Crear vault"}
-              {step === "creating" && "Creando vault..."}
-              {step === "approving" && "Aprobando USDT..."}
-              {step === "configuring" && "Configurando..."}
-              {step === "depositing" && "Depositando..."}
-              {step === "done" && "Listo"}
-              {step === "error" && "Reintentar"}
-            </button>
+            {/* Live summary */}
+            <aside className="flex flex-col gap-4">
+              <div className="glass rounded-2xl border-accent/35 bg-accent/[0.06] p-6">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+                  Resumen
+                </span>
+                <dl className="mt-4 flex flex-col gap-3 text-sm">
+                  <SummaryRow
+                    k="Precio actual ETH"
+                    v={currentPrice !== undefined ? `$${currentPrice.toFixed(2)}` : "…"}
+                  />
+                  <SummaryRow
+                    k="Rango estimado"
+                    v={
+                      lowerPreview !== undefined && upperPreview !== undefined
+                        ? `$${lowerPreview.toFixed(0)} – $${upperPreview.toFixed(0)}`
+                        : "…"
+                    }
+                  />
+                  <div className="my-1 border-t border-hairline" />
+                  <SummaryRow k="Capital invertible" v={`${investAmount || "0"} USDT`} />
+                  <SummaryRow k="Reserva de reinyección" v={`${reinjectionAmount || "0"} USDT`} />
+                  <SummaryRow k="Presupuesto de cálculo" v={`${usdtBudget || "0"} USDT`} />
+                  <div className="my-1 border-t border-hairline" />
+                  <SummaryRow k="Total a depositar" v={`${totalUsdt.toFixed(2)} USDT`} strong />
+                </dl>
+              </div>
 
-            {error && <p className="text-sm text-red-500">{error}</p>}
+              <div className="glass rounded-2xl p-5">
+                <p className="text-[13px] leading-relaxed text-muted">
+                  El agente cobra el fee de la plataforma por cada rebalanceo exitoso, hasta el
+                  tope que definas. Podés pausar, revocar al operador o retirar todo en
+                  cualquier momento.
+                </p>
+              </div>
+            </aside>
+          </div>
+        ) : (
+          <div className="glass mt-10 rounded-2xl p-10 text-center">
+            <p className="text-muted">Conectá tu wallet para crear un vault.</p>
           </div>
         )}
       </main>
@@ -221,20 +291,41 @@ function Field({
   label,
   value,
   onChange,
+  suffix,
+  hint,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  suffix?: string;
+  hint?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="opacity-70">{label}</span>
-      <input
-        className="rounded-md border border-black/10 dark:border-white/10 bg-transparent px-3 py-2"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        inputMode="decimal"
-      />
+    <label className="flex flex-col gap-1.5">
+      <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{label}</span>
+      <div className="relative">
+        <input
+          className="field-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          inputMode="decimal"
+        />
+        {suffix && (
+          <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-mono text-xs text-faint">
+            {suffix}
+          </span>
+        )}
+      </div>
+      {hint && <span className="text-xs text-faint">{hint}</span>}
     </label>
+  );
+}
+
+function SummaryRow({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="text-muted">{k}</dt>
+      <dd className={strong ? "font-semibold text-accent" : "font-medium text-white/90"}>{v}</dd>
+    </div>
   );
 }

@@ -1,26 +1,188 @@
 @import "tailwindcss";
 
+/* Design language copied from hackathon.celocolombia.org:
+   #050505 canvas, Celo yellow #FCFF52 accent with soft glow, #1b1b1b hairline
+   borders, glass cards (white 2% + blur), pill buttons, mono uppercase
+   "eyebrow" labels, Inter/Inter Tight type. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #050505;
+  --foreground: #ffffff;
+  --accent: #fcff52;
+  --accent-soft: #fff7a8;
+  --hairline: #1b1b1b;
+  --muted: #a1a1aa;
+  --faint: #71717a;
+  --positive: #4ade80;
+  --negative: #f87171;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-hairline: var(--hairline);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-inter-tight);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background-color: #050505;
+  color: #fff;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--accent);
+  color: #050505;
+}
+
+/* --- shared utilities, same names/recipes as the reference site --- */
+
+.section {
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  max-width: 1180px;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+@media (min-width: 640px) {
+  .section {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid #1b1b1b;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.glass-hover {
+  transition:
+    border-color 0.35s ease,
+    background-color 0.35s ease,
+    transform 0.35s ease;
+}
+.glass-hover:hover {
+  border-color: rgba(252, 255, 82, 0.35);
+  background-color: rgba(252, 255, 82, 0.04);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid #1b1b1b;
+  background-color: rgba(255, 255, 255, 0.025);
+  padding: 0.375rem 0.875rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #a1a1aa;
+}
+
+.btn-primary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background-color: #fcff52;
+  padding: 0.875rem 1.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  color: #050505;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, opacity 0.2s ease;
+  box-shadow: 0 0 0 0 rgba(252, 255, 82, 0);
+  cursor: pointer;
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 44px -10px rgba(252, 255, 82, 0.55);
+}
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.75rem 1.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fff;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+  cursor: pointer;
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: rgba(252, 255, 82, 0.4);
+  background: rgba(252, 255, 82, 0.05);
+}
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.06);
+  padding: 0.75rem 1.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #f87171;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+  cursor: pointer;
+}
+.btn-danger:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.7);
+  background: rgba(248, 113, 113, 0.12);
+}
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.field-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid #1b1b1b;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.75rem 1rem;
+  font-size: 0.9375rem;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+  outline: none;
+}
+.field-input:focus {
+  border-color: rgba(252, 255, 82, 0.45);
+  background: rgba(252, 255, 82, 0.03);
 }
