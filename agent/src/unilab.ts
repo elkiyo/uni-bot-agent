@@ -1,4 +1,5 @@
 import { UNILAB_BASE_URL } from "./addresses.js";
+import { logUniLabCall } from "./logger.js";
 
 /** Thin client for uni-lab.xyz's pay-per-query API (docs: https://uni-lab-xyz.vercel.app/api-docs). */
 
@@ -37,15 +38,21 @@ export interface PoolSetupInitialResponse {
 export async function poolSetupInitial(
   apiKey: string,
   params: PoolSetupInitialParams,
+  vaultAddress: string,
 ): Promise<PoolSetupInitialResponse> {
-  return callPaidEndpoint(apiKey, "pool-setup-initial", {
-    usd_pool_investment: params.usdPoolInvestment,
-    current_price_volatile_asset: params.currentPriceVolatileAsset,
-    min_price_lower_limit: params.minPriceLowerLimit,
-    max_price_upper_limit: params.maxPriceUpperLimit,
-    tx_hash: params.txHash,
-    blockchain: "celo",
-  });
+  return callPaidEndpoint(
+    apiKey,
+    "pool-setup-initial",
+    {
+      usd_pool_investment: params.usdPoolInvestment,
+      current_price_volatile_asset: params.currentPriceVolatileAsset,
+      min_price_lower_limit: params.minPriceLowerLimit,
+      max_price_upper_limit: params.maxPriceUpperLimit,
+      tx_hash: params.txHash,
+      blockchain: "celo",
+    },
+    vaultAddress,
+  );
 }
 
 export interface RcRlpRebalanceParams {
@@ -64,32 +71,79 @@ export interface RcRlpRebalanceResponse {
 export async function rcRlpRebalance(
   apiKey: string,
   params: RcRlpRebalanceParams,
+  vaultAddress: string,
 ): Promise<RcRlpRebalanceResponse> {
-  return callPaidEndpoint(apiKey, "rc-rlp-rebalance", {
-    A1: params.currentLiquidityUsd,
-    B1: params.amountToRecoverUsd,
-    C1: params.currentPriceVolatileAsset,
-    D1: params.newLowerBound,
-    E1: params.reinvestmentAmountUsd,
-    tx_hash: params.txHash,
-    blockchain: "celo",
-  });
+  return callPaidEndpoint(
+    apiKey,
+    "rc-rlp-rebalance",
+    {
+      A1: params.currentLiquidityUsd,
+      B1: params.amountToRecoverUsd,
+      C1: params.currentPriceVolatileAsset,
+      D1: params.newLowerBound,
+      E1: params.reinvestmentAmountUsd,
+      tx_hash: params.txHash,
+      blockchain: "celo",
+    },
+    vaultAddress,
+  );
 }
 
+/** Every call (request + response or error) is persisted via logUniLabCall —
+ * see the "guardar los datos de la consulta" ask: this is the single choke
+ * point both paid endpoints go through, so it's the natural place to record
+ * a full audit trail of what uni-lab was asked and what it answered. */
 async function callPaidEndpoint(
   apiKey: string,
   endpoint: string,
   body: Record<string, unknown>,
+  vaultAddress: string,
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`${UNILAB_BASE_URL}/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    // 402 here means the on-chain payment tx wasn't found/valid yet — the caller
-    // should confirm more blocks and retry rather than treat this as fatal.
-    throw new Error(`${endpoint} failed: ${res.status} ${await res.text()}`);
+  const startedAt = Date.now();
+  try {
+    const res = await fetch(`${UNILAB_BASE_URL}/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // leave as raw text
+    }
+
+    logUniLabCall({
+      vault: vaultAddress,
+      endpoint,
+      request: body,
+      httpStatus: res.status,
+      response: parsed,
+      ok: res.ok,
+      durationMs: Date.now() - startedAt,
+    });
+
+    if (!res.ok) {
+      // 402 here means the on-chain payment tx wasn't found/valid yet — the
+      // caller should confirm more blocks and retry rather than treat this as fatal.
+      throw new Error(`${endpoint} failed: ${res.status} ${text}`);
+    }
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    if (!(err instanceof Error && err.message.startsWith(`${endpoint} failed:`))) {
+      // Network-level failure (never got an HTTP response) — still log it.
+      logUniLabCall({
+        vault: vaultAddress,
+        endpoint,
+        request: body,
+        httpStatus: 0,
+        response: null,
+        ok: false,
+        durationMs: Date.now() - startedAt,
+        error: String(err),
+      });
+    }
+    throw err;
   }
-  return res.json() as Promise<Record<string, unknown>>;
 }

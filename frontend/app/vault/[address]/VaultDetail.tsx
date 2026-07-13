@@ -6,6 +6,7 @@ import { parseUnits, formatUnits } from "viem";
 import { Header } from "../../components/Header";
 import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
+import { RebalanceCountdown } from "./RebalanceCountdown";
 import { rangeVaultAbi, erc20Abi } from "@/lib/contracts";
 import { USDT } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
@@ -25,6 +26,12 @@ const reads = (address: `0x${string}`) =>
     "paused",
     "reinjectionActive",
     "targetConfigured",
+    "reinjectionAmount",
+    "periodicRebalanceInterval",
+    "minRebalanceInterval",
+    "lastRebalanceTimestamp",
+    "maxSlippageBps",
+    "maxRangeDeviationBps",
   ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName }) as const);
 
 export function VaultDetail({ address }: { address: `0x${string}` }) {
@@ -52,6 +59,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     paused,
     reinjectionActive,
     targetConfigured,
+    reinjectionAmount,
+    periodicRebalanceInterval,
+    minRebalanceInterval,
+    lastRebalanceTimestamp,
+    maxSlippageBps,
+    maxRangeDeviationBps,
   ] = data?.map((d) => d.result) ?? [];
 
   const isOwner = Boolean(
@@ -186,7 +199,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
             {hasPosition && <PositionNFT tokenId={positionTokenId as bigint} />}
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                   Rango objetivo
@@ -217,12 +230,57 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   <p className="mt-2 text-sm text-white/90">sin configurar</p>
                 )}
               </div>
+
+              <RebalanceCountdown
+                lastRebalanceTimestamp={(lastRebalanceTimestamp as bigint) ?? 0n}
+                periodicRebalanceInterval={(periodicRebalanceInterval as bigint) ?? 0n}
+                hasPosition={hasPosition}
+                paused={Boolean(paused)}
+                atRebalanceLimit={Boolean(
+                  rebalanceCount !== undefined &&
+                    maxRebalances !== undefined &&
+                    (rebalanceCount as bigint) >= (maxRebalances as bigint),
+                )}
+              />
+
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                   Operador
                 </span>
                 <p className="mt-2 break-all font-mono text-sm text-white/90">{String(operator)}</p>
               </div>
+            </div>
+
+            {/* Vault configuration — what was set at create/reconfigure time */}
+            <div className="glass mt-4 rounded-2xl p-5">
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                Configuración del agente
+              </span>
+              <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+                <ConfigRow
+                  k="Reinyección alternada"
+                  v={`${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} USDT`}
+                />
+                <ConfigRow
+                  k="Rebalanceo periódico"
+                  v={
+                    periodicRebalanceInterval && (periodicRebalanceInterval as bigint) > 0n
+                      ? `cada ${Number(periodicRebalanceInterval) / 3600}h`
+                      : "desactivado"
+                  }
+                />
+                <ConfigRow
+                  k="Cooldown mínimo"
+                  v={
+                    minRebalanceInterval && (minRebalanceInterval as bigint) > 0n
+                      ? `${Number(minRebalanceInterval) / 3600}h`
+                      : "sin piso"
+                  }
+                />
+                <ConfigRow k="Slippage máx." v={`${Number(maxSlippageBps ?? 0n) / 100}%`} />
+                <ConfigRow k="Desviación máx. de rango" v={`${maxRangeDeviationBps ?? 0} ticks`} />
+                <ConfigRow k="Tope de rebalanceos" v={`${maxRebalances ?? 0}`} />
+              </dl>
             </div>
 
             {/* Owner actions */}
@@ -344,6 +402,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         )}
       </main>
     </>
+  );
+}
+
+function ConfigRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-faint">{k}</dt>
+      <dd className="mt-0.5 font-medium text-white/90">{v}</dd>
+    </div>
   );
 }
 

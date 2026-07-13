@@ -108,13 +108,17 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   const payTxHash = await payUniLabAndGetTxHash(vaultAddress);
 
   try {
-    await poolSetupInitial(record.uniLabApiKey, {
-      usdPoolInvestment: Number(investableUsdt) / 1e6,
-      currentPriceVolatileAsset: ethPrice,
-      minPriceLowerLimit: ethPriceFromTick(targetTickLower),
-      maxPriceUpperLimit: ethPriceFromTick(targetTickUpper),
-      txHash: payTxHash,
-    });
+    await poolSetupInitial(
+      record.uniLabApiKey,
+      {
+        usdPoolInvestment: Number(investableUsdt) / 1e6,
+        currentPriceVolatileAsset: ethPrice,
+        minPriceLowerLimit: ethPriceFromTick(targetTickLower),
+        maxPriceUpperLimit: ethPriceFromTick(targetTickUpper),
+        txHash: payTxHash,
+      },
+      vaultAddress,
+    );
     // Response schema isn't fully pinned down (see unilab.ts) — the locally
     // computed swapIx above is what actually gets sent either way, per the
     // fallback-on-parse-failure design also used in runRebalance below.
@@ -205,14 +209,18 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
 
   try {
     const reinjectionUsd = reinjectionActive ? 0 : Number(reinjectionAmount) / 1e6; // !active this cycle -> we're about to reinject
-    const resp = await rcRlpRebalance(record.uniLabApiKey, {
-      currentLiquidityUsd: positionValueUsd,
-      amountToRecoverUsd: positionValueUsd,
-      currentPriceVolatileAsset: ethPrice,
-      newLowerBound: newLowerPrice,
-      reinvestmentAmountUsd: reinjectionUsd,
-      txHash: payTxHash,
-    });
+    const resp = await rcRlpRebalance(
+      record.uniLabApiKey,
+      {
+        currentLiquidityUsd: positionValueUsd,
+        amountToRecoverUsd: positionValueUsd,
+        currentPriceVolatileAsset: ethPrice,
+        newLowerBound: newLowerPrice,
+        reinvestmentAmountUsd: reinjectionUsd,
+        txHash: payTxHash,
+      },
+      vaultAddress,
+    );
     const upper = (resp as Record<string, unknown>).upper_bound ?? (resp as Record<string, unknown>).newUpperBound;
     if (typeof upper === "number" && upper > newLowerPrice) newUpperPrice = upper;
   } catch (err) {
