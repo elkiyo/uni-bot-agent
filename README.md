@@ -30,9 +30,15 @@ Full design rationale, decision history, and the reasoning behind every guardrai
       confirmed running against live Celo RPC.
 - [x] `frontend/` — Mis vaults, crear vault, detalle de vault, panel admin. Builds,
       lints, and all four routes render.
-- [ ] Mainnet deployment — `contracts/script/Deploy.s.sol` is ready; pending the
-      Ledger-signed transaction (see PR/commit history for the exact command).
-- [ ] Point `agent/.env` and `frontend/.env.local` at the deployed addresses
+- [x] **Deployed to Celo mainnet**, Ledger-signed:
+  - `PlatformConfig`: [`0xC419B014fA6364B6f71375430042ACf3965E5d55`](https://celoscan.io/address/0xC419B014fA6364B6f71375430042ACf3965E5d55)
+  - `VaultFactory`: [`0xCF281b7bc1dEd843542008a577D7bdaa8F41B0Cb`](https://celoscan.io/address/0xCF281b7bc1dEd843542008a577D7bdaa8F41B0Cb)
+  - `RangeVault` implementation: [`0xC352dbB3b85a7015717167EC5126D94abc77Ac94`](https://celoscan.io/address/0xC352dbB3b85a7015717167EC5126D94abc77Ac94)
+  - All constructor values (owner, defaultOperator, rebalanceFee, feeToken,
+    maxDepositUsd, and the factory's positionManager/swapRouter/uniLabPaymentWallet
+    links) re-read from chain and confirmed to match after deploy.
+- [x] `agent/.env` and `frontend/.env.local` point at the deployed addresses (both
+      gitignored — see each package's `.env*.example` for the non-secret template)
 - [ ] Hackathon registration (`celobuilders.xyz`) — deliberately last, see `PLAN.md` Context
 
 ## Quickstart

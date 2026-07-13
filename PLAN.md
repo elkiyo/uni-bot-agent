@@ -149,7 +149,11 @@ Next.js + wagmi/viem + RainbowKit (auth = conectar wallet, sin login propio).
 
 1. **Día 1:** `npx skills add celo-org/celopedia-skills` (reverificar direcciones Uniswap) + repo público + Telegram del hackathon. Scaffold Foundry. *(El registro en `celobuilders.xyz` se deja para el final por decisión explícita del usuario — ver Context. El código de `attribution.ts` se construye igual desde el día 1, listo para usar el tag en cuanto exista, pero durante el desarrollo las transacciones van sin tag real.)*
 2. **Día 1-2:** `PlatformConfig.sol` + `RangeVault.sol` (lógica + guardrails) + tests en fork de Celo mainnet. No se avanza a mainnet real hasta que estos tests pasen.
-3. **Día 2-3:** `VaultFactory.sol` (clones) + tests de integración factory↔vault↔config. Deploy de los 3 contratos a Celo mainnet.
+3. **Día 2-3:** `VaultFactory.sol` (clones) + tests de integración factory↔vault↔config. Deploy de los 3 contratos a Celo mainnet. ✅ **Hecho** — firmado con Ledger (`forge script script/Deploy.s.sol:Deploy --ledger`, dos transacciones confirmadas on-chain, valores del constructor releídos y verificados contra chain):
+   - `PlatformConfig`: `0xC419B014fA6364B6f71375430042ACf3965E5d55`
+   - `VaultFactory`: `0xCF281b7bc1dEd843542008a577D7bdaa8F41B0Cb`
+   - `RangeVault` implementation: `0xC352dbB3b85a7015717167EC5126D94abc77Ac94`
+   - Nota operativa: el Ledger usaba el índice de derivación 2 (`--mnemonic-indexes 2`), no el 0 por defecto — el primer intento falló porque `--sender` no coincidía con la cuenta activa del dispositivo, y hubo que ubicar el índice correcto con `cast wallet address --ledger --mnemonic-index N`. También hubo errores transitorios de `hidapi` en el transporte USB al Ledger que se resolvieron reintentando.
 4. **Día 3-4:** `agent/` — discovery, registro por vault en uni-lab, `initFlow`, `monitor`, `rebalancer`. Probar end-to-end con **un solo vault y montos mínimos reales**: crear vault → depositar chico → el agente arma la posición inicial → confirmar tag visible en el explorer/leaderboard → forzar un rebalanceo → confirmar que el dinero nunca sale del vault salvo a `owner`.
 5. **Día 4-6:** `frontend/` — conectar wallet, crear vault, dashboard, panel admin.
 6. **Día 6-7:** plataforma corriendo en vivo — crear algunos vaults de demo (propios y, si se puede, de un par de testers reales) para generar volumen multi-tenant genuino. Monitorear de cerca (contrato sin auditoría + ahora terceros con fondos reales).
