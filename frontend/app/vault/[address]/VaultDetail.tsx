@@ -5,6 +5,7 @@ import { useAccount, usePublicClient, useReadContracts, useWriteContract } from 
 import { parseUnits, formatUnits } from "viem";
 import { Header } from "../../components/Header";
 import { PositionNFT } from "./PositionNFT";
+import { ActivityFeed } from "./ActivityFeed";
 import { rangeVaultAbi, erc20Abi } from "@/lib/contracts";
 import { USDT } from "@/lib/addresses";
 
@@ -30,7 +31,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
 
-  const { data, refetch } = useReadContracts({ contracts: reads(address) });
+  // 15s polling keeps the stats live while the keeper acts — the page is a demo
+  // surface as much as a control panel.
+  const { data, refetch } = useReadContracts({
+    contracts: reads(address),
+    query: { refetchInterval: 15_000 },
+  });
   const [
     owner,
     operator,
@@ -100,8 +106,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
   async function handleReconfigure() {
     // Re-calls configureTarget keeping the existing on-chain tick range, so the
-    // owner can tune cadence/caps without recomputing prices.
+    // owner can tune cadence/caps without recomputing prices. The min/max sort
+    // also repairs vaults configured with inverted ticks by an older create
+    // flow (higher USD price of ETH = lower tick in this pool; the create page
+    // used to convert price bounds without sorting).
     if (targetTickLower === undefined || targetTickUpper === undefined) return;
+    const lo = Math.min(Number(targetTickLower), Number(targetTickUpper));
+    const hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
     await withTx("Reconfigurando", () =>
       writeContractAsync({
         address,
@@ -109,8 +120,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         functionName: "configureTarget",
         args: [
           (investableUsdt as bigint) ?? 0n,
-          targetTickLower,
-          targetTickUpper,
+          lo,
+          hi,
           BigInt(cfgMaxRebalances || String(maxRebalances ?? 0)),
           parseUnits(cfgReinjection || "0", 6),
           BigInt(Math.round(Number(cfgPeriodicHours || "24") * 3600)),
@@ -306,6 +317,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
               </div>
             )}
+
+            <ActivityFeed address={address} />
           </>
         )}
       </main>

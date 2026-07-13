@@ -1,5 +1,5 @@
 import type { Abi, Address } from "viem";
-import { publicClient } from "./wallet.js";
+import { publicClient, operatorAccount } from "./wallet.js";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./contracts.js";
 import { poolSetupInitial, rcRlpRebalance } from "./unilab.js";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "./priceMath.js";
@@ -37,6 +37,32 @@ async function payUniLabAndGetTxHash(vaultAddress: Address): Promise<`0x${string
   return hash;
 }
 
+/**
+ * Dry-runs a vault call as the operator, WITHOUT sending anything. Used as a
+ * gate before payUniLabFee: the payment is real money out of the vault's budget,
+ * and if the follow-up operation would revert anyway (as happened with the
+ * inverted-ticks vault — 10 cycles burned the entire 5 USDT budget on payments
+ * whose calculations could never be used), paying first is throwing money away.
+ */
+async function wouldSucceed(
+  vaultAddress: Address,
+  functionName: string,
+  args: readonly unknown[],
+): Promise<boolean> {
+  try {
+    await publicClient.simulateContract({
+      address: vaultAddress,
+      abi: RangeVaultAbi as Abi,
+      functionName,
+      args: args as unknown[],
+      account: operatorAccount?.address,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function runInitPosition(vaultAddress: Address, store: Store): Promise<void> {
   const record = store.getVault(vaultAddress);
   if (!record?.uniLabApiKey) {
@@ -62,6 +88,23 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     ethPriceUsd: ethPrice,
   });
 
+  const initArgs = [
+    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: 0n },
+    0n,
+    0n,
+  ] as const;
+
+  // Gate: don't spend 0.5 USDT of the vault's budget on a uni-lab query whose
+  // result can't be acted on (e.g. mis-configured vault → initPosition reverts).
+  if (!(await wouldSucceed(vaultAddress, "initPosition", initArgs))) {
+    logEvent({
+      level: "warn",
+      vault: vaultAddress,
+      msg: "initPosition simulation reverts — skipping cycle without paying uni-lab (check vault config)",
+    });
+    return;
+  }
+
   const payTxHash = await payUniLabAndGetTxHash(vaultAddress);
 
   try {
@@ -84,11 +127,7 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     });
   }
 
-  const hash = await sendTaggedTx(vaultAddress, RangeVaultAbi as Abi, "initPosition", [
-    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: 0n },
-    0n,
-    0n,
-  ]);
+  const hash = await sendTaggedTx(vaultAddress, RangeVaultAbi as Abi, "initPosition", initArgs);
   await publicClient.waitForTransactionReceipt({ hash });
 
   store.upsertVault({ ...record, positionInitialized: true });
@@ -139,6 +178,29 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   const newLowerPrice = ethPrice * (1 - width / 2 / 10_000);
   let newUpperPrice = ethPrice * (1 + width / 2 / 10_000);
 
+  // Gate before paying: simulate with the locally computed symmetric range (the
+  // API may adjust the upper bound afterwards, but if even this reverts —
+  // broken config, exhausted budget, cooldown — the 0.5 USDT would be wasted).
+  {
+    const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
+    const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
+    const probeArgs = [
+      Math.min(tickA, tickB),
+      Math.max(tickA, tickB),
+      { token0ToToken1: false, amountIn: 0n, amountOutMinimum: 0n },
+      0n,
+      0n,
+    ] as const;
+    if (!(await wouldSucceed(vaultAddress, "rebalance", probeArgs))) {
+      logEvent({
+        level: "warn",
+        vault: vaultAddress,
+        msg: "rebalance simulation reverts — skipping cycle without paying uni-lab",
+      });
+      return;
+    }
+  }
+
   const payTxHash = await payUniLabAndGetTxHash(vaultAddress);
 
   try {
@@ -162,8 +224,12 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
     });
   }
 
-  const newTickLower = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
-  const newTickUpper = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
+  // Higher USD price of ETH = lower tick in this pool, so the converted bounds
+  // come out swapped — sort them, Uniswap requires tickLower < tickUpper.
+  const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
+  const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
+  const newTickLower = Math.min(tickA, tickB);
+  const newTickUpper = Math.max(tickA, tickB);
 
   const hash = await sendTaggedTx(vaultAddress, RangeVaultAbi as Abi, "rebalance", [
     newTickLower,

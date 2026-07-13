@@ -90,8 +90,13 @@ export default function CreateVault() {
       const widthFraction = Number(widthPct) / 100;
       const lowerPrice = currentPrice * (1 - widthFraction / 2);
       const upperPrice = currentPrice * (1 + widthFraction / 2);
-      const targetTickLower = alignToTickSpacing(tickFromEthPrice(lowerPrice), Number(tickSpacing));
-      const targetTickUpper = alignToTickSpacing(tickFromEthPrice(upperPrice), Number(tickSpacing));
+      // In this pool a HIGHER USD price of ETH maps to a LOWER tick (token1/token0
+      // inversion), so converting the price bounds yields swapped ticks — sort them,
+      // Uniswap requires tickLower < tickUpper or every mint reverts.
+      const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice), Number(tickSpacing));
+      const tickB = alignToTickSpacing(tickFromEthPrice(upperPrice), Number(tickSpacing));
+      const targetTickLower = Math.min(tickA, tickB);
+      const targetTickUpper = Math.max(tickA, tickB);
 
       const investable = parseUnits(investAmount, 6);
       const reserve = parseUnits(reinjectionAmount, 6);

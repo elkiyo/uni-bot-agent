@@ -7,6 +7,10 @@ export const POOL = "0x6F42B9D2085a0dEb711C00A460a98B9863ae4897" as const; // US
 export const FEE_TIER = 3000;
 export const POSITION_MANAGER = "0x3d79EdAaBC0EaB6F08ED885C05Fc0B014290D95A" as const; // Uniswap V3 NonfungiblePositionManager
 
+// Block the factory was deployed in (tx 0x933d65e0..., 2026-07-13) — no vault
+// event can precede it, so it's the safe lower bound for event scans.
+export const FACTORY_DEPLOY_BLOCK = 72026070n;
+
 // Set once contracts/script/Deploy.s.sol has been run against Celo mainnet.
 export const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_FACTORY_ADDRESS || "") as `0x${string}`;
 export const PLATFORM_CONFIG_ADDRESS = (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS || "") as `0x${string}`;
