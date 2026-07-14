@@ -10,7 +10,7 @@ Qué está en producción hoy, qué es el eslabón débil, y en qué orden escal
 | Contratos (`PlatformConfig`, `VaultFactory`, `RangeVault`) | Celo mainnet | ✅ Inmutables, no requieren infra |
 | Frontend | Vercel (`uni-bot-agent-gules.vercel.app`) | ✅ Serverless, escala solo |
 | Keeper (`frontend/lib/keeper/` + `POST /api/cron/tick`) | Vercel (mismo proyecto que el frontend) | ✅ Ya no depende de la Mac — ver abajo |
-| Disparo del tick cada 5 min | GitHub Actions (`.github/workflows/keeper-cron.yml`) | ✅ Gratis; ver nota de precisión abajo |
+| Disparo del tick cada 5 min | cron-job.org (externo) | ✅ Gratis, confirmado disparando cada 5 min de verdad — ver nota abajo (GitHub Actions se probó primero y no sirvió) |
 | Deploy a producción en cada push a `main` | GitHub Actions (`.github/workflows/deploy.yml`) | ✅ No usa la integración nativa de Git de Vercel — ver nota abajo |
 | Estado del keeper (vaults, api_keys de uni-lab, último bloque escaneado, log de consultas a uni-lab) | Supabase/Postgres (Vercel Marketplace, tier gratis) | ✅ Persiste entre invocaciones serverless |
 | `agent/` (Node local, node-cron) | — | 🗄️ Superseded — se mantiene solo como herramienta de debug manual, ver abajo |
@@ -25,10 +25,10 @@ expresión más frecuente falla al deployar, no es solo imprecisión). Confirmad
 contra la doc oficial de Vercel el 2026-07-13.
 
 Arquitectura elegida (decisión explícita del usuario entre esto y upgrade a
-Vercel Pro $20/mes): **GitHub Actions dispara el tick, Vercel lo ejecuta.**
+Vercel Pro $20/mes): **un disparador externo pega al tick, Vercel lo ejecuta.**
 
 ```
-GitHub Actions (cron */5 * * * *)
+cron-job.org (cada 5 min)
   → POST https://uni-bot-agent-gules.vercel.app/api/cron/tick
      (Authorization: Bearer $CRON_SECRET)
   → frontend/app/api/cron/tick/route.ts
@@ -37,6 +37,22 @@ GitHub Actions (cron */5 * * * *)
 ```
 
 - **Costo: $0.** Sin upgrade de plan, sin VPS.
+- **Por qué cron-job.org y no GitHub Actions:** el primer intento usó un
+  `schedule: cron: "*/5 * * * *"` en `.github/workflows/keeper-cron.yml`.
+  Confirmado con `gh run list` que en 10+ horas solo disparó ~7 veces (cada
+  1.5–2h en vez de cada 5 min) — es el throttling documentado que GitHub
+  aplica a scheduled workflows en repos de bajo tráfico, no un bug del YAML.
+  cron-job.org (servicio dedicado, gratis) sí cumple la cadencia real,
+  confirmado revisando `vercel logs` con timestamps exactos. El workflow de
+  GitHub quedó solo como disparo manual de respaldo (`workflow_dispatch`,
+  sin `schedule`) para forzar un tick desde la pestaña Actions sin necesitar
+  entrar a cron-job.org.
+- **Gotcha real que costó diagnosticar:** al configurar cron-job.org, dos
+  errores en cadena — (1) el método quedó en GET por defecto en vez de POST
+  (405), (2) el header se cargó con el token pelado, sin el prefijo `Bearer `
+  (401). Ambos se ven clarísimo en `vercel logs <deployment> --since 1h` (o en
+  el historial de ejecuciones del propio cron-job.org) por el código de
+  estado HTTP exacto — no hace falta adivinar.
 - **Por qué Supabase y no un KV puro (Redis/Upstash):** se evaluó Upstash
   primero por ser lo más simple para el uso original (un hash + un lock), pero
   se cambió a Supabase porque da tablas reales consultables por SQL — útil
@@ -57,10 +73,9 @@ GitHub Actions (cron */5 * * * *)
 - **Duración de función:** Hobby permite hasta 300s con Fluid Compute
   (confirmado en la doc de Vercel); el route pone `maxDuration = 120`, de sobra
   para varios vaults con confirmaciones de tx incluidas.
-- **Precisión real del trigger:** el cron de GitHub Actions es *best-effort* —
-  la doc de GitHub advierte que puede demorarse durante picos de carga de la
-  plataforma. Para un puñado de vaults de hackathon esto es aceptable; no es
-  garantía de tiempo real como sí lo sería Vercel Pro.
+- **Precisión real del trigger:** confirmada empíricamente cada 5 min en punto
+  con cron-job.org (ver arriba). Sigue sin ser una garantía dura de tiempo
+  real como Vercel Pro, pero para un puñado de vaults de hackathon sobra.
 - **Variables de entorno del keeper** (Vercel → Project Settings →
   Environment Variables, nunca con prefijo `NEXT_PUBLIC_`): `OPERATOR_PRIVATE_KEY`
   (la misma wallet que ya operaba desde `agent/.env`), `CELO_RPC_URL`,

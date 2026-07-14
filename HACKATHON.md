@@ -3,23 +3,30 @@
 Fuente: https://celoplatform.notion.site/Agentic-Payments-DeFAI-Hackathon-364d5cb803de800c9502d8a384716324
 (extraído directo de la API interna de Notion el 2026-07-14, porque la página no renderiza vía fetch normal — ver nota al final sobre cómo se hizo).
 
+## ✅ Registrado (2026-07-14)
+
+- **Attribution Tag real: `celo_e38cdd3210a6`** — obtenido de `PUT https://celobuilders.xyz/submissions/me` (proyecto `uni-bot-agent`, track `most-revenue-generated`, repo `github.com/elkiyo/uni-bot-agent`). Ya cargado como `ATTRIBUTION_TAG` en Vercel y redeployado — desde ahora, toda transacción real del keeper suma al leaderboard.
+- **Deadline confirmado, sin ambigüedad:** la API real de submission (no la página de marketing de Notion) dice `submissionDeadline: 2026-08-03T09:00:00.000Z` — **3 de agosto, 9am GMT**. La frase suelta que mencionaba 20 de julio era efectivamente texto viejo desactualizado (ver sección de abajo, dejada como registro histórico).
+- Slug real del hackathon: `agentic-payments-defai` (no `celo-onchain-agents`, que es un hackathon distinto y ya cerrado — el skill genérico usa ese como ejemplo).
+
 ## Próximos pasos inmediatos (pendiente, en orden)
 
-1. **Registrar en celobuilders.xyz** (`npx skills add https://celobuilders.xyz`) — obtiene el Attribution Tag real. Es el bloqueante de todo lo demás: sin esto, ninguna transacción del keeper cuenta para el leaderboard de Track 1, sin importar cuánto volumen genere el vault.
-2. Cargar el tag obtenido como `ATTRIBUTION_TAG` en Vercel (env var del proyecto `uni-lab/uni-bot-agent`) — el código ya lo usa automáticamente en cuanto tenga valor (`frontend/lib/keeper/attribution.ts`), no requiere otro deploy.
-3. Registrar el agente en ERC-8004 vía 8004scan.io.
-4. Grabar demo (mostrar: crear vault → depósito → el agente arma la posición → rebalanceo real con swap → panel admin cobrando fees) — explicar explícitamente el rebalanceo periódico forzado como gestión activa real (no actividad artificial), dado que es justo lo que la revisión manual anti-sybil de los jueces va a mirar.
-5. Post en X etiquetando @CeloDevs y @Celo con el link del registro ERC-8004.
-6. Submission final vía Celo Builders Skill (`Help me submit my project to the Celo Agentic Payments & DEFAI Hackathon`).
+1. ~~Registrar en celobuilders.xyz~~ ✅ hecho.
+2. ~~Cargar el tag en Vercel~~ ✅ hecho.
+3. Registrar el agente en ERC-8004 vía 8004scan.io (campo `erc8004Url`, requerido para publicar).
+4. Agregar `agentWalletAddress` a la submission (requerido para publicar) — la wallet del operador: `0xAe3921825fEC520cADa98EB0790BC91a61d4286b`.
+5. Grabar demo (mostrar: crear vault → depósito → el agente arma la posición → rebalanceo real con swap → panel admin cobrando fees) — explicar explícitamente el rebalanceo periódico forzado como gestión activa real (no actividad artificial), dado que es justo lo que la revisión manual anti-sybil de los jueces va a mirar.
+6. Post en X etiquetando @CeloDevs y @Celo con el link del registro ERC-8004 → va en el campo `socialLink` de la submission.
+7. Publicar (`POST /submissions/me/publish`) — se puede actualizar hasta el cierre del hackathon, no hay que apurarlo.
 
 **Nota clave de la conversación:** el tag no está atado a un vault ni a una wallet — se agrega al calldata de *cada* transacción que manda el keeper operador, sin importar de qué vault sea. Esto significa que la actividad de **todos** los vaults de la plataforma suma al mismo total del leaderboard — cuantos más usuarios depositen, más alto sube el volumen tageado, sin necesidad de "gamear" nada.
 
-## ⚠️ Contradicción real encontrada en la página — resolver antes de dar nada por sentado
+## ⚠️ Contradicción hallada en la página de Notion (ya resuelta, dejado como registro)
 
-- **Sección "🗓️ Timeline" (la fuente más explícita):** Kick-off 7 jul → **Submission Deadline: 3 de agosto, 9am GMT** → Ganadores anunciados 6 de agosto.
-- **Sección "Cómo participar" (más abajo, contradice lo anterior):** *"The rest of your submission (description, demo, X post, 8004 ID) can wait until July 20, 09:00 GMT. Your tag can't."*
+- **Sección "🗓️ Timeline" de la página de Notion:** Kick-off 7 jul → **Submission Deadline: 3 de agosto, 9am GMT** → Ganadores anunciados 6 de agosto.
+- **Sección "Cómo participar" (más abajo, contradecía lo anterior):** *"The rest of your submission (description, demo, X post, 8004 ID) can wait until July 20, 09:00 GMT. Your tag can't."*
 
-No se puede resolver la ambigüedad solo leyendo la página — probablemente es texto viejo de una versión anterior que no se actualizó al extender el plazo. **Confirmar en el Telegram del hackathon antes de asumir cualquiera de las dos fechas como definitiva.** Mientras tanto, tratar el **20 de julio como el objetivo real** (el escenario más conservador) y el 3 de agosto como margen extra si se confirma.
+**Resuelto:** la API real de `celobuilders.xyz` (la plataforma de submission en sí, no la página de marketing) confirma `2026-08-03T09:00:00.000Z` sin ambigüedad — era texto viejo en Notion.
 
 ## Qué gana plata (prize pool total: $5,000 en $CELO)
 
@@ -81,15 +88,16 @@ No se puede resolver la ambigüedad solo leyendo la página — probablemente es
 
 | Requisito | Estado |
 |---|---|
-| Agente que genera volumen on-chain real en Celo | ✅ Vault no-custodial + keeper operando en producción (Vercel + GitHub Actions), rebalanceos reales confirmados |
+| Agente que genera volumen on-chain real en Celo | ✅ Vault no-custodial + keeper operando en producción (Vercel + GitHub Actions + cron-job.org), rebalanceos reales confirmados |
 | Repo público de GitHub | ✅ `github.com/elkiyo/uni-bot-agent` |
-| Código de Attribution Tags integrado | ✅ `@celo/attribution-tags`, `toDataSuffix()` en cada tx del keeper — falta solo el valor real de `ATTRIBUTION_TAG` |
-| **Registro en celobuilders.xyz (obtener el tag)** | ❌ **Pendiente — es el paso más urgente, cada día sin esto es volumen que no cuenta para el leaderboard** |
+| Código de Attribution Tags integrado | ✅ `@celo/attribution-tags`, `toDataSuffix()` en cada tx del keeper |
+| **Registro en celobuilders.xyz (obtener el tag)** | ✅ Hecho — `celo_e38cdd3210a6`, cargado en Vercel |
 | Lógica económica real, no wash-trading aparente | ✅ Documentado explícitamente en `PLAN.md` (ciclo de reinyección alternada, mismo patrón que gestores reales) |
 | Registro ERC-8004 (8004scan.io) | ❌ Pendiente |
+| `agentWalletAddress` en la submission | ❌ Pendiente |
 | Demo grabado | ❌ Pendiente |
 | Post en X con @CeloDevs @Celo + link ERC-8004 | ❌ Pendiente |
-| Submission final vía Celo Builders Skill | ❌ Pendiente |
+| Submission final (publicar) vía Celo Builders Skill | ❌ Pendiente — se puede dejar para el final, se puede editar hasta el cierre |
 
 ## Recomendación
 

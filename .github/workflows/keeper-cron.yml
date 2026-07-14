@@ -1,13 +1,15 @@
-name: Keeper tick
+name: Keeper tick (manual backup)
 
-# Vercel's own Cron Jobs are capped at once/day on the Hobby plan (any more
-# frequent expression fails at deploy time) — see SCALING.md. This workflow
-# is the actual trigger: every 5 minutes it POSTs to the keeper's serverless
-# endpoint, which does one discovery+monitor+rebalance pass over all vaults.
+# The real 5-minute trigger is an external cron-job.org job hitting
+# /api/cron/tick directly — see SCALING.md. GitHub Actions' own `schedule`
+# trigger was tried first but proved unreliable on this repo: confirmed via
+# `gh run list` that a `*/5 * * * *` schedule actually fired only ~7 times in
+# 10+ hours (roughly every 1.5-2h instead of every 5 min), which is GitHub's
+# documented best-effort throttling on low-traffic repos, not a bug in this
+# workflow. Kept here as a manual (workflow_dispatch-only) way to force a tick
+# from the Actions tab without needing cron-job.org access.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
-  workflow_dispatch: {} # manual trigger from the Actions tab, for testing
+  workflow_dispatch: {}
 
 concurrency:
   group: keeper-tick
