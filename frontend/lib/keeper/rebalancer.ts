@@ -147,11 +147,11 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   }
 
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, reinjectionAmount, positionManager, reinjectionActive] = await Promise.all([
+  const [positionTokenId, reinjectionCap, positionManager, reserveBalance] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
-    vault.read.reinjectionAmount() as Promise<bigint>,
+    vault.read.reinjectionAmount() as Promise<bigint>, // owner's per-cycle ceiling — see RangeVault.sol
     vault.read.positionManager() as Promise<Address>,
-    vault.read.reinjectionActive() as Promise<boolean>,
+    vault.read.reserveBalance() as Promise<bigint>,
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -200,16 +200,25 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   });
   const positionValueUsd = closedAmount0Raw * 1e-6 + closedAmount1Raw * 1e-18 * ethPrice;
 
-  // What decreaseLiquidity+collect will hand back, adjusted for this cycle's
-  // reinjection move (see RangeVault.rebalance step 3): reinjectionActive
-  // stored *before* the tx flips at the start of a reinjecting cycle, moving
-  // reinjectionAmount of token0 OUT of reserveBalance and into what's mintable.
-  // Platform-fee dust (step 4, paid in token0) is small enough to skip modeling
-  // here — the swap only needs to get the token0/token1 RATIO right, not the
-  // exact wei amount, since Uniswap's mint() only uses what the range needs.
-  const reinjectingThisCycle = !reinjectionActive;
-  const reinjectionDeltaRaw = reinjectingThisCycle ? Number(reinjectionAmount) : -Number(reinjectionAmount);
-  const availableToken0Raw = BigInt(Math.max(0, Math.floor(closedAmount0Raw + reinjectionDeltaRaw)));
+  // Reinjection this cycle: the contract no longer tracks or forces an
+  // alternating pattern (see PLAN.md) — the keeper decides, bookkeeping its
+  // own alternation in Supabase (record.reinjectionActive) so consecutive
+  // cycles still oscillate the way the original design intended, without the
+  // contract enforcing it. Capped by both the owner's per-cycle ceiling and
+  // by what's actually sitting in reserve — never more than either allows.
+  const wantsToReinjectThisCycle = !record.reinjectionActive;
+  const reinjectAmount = wantsToReinjectThisCycle
+    ? reinjectionCap < reserveBalance
+      ? reinjectionCap
+      : reserveBalance
+    : 0n;
+
+  // What decreaseLiquidity+collect will hand back, plus whatever gets
+  // reinjected this cycle. Platform-fee dust (step 4, paid in token0) is
+  // small enough to skip modeling here — the swap only needs to get the
+  // token0/token1 RATIO right, not the exact wei amount, since Uniswap's
+  // mint() only uses what the range needs.
+  const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + reinjectAmount;
   const availableToken1Raw = BigInt(Math.floor(closedAmount1Raw));
 
   const newLowerPrice = ethPriceFromTick(newFloorTick); // the USD floor — this is D1
@@ -239,6 +248,7 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
       probeTickLower,
       probeTickUpper,
       { token0ToToken1: probeSwap.token0ToToken1, amountIn: probeSwap.amountIn, amountOutMinimum: 0n },
+      reinjectAmount,
       0n,
       0n,
     ] as const;
@@ -255,7 +265,7 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   const payTxHash = await payUniLabAndGetTxHash(vaultAddress);
 
   try {
-    const reinjectionUsd = reinjectionActive ? 0 : Number(reinjectionAmount) / 1e6; // !active this cycle -> we're about to reinject
+    const reinjectionUsd = Number(reinjectAmount) / 1e6; // E1 = what the keeper is actually doing this cycle
     const resp = await rcRlpRebalance(
       record.uniLabApiKey,
       {
@@ -311,10 +321,24 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
     newTickLower,
     newTickUpper,
     { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum: 0n },
+    reinjectAmount,
     0n,
     0n,
   ]);
   await publicClient.waitForTransactionReceipt({ hash });
 
-  logEvent({ level: "info", vault: vaultAddress, msg: "rebalanced", reason, newTickLower, newTickUpper, txHash: hash });
+  // Persist the keeper's own alternation bookkeeping for next cycle — the
+  // contract has no memory of this anymore (see PLAN.md).
+  await store.upsertVault({ ...record, reinjectionActive: wantsToReinjectThisCycle });
+
+  logEvent({
+    level: "info",
+    vault: vaultAddress,
+    msg: "rebalanced",
+    reason,
+    newTickLower,
+    newTickUpper,
+    reinjectAmount: reinjectAmount.toString(),
+    txHash: hash,
+  });
 }

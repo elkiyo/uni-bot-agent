@@ -24,7 +24,7 @@ const reads = (address: `0x${string}`) =>
     "targetTickLower",
     "targetTickUpper",
     "paused",
-    "reinjectionActive",
+    "closed",
     "targetConfigured",
     "reinjectionAmount",
     "periodicRebalanceInterval",
@@ -57,7 +57,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     targetTickLower,
     targetTickUpper,
     paused,
-    reinjectionActive,
+    closed,
     targetConfigured,
     reinjectionAmount,
     periodicRebalanceInterval,
@@ -188,7 +188,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <Stat
                 label="Reserva reinyección"
                 value={`${formatUnits((reserveBalance as bigint) ?? 0n, 6)} USDT`}
-                hint={reinjectionActive ? "próximo ciclo: retira" : "próximo ciclo: reinyecta"}
+                hint={`tope por ciclo: ${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} USDT`}
               />
               <Stat
                 label="Rebalanceos"
@@ -386,7 +386,26 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   >
                     Emergency withdraw
                   </button>
+                  {!closed && (
+                    <button
+                      onClick={() =>
+                        withTx("Cerrando vault", () =>
+                          writeContractAsync({ address, abi: rangeVaultAbi, functionName: "closeVault", args: [] }),
+                        )
+                      }
+                      disabled={Boolean(busy)}
+                      className="btn-danger"
+                      title="Solo funciona si el vault ya está vacío — retirá todo primero"
+                    >
+                      Cerrar vault
+                    </button>
+                  )}
                 </div>
+                {Boolean(closed) && (
+                  <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-negative">
+                    Vault cerrado permanentemente — ya no puede recibir depósitos ni operar.
+                  </p>
+                )}
 
                 {busy && (
                   <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">

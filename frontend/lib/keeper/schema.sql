@@ -14,9 +14,18 @@ create table if not exists keeper_vaults (
   uni_lab_api_key text,
   position_initialized boolean not null default false,
   created_at_block text not null,
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- Whether the keeper reinjected reserveBalance into the position on its most
+  -- recent rebalance for this vault. The contract no longer tracks or forces
+  -- an alternating pattern (see PLAN.md) — the keeper decides E1 freely each
+  -- cycle, informed by uni-lab's live simulation; this column is purely the
+  -- keeper's own bookkeeping of what it last chose, not a contract guarantee.
+  reinjection_active boolean not null default false
 );
 alter table keeper_vaults enable row level security;
+
+-- Migration for a table created before reinjection_active existed:
+-- alter table keeper_vaults add column if not exists reinjection_active boolean not null default false;
 
 -- Generic key/value for keeper bookkeeping (currently just lastProcessedBlock).
 create table if not exists keeper_state (

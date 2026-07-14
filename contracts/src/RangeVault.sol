@@ -46,6 +46,9 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     error DepositExceedsPlatformCap();
     error ZeroAddress();
     error NotPositionManager();
+    error VaultClosed();
+    error VaultNotEmpty();
+    error ReinjectionExceedsCap();
 
     // ---------------------------------------------------------------------
     // Immutable-ish config (set once in initialize())
@@ -78,7 +81,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     uint256 public investableUsdt; // capital not yet deployed into a position
     uint256 public usdtBudget; // earmarked for payUniLabFee()
-    uint256 public reserveBalance; // earmarked for the alternating reinjection cycle
+    uint256 public reserveBalance; // capital available for the keeper to reinject into a position, over time
 
     // ---------------------------------------------------------------------
     // Target config — owner-set, what the agent should build/maintain
@@ -88,6 +91,9 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     int24 public targetTickLower;
     int24 public targetTickUpper;
     uint256 public maxRebalances;
+    // Ceiling on how much reserveBalance the keeper may move into the position
+    // in a single rebalance() call (see the `reinjectAmount` param there) — the
+    // keeper decides the actual amount per cycle, up to this cap.
     uint256 public reinjectionAmount;
     uint256 public periodicRebalanceInterval;
 
@@ -105,9 +111,14 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     uint256 public positionTokenId;
     uint256 public rebalanceCount;
-    bool public reinjectionActive;
     uint256 public lastRebalanceTimestamp;
     bool public paused;
+
+    /// @notice Permanently deactivated via closeVault() once verifiably empty.
+    /// See PLAN.md — a closed vault can never deposit/configure/build a position
+    /// again, so a leftover clone address can't silently reactivate if someone
+    /// (accidentally or not) sends it tokens after the owner walked away.
+    bool public closed;
 
     // ---------------------------------------------------------------------
     // Swap instruction — how the keeper tells the vault to convert between
@@ -137,7 +148,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     );
     event PositionInitialized(uint256 tokenId, uint256 amount0, uint256 amount1);
     event Rebalanced(
-        uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, bool reinjected, uint256 feePaid
+        uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, uint256 reinjectedAmount, uint256 feePaid
     );
     event UniLabFeePaid(uint256 remainingBudget);
     event Withdrawn(uint256 amount0, uint256 amount1);
@@ -145,6 +156,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     event RiskParamsUpdated(uint256 maxSlippageBps, uint256 minRebalanceInterval, uint256 maxRangeDeviationBps);
     event PausedSet(bool isPaused);
     event EmergencyWithdraw(uint256 amount0, uint256 amount1);
+    event Closed();
 
     // ---------------------------------------------------------------------
     // Modifiers
@@ -162,6 +174,11 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     modifier whenNotPaused() {
         if (paused) revert Paused();
+        _;
+    }
+
+    modifier notClosed() {
+        if (closed) revert VaultClosed();
         _;
     }
 
@@ -216,6 +233,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     function deposit(uint256 usdtBudgetAmount, uint256 reserveAmount, uint256 investableAmount)
         external
         onlyOwner
+        notClosed
         nonReentrant
     {
         uint256 total = usdtBudgetAmount + reserveAmount + investableAmount;
@@ -240,7 +258,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         uint256 _maxRebalances,
         uint256 _reinjectionAmount,
         uint256 _periodicRebalanceInterval
-    ) external onlyOwner {
+    ) external onlyOwner notClosed {
         targetTickLower = _targetTickLower;
         targetTickUpper = _targetTickUpper;
         maxRebalances = _maxRebalances;
@@ -257,6 +275,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     function setRiskParams(uint256 _maxSlippageBps, uint256 _minRebalanceInterval, uint256 _maxRangeDeviationBps)
         external
         onlyOwner
+        notClosed
     {
         maxSlippageBps = _maxSlippageBps;
         minRebalanceInterval = _minRebalanceInterval;
@@ -300,6 +319,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         external
         onlyOperator
         whenNotPaused
+        notClosed
         nonReentrant
         returns (uint256 tokenId)
     {
@@ -357,9 +377,10 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         int24 newTickLower,
         int24 newTickUpper,
         SwapInstruction calldata swapIx,
+        uint256 reinjectAmount,
         uint256 amount0Min,
         uint256 amount1Min
-    ) external onlyOperator whenNotPaused nonReentrant returns (uint256 newTokenId) {
+    ) external onlyOperator whenNotPaused notClosed nonReentrant returns (uint256 newTokenId) {
         if (positionTokenId == 0) revert NoPosition();
         if (rebalanceCount >= maxRebalances) revert RebalanceLimitReached();
 
@@ -396,17 +417,16 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         // 2) Let the keeper rearrange the recovered balance toward the new range's ratio.
         _executeSwap(swapIx);
 
-        // 3) Alternating reinjection cycle (see PLAN.md "Ciclo de reinyección alternada").
-        bool reinjectedThisCycle = !reinjectionActive;
-        if (reinjectedThisCycle) {
-            if (reserveBalance < reinjectionAmount) revert InsufficientReserve();
-            reserveBalance -= reinjectionAmount;
-        } else {
-            uint256 freeToken0 = IERC20(token0).balanceOf(address(this)) - usdtBudget - reserveBalance;
-            if (freeToken0 < reinjectionAmount) revert InsufficientInvestableBalance();
-            reserveBalance += reinjectionAmount;
+        // 3) Reinjection this cycle: the keeper decides whether to reinject and how
+        // much (informed by uni-lab's live simulation — see PLAN.md), not a fixed
+        // alternating pattern the contract forces. Bounded by the owner's per-cycle
+        // ceiling (`reinjectionAmount`, set in configureTarget) and by what's
+        // actually sitting in reserve — the keeper can never move more than either.
+        if (reinjectAmount > 0) {
+            if (reinjectAmount > reinjectionAmount) revert ReinjectionExceedsCap();
+            if (reinjectAmount > reserveBalance) revert InsufficientReserve();
+            reserveBalance -= reinjectAmount;
         }
-        reinjectionActive = !reinjectionActive;
 
         // 4) Platform fee, paid to whoever is currently operator, priced live by PlatformConfig.
         uint256 fee = IPlatformConfig(platformConfig).rebalanceFee();
@@ -444,7 +464,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         rebalanceCount += 1;
         lastRebalanceTimestamp = block.timestamp;
 
-        emit Rebalanced(newTokenId, newTickLower, newTickUpper, reinjectedThisCycle, fee);
+        emit Rebalanced(newTokenId, newTickLower, newTickUpper, reinjectAmount, fee);
     }
 
     // ---------------------------------------------------------------------
@@ -530,6 +550,26 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         if (amount1 > 0) IERC20(token1).safeTransfer(owner, amount1);
 
         emit EmergencyWithdraw(amount0, amount1);
+    }
+
+    /// @notice Permanently deactivates the vault. The owner must have already
+    /// drained everything via withdrawAll()/emergencyWithdrawPosition() first —
+    /// this reverts unless the position is closed AND all three ledgers AND the
+    /// vault's actual token0/token1 balances are all exactly zero, so a vault can
+    /// never end up "closed" while still holding funds. Irreversible: once closed,
+    /// deposit/configureTarget/setRiskParams/initPosition/rebalance all revert
+    /// forever (see `notClosed`). withdraw functions stay callable — harmless
+    /// no-ops on an empty vault — so the owner is never locked out of anything.
+    function closeVault() external onlyOwner {
+        if (closed) revert VaultClosed();
+        if (
+            positionTokenId != 0 || investableUsdt != 0 || usdtBudget != 0 || reserveBalance != 0
+                || IERC20(token0).balanceOf(address(this)) != 0 || IERC20(token1).balanceOf(address(this)) != 0
+        ) {
+            revert VaultNotEmpty();
+        }
+        closed = true;
+        emit Closed();
     }
 
     // ---------------------------------------------------------------------

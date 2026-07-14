@@ -248,12 +248,12 @@ export default function CreateVault() {
                   hint="Tu techo de gasto en fees"
                 />
                 <Field
-                  label="Reinyección alternada"
+                  label="Tope de reinyección por ciclo"
                   suffix="USDT"
                   value={reinjectionAmount}
                   onChange={setReinjectionAmount}
                   placeholder="10"
-                  hint="Entra y sale de la posición en ciclos"
+                  hint="Máximo que el agente puede mover de la reserva por rebalanceo"
                 />
                 <Field
                   label="Rebalanceo periódico"

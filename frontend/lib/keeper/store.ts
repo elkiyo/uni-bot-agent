@@ -7,6 +7,10 @@ export interface VaultRecord {
   uniLabApiKey?: string;
   positionInitialized: boolean;
   createdAtBlock: string; // stored as text, bigint doesn't survive JSON/Postgres numeric round-trip cleanly
+  // Keeper's own bookkeeping of whether it reinjected on the last rebalance —
+  // the contract no longer tracks this (see PLAN.md), the keeper decides E1
+  // freely each cycle. Purely informational, not a guarantee.
+  reinjectionActive: boolean;
 }
 
 interface VaultRow {
@@ -15,6 +19,7 @@ interface VaultRow {
   uni_lab_api_key: string | null;
   position_initialized: boolean;
   created_at_block: string;
+  reinjection_active: boolean;
 }
 
 function fromRow(row: VaultRow): VaultRecord {
@@ -24,6 +29,7 @@ function fromRow(row: VaultRow): VaultRecord {
     uniLabApiKey: row.uni_lab_api_key ?? undefined,
     positionInitialized: row.position_initialized,
     createdAtBlock: row.created_at_block,
+    reinjectionActive: row.reinjection_active,
   };
 }
 

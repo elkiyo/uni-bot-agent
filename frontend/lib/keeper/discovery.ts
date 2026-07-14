@@ -60,6 +60,7 @@ export async function discoverAndRegisterVaults(factoryAddress: Address, store: 
         uniLabApiKey: apiKey,
         positionInitialized: false,
         createdAtBlock: log.blockNumber.toString(),
+        reinjectionActive: false,
       });
     }
 
