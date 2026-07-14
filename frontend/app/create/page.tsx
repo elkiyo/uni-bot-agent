@@ -22,6 +22,38 @@ const stepLabel: Record<Step, string> = {
   error: "Reintentar",
 };
 
+// The 5 signatures the wallet is going to ask for, in order — shown as a
+// checklist so the user knows what each one actually does before signing,
+// not just a changing "3/5…" label on the button mid-flow.
+const SIGNATURE_STEPS: { key: Exclude<Step, "idle" | "done" | "error">; title: string; desc: string }[] = [
+  {
+    key: "creating",
+    title: "Crear vault",
+    desc: "Despliega tu vault personal (un clon del contrato) — todavía no mueve ningún fondo.",
+  },
+  {
+    key: "approving",
+    title: "Aprobar USDT",
+    desc: "Le da permiso al vault para transferir el USDT que vas a depositar en el siguiente paso.",
+  },
+  {
+    key: "configuring",
+    title: "Configurar objetivo",
+    desc: "Fija el rango de precio, el tope de rebalanceos y el tope de reinyección que el agente tiene que respetar.",
+  },
+  {
+    key: "risk",
+    title: "Fijar límites de riesgo",
+    desc: "Slippage máximo y cuánto puede desviarse el rango que proponga el agente del precio de mercado.",
+  },
+  {
+    key: "depositing",
+    title: "Depositar",
+    desc: "Transfiere el USDT real al vault, repartido en capital invertible, reserva de reinyección y presupuesto de uni-lab.",
+  },
+];
+const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
+
 export default function CreateVault() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
@@ -59,6 +91,7 @@ export default function CreateVault() {
 
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [failedAt, setFailedAt] = useState<Step | null>(null);
 
   const minPricePlaceholder = currentPrice !== undefined ? (currentPrice * 0.9).toFixed(2) : "1604.18";
   const maxPricePlaceholder = currentPrice !== undefined ? (currentPrice * 1.1).toFixed(2) : "1960.66";
@@ -71,6 +104,8 @@ export default function CreateVault() {
   async function handleCreate() {
     if (!address || !publicClient || currentPrice === undefined || tickSpacing === undefined) return;
     setError(null);
+    setFailedAt(null);
+    let currentPhase: Step = "creating"; // tracked outside React state — setStep() batches, so `step` itself isn't reliable to read back mid-function
 
     if (
       !investAmount ||
@@ -87,7 +122,8 @@ export default function CreateVault() {
     }
 
     try {
-      setStep("creating");
+      currentPhase = "creating";
+      setStep(currentPhase);
       const createHash = await writeContractAsync({
         address: FACTORY_ADDRESS,
         abi: vaultFactoryAbi,
@@ -128,7 +164,8 @@ export default function CreateVault() {
       const budget = parseUnits(usdtBudget, 6);
       const total = investable + reserve + budget;
 
-      setStep("approving");
+      currentPhase = "approving";
+      setStep(currentPhase);
       const approveHash = await writeContractAsync({
         address: USDT,
         abi: erc20Abi,
@@ -137,7 +174,8 @@ export default function CreateVault() {
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
-      setStep("configuring");
+      currentPhase = "configuring";
+      setStep(currentPhase);
       const configureHash = await writeContractAsync({
         address: vaultAddress,
         abi: rangeVaultAbi,
@@ -160,7 +198,8 @@ export default function CreateVault() {
       // RangeTooFarFromMarket almost every time. maxRangeDeviationBps is set to
       // the range's half-width (1 tick == 1 bps), so the recentered range the
       // agent proposes always fits while genuinely wild ranges stay blocked.
-      setStep("risk");
+      currentPhase = "risk";
+      setStep(currentPhase);
       const halfWidthTicks = Math.max(100, Math.round(Math.abs(targetTickUpper - targetTickLower) / 2));
       const riskHash = await writeContractAsync({
         address: vaultAddress,
@@ -170,7 +209,8 @@ export default function CreateVault() {
       });
       await publicClient.waitForTransactionReceipt({ hash: riskHash });
 
-      setStep("depositing");
+      currentPhase = "depositing";
+      setStep(currentPhase);
       const depositHash = await writeContractAsync({
         address: vaultAddress,
         abi: rangeVaultAbi,
@@ -184,6 +224,7 @@ export default function CreateVault() {
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
+      setFailedAt(currentPhase);
       setStep("error");
     }
   }
@@ -319,6 +360,8 @@ export default function CreateVault() {
                   cualquier momento.
                 </p>
               </div>
+
+              <SignatureStepper current={step} failedAt={failedAt} />
             </aside>
           </div>
         ) : (
@@ -373,6 +416,53 @@ function SummaryRow({ k, v, strong }: { k: string; v: string; strong?: boolean }
     <div className="flex items-baseline justify-between gap-4">
       <dt className="text-muted">{k}</dt>
       <dd className={strong ? "font-semibold text-accent" : "font-medium text-white/90"}>{v}</dd>
+    </div>
+  );
+}
+
+/** Shows the 5 signatures the wallet will ask for, what each one does, and —
+ * once the flow starts — which one is in progress / done / where it failed.
+ * Visible from before the user even clicks "Crear vault", not just mid-flow. */
+function SignatureStepper({ current, failedAt }: { current: Step; failedAt: Step | null }) {
+  const currentIndex = SIGNATURE_KEYS.indexOf(current as (typeof SIGNATURE_KEYS)[number]);
+  const isDone = current === "done";
+  const isError = current === "error";
+  const failedIndex = failedAt ? SIGNATURE_KEYS.indexOf(failedAt as (typeof SIGNATURE_KEYS)[number]) : -1;
+
+  return (
+    <div className="glass rounded-2xl p-5">
+      <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+        Firmas necesarias (5)
+      </span>
+      <ol className="mt-4 flex flex-col gap-4">
+        {SIGNATURE_STEPS.map((s, i) => {
+          const done = isDone || i < currentIndex || (isError && i < failedIndex);
+          const failed = isError && i === failedIndex;
+          const active = !isDone && !isError && i === currentIndex;
+          return (
+            <li key={s.key} className="flex gap-3">
+              <span
+                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-mono text-[10px] ${
+                  failed
+                    ? "bg-negative/20 text-negative"
+                    : done
+                      ? "bg-accent text-black"
+                      : active
+                        ? "border border-accent text-accent"
+                        : "border border-hairline text-faint"
+                }`}
+              >
+                {failed ? "!" : done ? "✓" : i + 1}
+              </span>
+              <div>
+                <p className={`text-sm font-medium ${active ? "text-accent" : "text-white/90"}`}>{s.title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted">{s.desc}</p>
+                {failed && <p className="mt-1 text-xs text-negative">Falló acá — revisá el error abajo y reintentá.</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
