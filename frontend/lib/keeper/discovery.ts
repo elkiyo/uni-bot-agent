@@ -4,6 +4,7 @@ import { publicClient } from "./wallet";
 import { Store } from "./store";
 import { registerAgent } from "./unilab";
 import { vaultFactoryAbi } from "../contracts";
+import { FACTORY_DEPLOY_BLOCK } from "../addresses";
 
 const MAX_BLOCK_RANGE = 5_000n; // conservative chunk size for public RPC log queries
 
@@ -17,9 +18,13 @@ export async function discoverAndRegisterVaults(factoryAddress: Address, store: 
   const latestBlock = await publicClient.getBlockNumber();
   let fromBlock = await store.getLastProcessedBlock();
   if (fromBlock === 0n) {
-    // First run: don't scan from Celo genesis. Start close to "now" — in production
-    // this should be the factory's actual deployment block, set via env/config.
-    fromBlock = latestBlock > 10_000n ? latestBlock - 10_000n : 0n;
+    // First run (fresh Supabase store — e.g. right after the Vercel migration,
+    // see SCALING.md): scan from the factory's actual deployment block, not an
+    // arbitrary "latest - N" window. No vault can predate this block, and on
+    // Celo (~5s blocks) even a few hours of activity is tens of thousands of
+    // blocks — a fixed lookback window silently missed the one real vault the
+    // first time this ran against the new store.
+    fromBlock = FACTORY_DEPLOY_BLOCK;
   }
 
   while (fromBlock <= latestBlock) {
