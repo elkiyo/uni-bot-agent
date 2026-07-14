@@ -6,6 +6,7 @@ import { parseUnits, formatUnits } from "viem";
 import { Header } from "../../components/Header";
 import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
+import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
 import { rangeVaultAbi, erc20Abi } from "@/lib/contracts";
 import { USDT } from "@/lib/addresses";
@@ -429,6 +430,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               </div>
             )}
 
+            <PositionHistory address={address} />
             <ActivityFeed address={address} />
           </>
         )}
