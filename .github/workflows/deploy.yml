@@ -1,0 +1,24 @@
+name: Deploy to Vercel
+
+# The Vercel project isn't connected via Vercel's own Git integration — the
+# repo (elkiyo/uni-bot-agent) and the Vercel project (uni-lab/uni-bot-agent)
+# live under different accounts, and getting Vercel's GitHub App cross-account
+# permission right wasn't worth fighting (see SCALING.md). This deploys the
+# same way `vercel --prod` does locally, just triggered by GitHub instead.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: team_67AE4euTvCH0Ig52JDSo4YL9
+      VERCEL_PROJECT_ID: prj_We1dN3nvzBgzXQkbeFu4WY0uw73t
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (production)
+        run: npx vercel deploy --prod --token="$VERCEL_TOKEN" --yes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

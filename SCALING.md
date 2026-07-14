@@ -11,6 +11,7 @@ Qué está en producción hoy, qué es el eslabón débil, y en qué orden escal
 | Frontend | Vercel (`uni-bot-agent-gules.vercel.app`) | ✅ Serverless, escala solo |
 | Keeper (`frontend/lib/keeper/` + `POST /api/cron/tick`) | Vercel (mismo proyecto que el frontend) | ✅ Ya no depende de la Mac — ver abajo |
 | Disparo del tick cada 5 min | GitHub Actions (`.github/workflows/keeper-cron.yml`) | ✅ Gratis; ver nota de precisión abajo |
+| Deploy a producción en cada push a `main` | GitHub Actions (`.github/workflows/deploy.yml`) | ✅ No usa la integración nativa de Git de Vercel — ver nota abajo |
 | Estado del keeper (vaults, api_keys de uni-lab, último bloque escaneado, log de consultas a uni-lab) | Supabase/Postgres (Vercel Marketplace, tier gratis) | ✅ Persiste entre invocaciones serverless |
 | `agent/` (Node local, node-cron) | — | 🗄️ Superseded — se mantiene solo como herramienta de debug manual, ver abajo |
 | uni-lab.xyz API | Vercel (infra propia, aparte) | ✅ |
@@ -70,6 +71,18 @@ GitHub Actions (cron */5 * * * *)
   o escribir), `CRON_SECRET` (generado con `openssl rand -hex 32`, el mismo
   valor va como secret `CRON_SECRET` en GitHub). Ver
   `frontend/.env.local.example`.
+- **Deploy en cada push, sin la integración Git nativa de Vercel:** se intentó
+  conectar el repo desde Settings → Git y no funcionó limpio — el repo de
+  GitHub (`elkiyo/uni-bot-agent`) y el proyecto de Vercel (team `uni-lab`,
+  cuenta `unilabxyz`) son identidades distintas, y la app de GitHub de Vercel
+  necesita permiso instalado del lado de la cuenta dueña del repo para verlo
+  en el selector — cruzar esos dos permisos no valió la pena pelearlo.
+  Solución: `.github/workflows/deploy.yml` corre `vercel deploy --prod` en
+  cada push a `main`, autenticado con un token dedicado (`vercel tokens add`,
+  guardado como secret `VERCEL_TOKEN` en GitHub) en vez de la conexión Git.
+  `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` (no sensibles, están hardcodeados en el
+  workflow) le dicen a la CLI qué proyecto deployar sin necesitar un
+  `.vercel/project.json` local en el runner de CI.
 
 ### `agent/` local: qué hacer con él
 No se borró — sigue sirviendo para correr el keeper a mano contra un fork o
