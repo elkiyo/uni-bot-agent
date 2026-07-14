@@ -27,19 +27,76 @@ async function tickSpacing(): Promise<number> {
   })) as number;
 }
 
-/**
- * Pays uni-lab.xyz (a real on-chain USDT transfer from the vault's own budget —
- * see PLAN.md) and waits for the confirmation the API requires as proof of
- * payment before it will answer. Queries the live price first — uni-lab's
- * pricing isn't fixed (confirmed 2026-07-14: a hardcoded 0.5 USDT 402'd
- * against a real 0.2 USDT price), so this never assumes a number.
- */
-async function payUniLabAndGetTxHash(vaultAddress: Address): Promise<{ hash: `0x${string}`; amountRaw: bigint }> {
+/** uni-lab.xyz's price isn't fixed (confirmed 2026-07-14: a hardcoded 0.5 USDT
+ * 402'd against a real 0.2 USDT price) — queried live, never assumed. */
+async function getUniLabAmountRaw(): Promise<bigint> {
   const pricing = await getPricing();
-  const amountRaw = BigInt(Math.round(pricing.price_usdt * 1e6));
+  return BigInt(Math.round(pricing.price_usdt * 1e6));
+}
+
+/**
+ * Pays uni-lab.xyz (a real on-chain USDT transfer from the vault's own budget
+ * — see PLAN.md) and waits for the confirmation the API requires as proof of
+ * payment before it will answer.
+ */
+async function payUniLabAndGetTxHash(vaultAddress: Address, amountRaw: bigint): Promise<{ hash: `0x${string}` }> {
   const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "payUniLabFee", [amountRaw]);
   await publicClient.waitForTransactionReceipt({ hash });
-  return { hash, amountRaw };
+  return { hash };
+}
+
+const GAS_SAFETY_MULTIPLIER_PCT = 130n; // 30% buffer over the current estimate, for gas-price drift between check and send
+
+/**
+ * Real gas-cost estimate against the operator's actual CELO balance — NOT
+ * covered by `wouldSucceed`'s free simulation, which never checks funds.
+ * Missing this check is exactly how a vault burned 0.8 USDT of its uni-lab
+ * budget on 2026-07-14: with the operator low on CELO, payUniLabFee (cheap,
+ * a plain ERC20 transfer) kept succeeding while the much heavier rebalance()
+ * that had to follow kept reverting for insufficient funds — paying for a
+ * calculation that could never be used, cycle after cycle. This runs BEFORE
+ * payUniLabFee so a low balance skips the whole cycle without spending
+ * anything.
+ */
+async function hasEnoughOperatorGas(
+  vaultAddress: Address,
+  mainCall: { functionName: string; args: readonly unknown[] },
+  payAmountRaw: bigint | null,
+): Promise<boolean> {
+  if (!operatorAccount) return false;
+  const [gasPrice, balance, mainGas, payGas] = await Promise.all([
+    publicClient.getGasPrice(),
+    publicClient.getBalance({ address: operatorAccount.address }),
+    publicClient.estimateContractGas({
+      address: vaultAddress,
+      abi: rangeVaultAbi as Abi,
+      functionName: mainCall.functionName,
+      args: mainCall.args as unknown[],
+      account: operatorAccount.address,
+    }),
+    payAmountRaw !== null
+      ? publicClient.estimateContractGas({
+          address: vaultAddress,
+          abi: rangeVaultAbi as Abi,
+          functionName: "payUniLabFee",
+          args: [payAmountRaw],
+          account: operatorAccount.address,
+        })
+      : Promise.resolve(0n),
+  ]);
+
+  const estimatedCost = ((mainGas + payGas) * gasPrice * GAS_SAFETY_MULTIPLIER_PCT) / 100n;
+  if (balance < estimatedCost) {
+    logEvent({
+      level: "warn",
+      vault: vaultAddress,
+      msg: `operator CELO balance too low to complete ${mainCall.functionName} — skipping cycle${payAmountRaw !== null ? " without paying uni-lab" : ""}`,
+      balance: balance.toString(),
+      estimatedCost: estimatedCost.toString(),
+    });
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -117,6 +174,10 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
       vault: vaultAddress,
       msg: "initPosition simulation reverts — skipping cycle (check vault config)",
     });
+    return;
+  }
+
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "initPosition", args: initArgs }, null))) {
     return;
   }
 
@@ -232,13 +293,13 @@ async function runRebalanceViaUniLab(
       ethPriceUsd: ethPrice,
     });
 
-  {
+  const probeArgs = (() => {
     const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
     const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
     const probeTickLower = Math.min(tickA, tickB);
     const probeTickUpper = Math.max(tickA, tickB);
     const probeSwap = buildSwapIx(probeTickLower, probeTickUpper);
-    const probeArgs = [
+    return [
       probeTickLower,
       probeTickUpper,
       { token0ToToken1: probeSwap.token0ToToken1, amountIn: probeSwap.amountIn, amountOutMinimum: 0n },
@@ -246,17 +307,24 @@ async function runRebalanceViaUniLab(
       0n,
       0n,
     ] as const;
-    if (!(await wouldSucceed(vaultAddress, "rebalance", probeArgs))) {
-      logEvent({
-        level: "warn",
-        vault: vaultAddress,
-        msg: "rebalance simulation reverts — skipping cycle without paying uni-lab",
-      });
-      return;
-    }
+  })();
+
+  if (!(await wouldSucceed(vaultAddress, "rebalance", probeArgs))) {
+    logEvent({
+      level: "warn",
+      vault: vaultAddress,
+      msg: "rebalance simulation reverts — skipping cycle without paying uni-lab",
+    });
+    return;
   }
 
-  const { hash: payTxHash } = await payUniLabAndGetTxHash(vaultAddress);
+  const payAmountRaw = await getUniLabAmountRaw();
+
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: probeArgs }, payAmountRaw))) {
+    return;
+  }
+
+  const { hash: payTxHash } = await payUniLabAndGetTxHash(vaultAddress, payAmountRaw);
 
   try {
     const reinjectionUsd = Number(reinjectAmount) / 1e6; // E1 = what the keeper is actually doing this cycle
@@ -411,6 +479,10 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
       vault: vaultAddress,
       msg: "rebalance (exit-top rebuild) simulation reverts — skipping cycle",
     });
+    return;
+  }
+
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: rebalanceArgs }, null))) {
     return;
   }
 
