@@ -12,6 +12,26 @@ export interface RegisterAgentResponse {
   created_at: string;
 }
 
+export interface PricingResponse {
+  price_usdt: number;
+  payment_wallet: string;
+  blockchain: string;
+}
+
+/**
+ * uni-lab.xyz's price isn't fixed — confirmed 2026-07-14 when a real
+ * pool-setup-initial call 402'd (RangeVault used to pay a hardcoded 0.5 USDT,
+ * the live price was 0.2). Query this right before every payUniLabFee() call
+ * instead of assuming any number. Unauthenticated, no api_key needed.
+ */
+export async function getPricing(): Promise<PricingResponse> {
+  const res = await fetch(`${UNILAB_BASE_URL}/pricing`);
+  if (!res.ok) {
+    throw new Error(`pricing failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json() as Promise<PricingResponse>;
+}
+
 export async function registerAgent(agentName: string, agentWallet: string): Promise<RegisterAgentResponse> {
   const res = await fetch(`${UNILAB_BASE_URL}/register-agent`, {
     method: "POST",
@@ -24,37 +44,12 @@ export async function registerAgent(agentName: string, agentWallet: string): Pro
   return res.json() as Promise<RegisterAgentResponse>;
 }
 
-export interface PoolSetupInitialParams {
-  usdPoolInvestment: number;
-  currentPriceVolatileAsset: number;
-  minPriceLowerLimit: number;
-  maxPriceUpperLimit: number;
-  txHash: string;
-}
-
-export interface PoolSetupInitialResponse {
-  [key: string]: unknown; // response schema not fully documented — consumed defensively
-}
-
-export async function poolSetupInitial(
-  apiKey: string,
-  params: PoolSetupInitialParams,
-  vaultAddress: string,
-): Promise<PoolSetupInitialResponse> {
-  return callPaidEndpoint(
-    apiKey,
-    "pool-setup-initial",
-    {
-      usd_pool_investment: params.usdPoolInvestment,
-      current_price_volatile_asset: params.currentPriceVolatileAsset,
-      min_price_lower_limit: params.minPriceLowerLimit,
-      max_price_upper_limit: params.maxPriceUpperLimit,
-      tx_hash: params.txHash,
-      blockchain: "celo",
-    },
-    vaultAddress,
-  );
-}
+// pool-setup-initial (the initial position's swap sizing) is deliberately not
+// called anymore — the response was never actually used even when it
+// succeeded (initPosition always used the locally-computed balanced-deposit
+// ratio), so paying for it was a real cost to the owner for no benefit. Only
+// rebalance() consults uni-lab now, where the answer genuinely drives the
+// outcome. See PLAN.md.
 
 export interface RcRlpRebalanceParams {
   currentLiquidityUsd: number; // A1

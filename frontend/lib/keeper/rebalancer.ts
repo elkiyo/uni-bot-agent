@@ -2,7 +2,7 @@ import "server-only";
 import type { Abi, Address } from "viem";
 import { publicClient, operatorAccount } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
-import { poolSetupInitial, rcRlpRebalance } from "./unilab";
+import { rcRlpRebalance, getPricing } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap } from "./swapMath";
 import { POOL } from "../addresses";
@@ -30,12 +30,16 @@ async function tickSpacing(): Promise<number> {
 /**
  * Pays uni-lab.xyz (a real on-chain USDT transfer from the vault's own budget —
  * see PLAN.md) and waits for the confirmation the API requires as proof of
- * payment before it will answer.
+ * payment before it will answer. Queries the live price first — uni-lab's
+ * pricing isn't fixed (confirmed 2026-07-14: a hardcoded 0.5 USDT 402'd
+ * against a real 0.2 USDT price), so this never assumes a number.
  */
-async function payUniLabAndGetTxHash(vaultAddress: Address): Promise<`0x${string}`> {
-  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "payUniLabFee", []);
+async function payUniLabAndGetTxHash(vaultAddress: Address): Promise<{ hash: `0x${string}`; amountRaw: bigint }> {
+  const pricing = await getPricing();
+  const amountRaw = BigInt(Math.round(pricing.price_usdt * 1e6));
+  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "payUniLabFee", [amountRaw]);
   await publicClient.waitForTransactionReceipt({ hash });
-  return hash;
+  return { hash, amountRaw };
 }
 
 /**
@@ -66,8 +70,11 @@ async function wouldSucceed(
 
 export async function runInitPosition(vaultAddress: Address, store: Store): Promise<void> {
   const record = await store.getVault(vaultAddress);
-  if (!record?.uniLabApiKey) {
-    logEvent({ level: "error", vault: vaultAddress, msg: "no uni-lab api key on record, skipping initPosition" });
+  // No uni-lab dependency here anymore (see below) — a vault can build its
+  // initial position even before its uni-lab registration lands. Rebalances
+  // still require the api_key, checked separately in runRebalance.
+  if (!record) {
+    logEvent({ level: "error", vault: vaultAddress, msg: "vault not found in store, skipping initPosition" });
     return;
   }
 
@@ -81,6 +88,15 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   const tick = await currentTick();
   const ethPrice = ethPriceFromTick(tick);
 
+  // Sized entirely locally — the standard Uniswap V3 balanced-deposit ratio
+  // for [tickLower, tickUpper] at the current price. Used to call uni-lab's
+  // /pool-setup-initial here too, paid out of the vault's own budget, but
+  // that response was never actually used (it only got logged) even when it
+  // succeeded — this same formula was always what got sent. Paying for a
+  // consultation whose answer is discarded either way is a real cost to the
+  // owner for zero benefit, so initPosition no longer calls uni-lab at all;
+  // only rebalance() does, where the API's answer (the new upper bound)
+  // genuinely drives the outcome. See PLAN.md.
   const swapIx = sizeInitialSwap({
     currentTick: tick,
     tickLower: targetTickLower,
@@ -95,41 +111,13 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     0n,
   ] as const;
 
-  // Gate: don't spend 0.5 USDT of the vault's budget on a uni-lab query whose
-  // result can't be acted on (e.g. mis-configured vault → initPosition reverts).
   if (!(await wouldSucceed(vaultAddress, "initPosition", initArgs))) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
-      msg: "initPosition simulation reverts — skipping cycle without paying uni-lab (check vault config)",
+      msg: "initPosition simulation reverts — skipping cycle (check vault config)",
     });
     return;
-  }
-
-  const payTxHash = await payUniLabAndGetTxHash(vaultAddress);
-
-  try {
-    await poolSetupInitial(
-      record.uniLabApiKey,
-      {
-        usdPoolInvestment: Number(investableUsdt) / 1e6,
-        currentPriceVolatileAsset: ethPrice,
-        minPriceLowerLimit: ethPriceFromTick(targetTickLower),
-        maxPriceUpperLimit: ethPriceFromTick(targetTickUpper),
-        txHash: payTxHash,
-      },
-      vaultAddress,
-    );
-    // Response schema isn't fully pinned down (see unilab.ts) — the locally
-    // computed swapIx above is what actually gets sent either way, per the
-    // fallback-on-parse-failure design also used in runRebalance below.
-  } catch (err) {
-    logEvent({
-      level: "warn",
-      vault: vaultAddress,
-      msg: "pool-setup-initial call failed, proceeding with locally computed swap sizing",
-      err: String(err),
-    });
   }
 
   const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "initPosition", initArgs);
@@ -226,8 +214,8 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
 
   // Gate before paying: simulate with the locally computed range and a real
   // swap sizing (the API may adjust the upper bound afterwards, but if even
-  // this reverts — broken config, exhausted budget, cooldown — the 0.5 USDT
-  // would be wasted).
+  // this reverts — broken config, exhausted budget, cooldown — the uni-lab
+  // fee would be wasted).
   const buildSwapIx = (tickLower: number, tickUpper: number) =>
     sizeRebalanceSwap({
       currentTick: tick,
@@ -262,7 +250,7 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
     }
   }
 
-  const payTxHash = await payUniLabAndGetTxHash(vaultAddress);
+  const { hash: payTxHash } = await payUniLabAndGetTxHash(vaultAddress);
 
   try {
     const reinjectionUsd = Number(reinjectAmount) / 1e6; // E1 = what the keeper is actually doing this cycle

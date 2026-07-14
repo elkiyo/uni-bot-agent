@@ -35,14 +35,14 @@ export async function checkVault(vaultAddress: Address): Promise<VaultAction> {
 
   if (positionTokenId === 0n) {
     // A configured-but-unfunded vault (owner hasn't deposited yet, or the
-    // deposit tx failed) can't pay uni-lab nor mint — attempting init would
-    // just revert at gas estimation every cycle. Wait until it's funded.
-    const [investableUsdt, usdtBudget] = await Promise.all([
-      vault.read.investableUsdt() as Promise<bigint>,
-      vault.read.usdtBudget() as Promise<bigint>,
-    ]);
-    const UNILAB_FEE = 500_000n;
-    if (investableUsdt === 0n || usdtBudget < UNILAB_FEE) return { kind: "none" };
+    // deposit tx failed) can't mint — attempting init would just revert at
+    // gas estimation every cycle. Wait until it's funded. Unlike rebalance(),
+    // initPosition() doesn't call uni-lab at all anymore (see PLAN.md — the
+    // response was never used even when the call succeeded), so usdtBudget
+    // isn't a precondition here; it only matters once the vault starts
+    // rebalancing.
+    const investableUsdt = (await vault.read.investableUsdt()) as bigint;
+    if (investableUsdt === 0n) return { kind: "none" };
     return { kind: "init", reason: "target configured, no position yet" };
   }
 

@@ -156,7 +156,7 @@ function describe(
       return {
         kind: "agent",
         title: "Consulta pagada a uni-lab.xyz",
-        detail: `0.5 USDT transferidos on-chain desde el vault · presupuesto restante ${usdt(args.remainingBudget)}`,
+        detail: `${usdt(args.amount)} transferidos on-chain desde el vault · presupuesto restante ${usdt(args.remainingBudget)}`,
       };
     case "PositionInitialized":
       return {
@@ -164,12 +164,14 @@ function describe(
         title: `Posición creada — NFT #${args.tokenId}`,
         detail: `El agente armó la posición con ${usdt(args.amount0)} + ${Number(formatUnits((args.amount1 as bigint) ?? 0n, 18)).toFixed(6)} WETH`,
       };
-    case "Rebalanced":
+    case "Rebalanced": {
+      const reinjectedAmount = (args.reinjectedAmount as bigint) ?? 0n;
       return {
         kind: "agent",
         title: `Rebalanceo — nueva posición #${args.newTokenId}`,
-        detail: `Nuevo rango [${args.tickLower}, ${args.tickUpper}] · ${args.reinjected ? "con reinyección" : "sin reinyección"} · fee al operador ${usdt(args.feePaid)}`,
+        detail: `Nuevo rango [${args.tickLower}, ${args.tickUpper}] · ${reinjectedAmount > 0n ? `reinyectó ${usdt(reinjectedAmount)}` : "sin reinyección"} · fee al operador ${usdt(args.feePaid)}`,
       };
+    }
     case "Withdrawn":
       return {
         kind: "money",

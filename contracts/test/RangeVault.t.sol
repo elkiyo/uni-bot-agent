@@ -156,7 +156,7 @@ contract RangeVaultTest is Test {
 
         vm.prank(stranger);
         vm.expectRevert(RangeVault.NotOperator.selector);
-        vault.payUniLabFee();
+        vault.payUniLabFee(500_000);
     }
 
     function test_ownerCanRevokeOperator_thenOperatorCannotRebalance() public {
@@ -263,22 +263,25 @@ contract RangeVaultTest is Test {
 
     function test_payUniLabFee_revertsWhenBudgetInsufficient() public {
         vm.prank(lp);
-        vault.deposit({usdtBudgetAmount: 100_000, reserveAmount: 0, investableAmount: 0}); // 0.1 USDT < 0.5 USDT fee
+        vault.deposit({usdtBudgetAmount: 100_000, reserveAmount: 0, investableAmount: 0}); // 0.1 USDT budget
 
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.InsufficientUsdtBudget.selector);
-        vault.payUniLabFee();
+        vault.payUniLabFee(200_000); // asking for 0.2 USDT, more than the 0.1 USDT budget
     }
 
-    function test_payUniLabFee_sendsExactFeeToUniLabWallet() public {
+    function test_payUniLabFee_sendsExactAmountKeeperRequests() public {
         vm.prank(lp);
         vault.deposit({usdtBudgetAmount: 2_000_000, reserveAmount: 0, investableAmount: 0}); // 2 USDT budget
 
+        // uni-lab's price isn't fixed (see PLAN.md) — the keeper supplies whatever
+        // GET /api/v1/pricing said at call time, e.g. 0.2 USDT here.
+        uint256 amount = 200_000;
         uint256 before = IERC20(USDT).balanceOf(uniLabWallet);
         vm.prank(defaultOperator);
-        vault.payUniLabFee();
-        assertEq(IERC20(USDT).balanceOf(uniLabWallet) - before, vault.UNILAB_FEE());
-        assertEq(vault.usdtBudget(), 2_000_000 - vault.UNILAB_FEE());
+        vault.payUniLabFee(amount);
+        assertEq(IERC20(USDT).balanceOf(uniLabWallet) - before, amount);
+        assertEq(vault.usdtBudget(), 2_000_000 - amount);
     }
 
     function test_platformFeeChangeAppliesLiveToExistingVault() public {

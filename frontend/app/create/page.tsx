@@ -309,7 +309,7 @@ export default function CreateVault() {
                   value={usdtBudget}
                   onChange={setUsdtBudget}
                   placeholder="5"
-                  hint="0.5 USDT por consulta"
+                  hint="Solo para rebalanceos — armar la posición inicial no consulta la API. El precio por consulta lo fija uni-lab.xyz y puede cambiar"
                 />
               </div>
 

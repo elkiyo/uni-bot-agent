@@ -66,7 +66,9 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     ISwapRouter02 public swapRouter;
 
     address public uniLabPaymentWallet;
-    uint256 public constant UNILAB_FEE = 500_000; // 0.5 USDT, 6 decimals — fixed per uni-lab.xyz's pricing
+    // No fixed fee constant: uni-lab.xyz's pricing (GET /api/v1/pricing) can
+    // change at any time, so the amount is supplied by the keeper per call
+    // (see payUniLabFee) instead of hardcoded here — see PLAN.md.
 
     // ---------------------------------------------------------------------
     // Operator
@@ -150,7 +152,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     event Rebalanced(
         uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, uint256 reinjectedAmount, uint256 feePaid
     );
-    event UniLabFeePaid(uint256 remainingBudget);
+    event UniLabFeePaid(uint256 amount, uint256 remainingBudget);
     event Withdrawn(uint256 amount0, uint256 amount1);
     event OperatorUpdated(address newOperator);
     event RiskParamsUpdated(uint256 maxSlippageBps, uint256 minRebalanceInterval, uint256 maxRangeDeviationBps);
@@ -303,11 +305,16 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     // needs this tx's hash before it can call uni-lab's API for the range)
     // ---------------------------------------------------------------------
 
-    function payUniLabFee() external onlyOperator nonReentrant returns (uint256 remainingBudget) {
-        if (usdtBudget < UNILAB_FEE) revert InsufficientUsdtBudget();
-        usdtBudget -= UNILAB_FEE;
-        IERC20(token0).safeTransfer(uniLabPaymentWallet, UNILAB_FEE);
-        emit UniLabFeePaid(usdtBudget);
+    /// @notice Pays uni-lab.xyz `amount` of token0 from usdtBudget. `amount` is
+    /// supplied by the keeper, which queries GET /api/v1/pricing right before
+    /// calling this — uni-lab's price isn't fixed and can change at any time,
+    /// so this contract doesn't hardcode or cap it; the owner's exposure is
+    /// already bounded by however much they chose to put in usdtBudget.
+    function payUniLabFee(uint256 amount) external onlyOperator nonReentrant returns (uint256 remainingBudget) {
+        if (usdtBudget < amount) revert InsufficientUsdtBudget();
+        usdtBudget -= amount;
+        IERC20(token0).safeTransfer(uniLabPaymentWallet, amount);
+        emit UniLabFeePaid(amount, usdtBudget);
         return usdtBudget;
     }
 
