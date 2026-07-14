@@ -127,7 +127,29 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   logEvent({ level: "info", vault: vaultAddress, msg: "position initialized", txHash: hash });
 }
 
-export async function runRebalance(vaultAddress: Address, store: Store, reason: string): Promise<void> {
+/**
+ * Case 1 (still in range, periodic forced cycle) and Case 2 (broke out below
+ * the floor) both go through uni-lab's /rc-rlp-rebalance — the only
+ * difference between them is where D1 (the floor we propose) comes from.
+ * Confirmed directly against the API (2026-07-14): its response never
+ * derives D1 on its own — `min_price` in the response always echoes back
+ * whatever D1 was sent, and `new_upper_bound_with_rlp`/`new_upper_bound_usd`
+ * always echoes back C1 (the live price, zero headroom above it — that's the
+ * calculator's own profit-taking design, not a bug to buffer around). So:
+ *   - Case 1 (periodic): D1 stays exactly what the EXISTING position's floor
+ *     already is — untouched, not recentered. Only the ceiling moves, to the
+ *     live price.
+ *   - Case 2 (out-of-range-bottom): D1 is freshly set to 5% under the live
+ *     price, same as a from-scratch rebuild.
+ * Case 3 (out-of-range-top) is handled separately below (runRebalanceExitTop)
+ * — it never calls uni-lab at all, since a position that broke out above is
+ * already ~100% stable and there's no split left to compute.
+ */
+async function runRebalanceViaUniLab(
+  vaultAddress: Address,
+  store: Store,
+  reason: "periodic" | "out-of-range-bottom",
+): Promise<void> {
   const record = await store.getVault(vaultAddress);
   if (!record?.uniLabApiKey) {
     logEvent({ level: "error", vault: vaultAddress, msg: "no uni-lab api key on record, skipping rebalance" });
@@ -158,27 +180,14 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   const [, , , , , posTickLower, posTickUpper, liquidity] = position;
   const ethPrice = ethPriceFromTick(tick);
 
-  // Anchor D1 (the new lower bound we propose to uni-lab) to the CURRENT
-  // position's width, recentered on today's price — not the owner's original
-  // configureTarget() range. uni-lab's simulation is meant to be the source
-  // of truth for each cycle's range on its own terms (see PLAN.md /
-  // SCALING.md); an earlier "anti-drift" attempt anchored to the original
-  // target instead, which just fought the API's own answer every cycle.
-  //
   // IMPORTANT: in this pool a HIGHER tick means a LOWER USD price (token1/
   // token0 inversion) — so the position's numerically-lower tick
   // (posTickLower) is actually the USD-price CEILING, and posTickUpper is
-  // the USD-price FLOOR. floorTick/ceilTick below are named for what they
-  // mean in price terms, not by which contract field they came from,
-  // specifically to avoid re-introducing that mix-up.
+  // the USD-price FLOOR.
   const floorTick = Math.max(posTickLower, posTickUpper); // higher tick = lower USD price
-  const ceilTick = Math.min(posTickLower, posTickUpper); // lower tick = higher USD price
-  const posCenterTick = (floorTick + ceilTick) / 2;
-  const downTicks = floorTick - posCenterTick; // USD downside distance, expressed in ticks
-  const upTicks = posCenterTick - ceilTick; // USD upside distance, expressed in ticks
 
-  const newFloorTick = tick + downTicks; // recentered floor: higher tick = lower price, so we ADD to go down
-  const newCeilTickFallback = tick - upTicks; // recentered ceiling fallback
+  const newLowerPrice = reason === "periodic" ? ethPriceFromTick(floorTick) : ethPrice * 0.95; // D1
+  let newUpperPrice = ethPrice; // C1 fallback — uni-lab's answer below normally echoes this back anyway
 
   const { amount0Raw: closedAmount0Raw, amount1Raw: closedAmount1Raw } = estimatePositionAmounts({
     liquidity,
@@ -208,9 +217,6 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   // mint() only uses what the range needs.
   const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + reinjectAmount;
   const availableToken1Raw = BigInt(Math.floor(closedAmount1Raw));
-
-  const newLowerPrice = ethPriceFromTick(newFloorTick); // the USD floor — this is D1
-  let newUpperPrice = ethPriceFromTick(newCeilTickFallback); // USD ceiling fallback, may be replaced by uni-lab's answer below
 
   // Gate before paying: simulate with the locally computed range and a real
   // swap sizing (the API may adjust the upper bound afterwards, but if even
@@ -329,4 +335,108 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
     reinjectAmount: reinjectAmount.toString(),
     txHash: hash,
   });
+}
+
+/**
+ * Case 3 (out-of-range-top): price broke above the position's ceiling, which
+ * — given the calculator's zero-headroom-above design — means the position
+ * is already ~100% stable. There's no split left to compute, so this skips
+ * uni-lab entirely (no payment) and rebuilds locally, same shape as
+ * runInitPosition(): fresh bounds 5% under / 3% above the live price. No
+ * reinjection here either — this is a from-scratch rebuild, not a periodic
+ * cycle, so the reserve/reinjection alternation (record.reinjectionActive)
+ * is left untouched for the next in-range cycle to pick back up.
+ */
+async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
+  const vault = vaultContract(vaultAddress);
+  const [positionTokenId, positionManager] = await Promise.all([
+    vault.read.positionTokenId() as Promise<bigint>,
+    vault.read.positionManager() as Promise<Address>,
+  ]);
+
+  const [tick, spacing, position] = await Promise.all([
+    currentTick(),
+    tickSpacing(),
+    publicClient.readContract({
+      address: positionManager,
+      abi: positionManagerAbi,
+      functionName: "positions",
+      args: [positionTokenId],
+    }) as Promise<
+      readonly [bigint, Address, Address, Address, number, number, number, bigint, bigint, bigint, bigint, bigint]
+    >,
+  ]);
+
+  const [, , , , , posTickLower, posTickUpper, liquidity] = position;
+  const ethPrice = ethPriceFromTick(tick);
+
+  const newLowerPrice = ethPrice * 0.95;
+  const newUpperPrice = ethPrice * 1.03;
+
+  // Higher USD price of ETH = lower tick in this pool, so the converted
+  // bounds come out swapped — sort them, Uniswap requires tickLower < tickUpper.
+  const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
+  const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
+  const newTickLower = Math.min(tickA, tickB);
+  const newTickUpper = Math.max(tickA, tickB);
+
+  const { amount0Raw: closedAmount0Raw, amount1Raw: closedAmount1Raw } = estimatePositionAmounts({
+    liquidity,
+    currentTick: tick,
+    tickLower: posTickLower,
+    tickUpper: posTickUpper,
+  });
+
+  const swapIx = sizeRebalanceSwap({
+    currentTick: tick,
+    newTickLower,
+    newTickUpper,
+    availableToken0Raw: BigInt(Math.floor(closedAmount0Raw)),
+    availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)),
+    ethPriceUsd: ethPrice,
+  });
+
+  const rebalanceArgs = [
+    newTickLower,
+    newTickUpper,
+    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: 0n },
+    0n, // no reinjection — from-scratch rebuild, like initPosition()
+    0n,
+    0n,
+  ] as const;
+
+  if (!(await wouldSucceed(vaultAddress, "rebalance", rebalanceArgs))) {
+    logEvent({
+      level: "warn",
+      vault: vaultAddress,
+      msg: "rebalance (exit-top rebuild) simulation reverts — skipping cycle",
+    });
+    return;
+  }
+
+  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "rebalance", rebalanceArgs);
+  await publicClient.waitForTransactionReceipt({ hash });
+
+  logEvent({
+    level: "info",
+    vault: vaultAddress,
+    msg: "rebalanced",
+    reason: "out-of-range-top",
+    newTickLower,
+    newTickUpper,
+    reinjectAmount: "0",
+    txHash: hash,
+  });
+}
+
+export async function runRebalance(
+  vaultAddress: Address,
+  store: Store,
+  reason: "periodic" | "out-of-range-top" | "out-of-range-bottom",
+): Promise<void> {
+  if (reason === "out-of-range-top") {
+    await runRebalanceExitTop(vaultAddress);
+    return;
+  }
+  await runRebalanceViaUniLab(vaultAddress, store, reason);
 }

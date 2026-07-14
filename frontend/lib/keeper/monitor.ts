@@ -7,7 +7,7 @@ import { POOL } from "../addresses";
 export type VaultAction =
   | { kind: "none" }
   | { kind: "init"; reason: string }
-  | { kind: "rebalance"; reason: "out-of-range" | "periodic" };
+  | { kind: "rebalance"; reason: "out-of-range-top" | "out-of-range-bottom" | "periodic" };
 
 /**
  * Free, read-only check of whether a vault needs attention right now. Mirrors
@@ -70,8 +70,17 @@ export async function checkVault(vaultAddress: Address): Promise<VaultAction> {
     functionName: "slot0",
   })) as readonly [bigint, number, number, number, number, number, boolean];
 
-  if (currentTick < tickLower || currentTick > tickUpper) {
-    return { kind: "rebalance", reason: "out-of-range" };
+  // In this pool a HIGHER tick means a LOWER USD price (token1/token0
+  // inversion — see rebalancer.ts's own note on this), so `tickLower` (the
+  // numerically smaller tick) is actually the USD-price CEILING and
+  // `tickUpper` is the USD-price FLOOR. The two out-of-range directions need
+  // different rebuild rules (rebalancer.ts's Case 2 vs Case 3), so they're
+  // reported separately instead of collapsed into one "out-of-range" reason.
+  if (currentTick < tickLower) {
+    return { kind: "rebalance", reason: "out-of-range-top" }; // price broke above the ceiling
+  }
+  if (currentTick > tickUpper) {
+    return { kind: "rebalance", reason: "out-of-range-bottom" }; // price broke below the floor
   }
 
   return { kind: "none" };
