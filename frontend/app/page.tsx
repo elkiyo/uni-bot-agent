@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useAccount, useReadContract } from "wagmi";
+import { formatUnits } from "viem";
 import { Header } from "./components/Header";
-import { vaultFactoryAbi } from "@/lib/contracts";
+import { vaultFactoryAbi, rangeVaultAbi } from "@/lib/contracts";
 import { FACTORY_ADDRESS, POOL } from "@/lib/addresses";
+import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 
 export default function Home() {
   const { address, isConnected } = useAccount();
@@ -87,23 +89,7 @@ export default function Home() {
               <ul className="grid gap-4 sm:grid-cols-2">
                 {vaultList.map((vaultAddress) => (
                   <li key={vaultAddress}>
-                    <Link
-                      href={`/vault/${vaultAddress}`}
-                      className="glass glass-hover group block rounded-2xl p-5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="eyebrow !px-3 !py-1">Vault</span>
-                        <span className="text-xs text-faint transition-colors group-hover:text-accent">
-                          Ver detalle →
-                        </span>
-                      </div>
-                      <p className="mt-4 break-all font-mono text-sm text-white/90">
-                        {vaultAddress}
-                      </p>
-                      <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-                        USDT / WETH · 0.3%
-                      </p>
-                    </Link>
+                    <VaultCard vaultAddress={vaultAddress as `0x${string}`} />
                   </li>
                 ))}
               </ul>
@@ -155,5 +141,46 @@ export default function Home() {
         </p>
       </main>
     </>
+  );
+}
+
+function VaultCard({ vaultAddress }: { vaultAddress: `0x${string}` }) {
+  const { data: rebalanceCount } = useReadContract({
+    address: vaultAddress,
+    abi: rangeVaultAbi,
+    functionName: "rebalanceCount",
+    query: { refetchInterval: 15_000 },
+  });
+  const { data: feesSummary } = useVaultFeesSummary(vaultAddress);
+
+  return (
+    <Link href={`/vault/${vaultAddress}`} className="glass glass-hover group block rounded-2xl p-5">
+      <div className="flex items-center justify-between">
+        <span className="eyebrow !px-3 !py-1">Vault</span>
+        <span className="text-xs text-faint transition-colors group-hover:text-accent">
+          Ver detalle →
+        </span>
+      </div>
+      <p className="mt-4 break-all font-mono text-sm text-white/90">{vaultAddress}</p>
+      <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+        USDT / WETH · 0.3%
+      </p>
+      <div className="mt-4 flex gap-6 border-t border-hairline pt-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            Rebalanceos
+          </p>
+          <p className="mt-1 text-sm font-medium text-white/90">{String(rebalanceCount ?? 0)}</p>
+        </div>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            Comisiones generadas
+          </p>
+          <p className="mt-1 text-sm font-medium text-positive">
+            {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT
+          </p>
+        </div>
+      </div>
+    </Link>
   );
 }

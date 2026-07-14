@@ -10,6 +10,7 @@ import { RebalanceCountdown } from "./RebalanceCountdown";
 import { rangeVaultAbi, erc20Abi } from "@/lib/contracts";
 import { USDT } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
+import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 
 const reads = (address: `0x${string}`) =>
   [
@@ -66,6 +67,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     maxSlippageBps,
     maxRangeDeviationBps,
   ] = data?.map((d) => d.result) ?? [];
+
+  const { data: feesSummary } = useVaultFeesSummary(address);
 
   const isOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
@@ -176,7 +179,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         {data && (
           <>
             {/* Stats */}
-            <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-5">
               <Stat
                 label="Capital invertible"
                 value={`${formatUnits((investableUsdt as bigint) ?? 0n, 6)} USDT`}
@@ -193,6 +196,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <Stat
                 label="Rebalanceos"
                 value={`${rebalanceCount ?? 0} / ${maxRebalances ?? 0}`}
+                accent
+              />
+              <Stat
+                label="Comisiones generadas"
+                value={`${formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT`}
+                hint={
+                  feesSummary && feesSummary.totalWeth > 0n
+                    ? `+ ${Number(formatUnits(feesSummary.totalWeth, 18)).toFixed(6)} WETH`
+                    : `${feesSummary?.payoutCount ?? 0} pagos recibidos`
+                }
                 accent
               />
             </div>

@@ -172,6 +172,14 @@ function describe(
         detail: `Nuevo rango [${args.tickLower}, ${args.tickUpper}] · ${reinjectedAmount > 0n ? `reinyectó ${usdt(reinjectedAmount)}` : "sin reinyección"} · fee al operador ${usdt(args.feePaid)}`,
       };
     }
+    case "LpFeesPaidToOwner": {
+      const amount1 = (args.amount1 as bigint) ?? 0n;
+      return {
+        kind: "money",
+        title: "Comisiones de Uniswap pagadas al owner",
+        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} generados por la posición, enviados directo a tu wallet antes de rearmarla`,
+      };
+    }
     case "Withdrawn":
       return {
         kind: "money",

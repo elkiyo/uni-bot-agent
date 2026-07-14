@@ -153,6 +153,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, uint256 reinjectedAmount, uint256 feePaid
     );
     event UniLabFeePaid(uint256 amount, uint256 remainingBudget);
+    event LpFeesPaidToOwner(uint256 amount0, uint256 amount1);
     event Withdrawn(uint256 amount0, uint256 amount1);
     event OperatorUpdated(address newOperator);
     event RiskParamsUpdated(uint256 maxSlippageBps, uint256 minRebalanceInterval, uint256 maxRangeDeviationBps);
@@ -399,10 +400,18 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
         _checkRangeNearMarket(newTickLower, newTickUpper);
 
-        // 1) Recover 100% of the current position.
+        // 1) Recover 100% of the current position. decreaseLiquidity's return is
+        // the PRINCIPAL only (evaluated at the current price); collect() then
+        // sweeps that principal together with whatever trading fees had
+        // accrued, in one lump sum. The difference is real LP yield earned by
+        // the owner's capital, not part of what should be recycled into the
+        // next position — sent straight to owner before anything else touches
+        // the recovered balance, so it never gets silently re-invested.
         (,,,,,,, uint128 liquidity,,,,) = positionManager.positions(positionTokenId);
+        uint256 removed0;
+        uint256 removed1;
         if (liquidity > 0) {
-            positionManager.decreaseLiquidity(
+            (removed0, removed1) = positionManager.decreaseLiquidity(
                 INonfungiblePositionManager.DecreaseLiquidityParams({
                     tokenId: positionTokenId,
                     liquidity: liquidity,
@@ -412,7 +421,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
                 })
             );
         }
-        positionManager.collect(
+        (uint256 collected0, uint256 collected1) = positionManager.collect(
             INonfungiblePositionManager.CollectParams({
                 tokenId: positionTokenId,
                 recipient: address(this),
@@ -421,7 +430,14 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
             })
         );
 
-        // 2) Let the keeper rearrange the recovered balance toward the new range's ratio.
+        uint256 lpFee0 = collected0 - removed0;
+        uint256 lpFee1 = collected1 - removed1;
+        if (lpFee0 > 0) IERC20(token0).safeTransfer(owner, lpFee0);
+        if (lpFee1 > 0) IERC20(token1).safeTransfer(owner, lpFee1);
+        if (lpFee0 > 0 || lpFee1 > 0) emit LpFeesPaidToOwner(lpFee0, lpFee1);
+
+        // 2) Let the keeper rearrange the recovered (principal-only) balance
+        // toward the new range's ratio.
         _executeSwap(swapIx);
 
         // 3) Reinjection this cycle: the keeper decides whether to reinject and how
