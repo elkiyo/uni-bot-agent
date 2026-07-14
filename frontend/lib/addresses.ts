@@ -8,10 +8,13 @@ export const FEE_TIER = 3000;
 export const POSITION_MANAGER = "0x3d79EdAaBC0EaB6F08ED885C05Fc0B014290D95A" as const; // Uniswap V3 NonfungiblePositionManager
 
 // Block the factory was deployed in (2026-07-14 — redeployed again same day
-// for dynamic uni-lab pricing + dropping the pool-setup-initial call, see
-// PLAN.md) — no vault event can precede it, so it's the safe lower bound for
-// event scans.
-export const FACTORY_DEPLOY_BLOCK = 72140834n;
+// to ship RangeVault.rebalance() paying accrued Uniswap LP fees straight to
+// owner instead of silently recycling them into the next position; vaults
+// cloned from the PREVIOUS factory keep running the old bytecode forever —
+// EIP-1167 clones aren't upgradeable — so they'll never emit
+// LpFeesPaidToOwner) — no vault event can precede it, so it's the safe lower
+// bound for event scans.
+export const FACTORY_DEPLOY_BLOCK = 72157682n;
 
 // Set once contracts/script/Deploy.s.sol has been run against Celo mainnet.
 export const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_FACTORY_ADDRESS || "") as `0x${string}`;
