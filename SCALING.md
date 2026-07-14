@@ -22,9 +22,25 @@ Qué está en producción hoy, qué es el eslabón débil, y en qué orden escal
   cp agent/deploy/xyz.unilab.uni-bot-agent.plist ~/Library/LaunchAgents/
   launchctl load ~/Library/LaunchAgents/xyz.unilab.uni-bot-agent.plist
   ```
+  **⚠️ Gotcha real, ya lo pisamos:** si el repo vive bajo `~/Desktop` (como
+  ahora), el proceso lanzado por `launchd` revienta con
+  `EPERM: operation not permitted` al leer `node_modules/tsx/...` — macOS
+  protege Desktop/Documents/Downloads con TCC, y un proceso arrancado por
+  `launchd` (a diferencia de uno interactivo desde Terminal, que ya heredó el
+  permiso de Terminal.app) no tiene ese acceso por defecto. Dos soluciones
+  reales, no probamos ninguna todavía:
+  1. **Mover el proyecto fuera de Desktop** (ej. `~/dev/DEFAI`) — la forma más
+     simple, esas carpetas no están protegidas por TCC.
+  2. **Dar Full Disk Access** a `/usr/local/bin/node` (o al binario que
+     invoque `launchd`) en System Settings → Privacy & Security → Full Disk
+     Access — requiere click manual del usuario, no se puede automatizar.
+  Mientras tanto, el keeper sigue corriendo como proceso de Bash manual
+  (`npm run start &` en `agent/`) — funciona, pero no sobrevive un reinicio o
+  que se cierre la sesión de Terminal.
 - **VPS (siguiente):** `agent/Dockerfile` ya está listo — `docker build` + un
   volumen en `/app/data` + las env vars de `agent/.env.example`. Cualquier VPS
-  chico alcanza (el keeper es I/O-bound: lecturas RPC cada 5 min).
+  chico alcanza (el keeper es I/O-bound: lecturas RPC cada 5 min). Este camino
+  además evita el problema de TCC de arriba por completo.
 - Respaldar `agent/data/store.json` (contiene las api_keys de uni-lab, que se
   muestran una sola vez; se pueden regenerar vía `/regenerate-api-key` pero es
   fricción operativa).
