@@ -4,7 +4,7 @@ import { publicClient, operatorAccount } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
 import { poolSetupInitial, rcRlpRebalance } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
-import { estimatePositionValueUsd, sizeInitialSwap } from "./swapMath";
+import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap } from "./swapMath";
 import { POOL } from "../addresses";
 import { Store } from "./store";
 import { logEvent } from "./logger";
@@ -147,15 +147,12 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   }
 
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, reinjectionAmount, positionManager, reinjectionActive, targetTickLower, targetTickUpper] =
-    await Promise.all([
-      vault.read.positionTokenId() as Promise<bigint>,
-      vault.read.reinjectionAmount() as Promise<bigint>,
-      vault.read.positionManager() as Promise<Address>,
-      vault.read.reinjectionActive() as Promise<boolean>,
-      vault.read.targetTickLower() as Promise<number>,
-      vault.read.targetTickUpper() as Promise<number>,
-    ]);
+  const [positionTokenId, reinjectionAmount, positionManager, reinjectionActive] = await Promise.all([
+    vault.read.positionTokenId() as Promise<bigint>,
+    vault.read.reinjectionAmount() as Promise<bigint>,
+    vault.read.positionManager() as Promise<Address>,
+    vault.read.reinjectionActive() as Promise<boolean>,
+  ]);
 
   const [tick, spacing, position] = await Promise.all([
     currentTick(),
@@ -173,48 +170,75 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   const [, , , , , posTickLower, posTickUpper, liquidity] = position;
   const ethPrice = ethPriceFromTick(tick);
 
-  // Anchor the "how far from market are my bounds" policy to the owner's
-  // ORIGINAL configureTarget() range (targetTickLower/Upper), not the live
-  // position's current width. The live position's width can already reflect
-  // an asymmetric answer from a prior uni-lab call — reading it back as the
-  // seed for the next cycle would let any one-off asymmetry compound forever.
+  // Anchor D1 (the new lower bound we propose to uni-lab) to the CURRENT
+  // position's width, recentered on today's price — not the owner's original
+  // configureTarget() range. uni-lab's simulation is meant to be the source
+  // of truth for each cycle's range on its own terms (see PLAN.md /
+  // SCALING.md); an earlier "anti-drift" attempt anchored to the original
+  // target instead, which just fought the API's own answer every cycle.
   //
   // IMPORTANT: in this pool a HIGHER tick means a LOWER USD price (token1/
-  // token0 inversion, same issue fixed elsewhere in this file) — so the tick
-  // that's numerically "lower" (targetTickLower) is actually the USD-price
-  // CEILING, and "targetTickUpper" is the USD-price FLOOR. floorTick/ceilTick
-  // below are named for what they mean in price terms, not by which contract
-  // field they came from, specifically to avoid re-introducing that mix-up.
-  const floorTick = Math.max(targetTickLower, targetTickUpper); // higher tick = lower USD price
-  const ceilTick = Math.min(targetTickLower, targetTickUpper); // lower tick = higher USD price
-  const targetCenterTick = (floorTick + ceilTick) / 2;
-  const downTicks = floorTick - targetCenterTick; // USD downside distance, expressed in ticks
-  const upTicks = targetCenterTick - ceilTick; // USD upside distance, expressed in ticks
+  // token0 inversion) — so the position's numerically-lower tick
+  // (posTickLower) is actually the USD-price CEILING, and posTickUpper is
+  // the USD-price FLOOR. floorTick/ceilTick below are named for what they
+  // mean in price terms, not by which contract field they came from,
+  // specifically to avoid re-introducing that mix-up.
+  const floorTick = Math.max(posTickLower, posTickUpper); // higher tick = lower USD price
+  const ceilTick = Math.min(posTickLower, posTickUpper); // lower tick = higher USD price
+  const posCenterTick = (floorTick + ceilTick) / 2;
+  const downTicks = floorTick - posCenterTick; // USD downside distance, expressed in ticks
+  const upTicks = posCenterTick - ceilTick; // USD upside distance, expressed in ticks
 
   const newFloorTick = tick + downTicks; // recentered floor: higher tick = lower price, so we ADD to go down
   const newCeilTickFallback = tick - upTicks; // recentered ceiling fallback
 
-  const positionValueUsd = estimatePositionValueUsd({
+  const { amount0Raw: closedAmount0Raw, amount1Raw: closedAmount1Raw } = estimatePositionAmounts({
     liquidity,
     currentTick: tick,
     tickLower: posTickLower,
     tickUpper: posTickUpper,
-    ethPriceUsd: ethPrice,
   });
+  const positionValueUsd = closedAmount0Raw * 1e-6 + closedAmount1Raw * 1e-18 * ethPrice;
+
+  // What decreaseLiquidity+collect will hand back, adjusted for this cycle's
+  // reinjection move (see RangeVault.rebalance step 3): reinjectionActive
+  // stored *before* the tx flips at the start of a reinjecting cycle, moving
+  // reinjectionAmount of token0 OUT of reserveBalance and into what's mintable.
+  // Platform-fee dust (step 4, paid in token0) is small enough to skip modeling
+  // here — the swap only needs to get the token0/token1 RATIO right, not the
+  // exact wei amount, since Uniswap's mint() only uses what the range needs.
+  const reinjectingThisCycle = !reinjectionActive;
+  const reinjectionDeltaRaw = reinjectingThisCycle ? Number(reinjectionAmount) : -Number(reinjectionAmount);
+  const availableToken0Raw = BigInt(Math.max(0, Math.floor(closedAmount0Raw + reinjectionDeltaRaw)));
+  const availableToken1Raw = BigInt(Math.floor(closedAmount1Raw));
 
   const newLowerPrice = ethPriceFromTick(newFloorTick); // the USD floor — this is D1
   let newUpperPrice = ethPriceFromTick(newCeilTickFallback); // USD ceiling fallback, may be replaced by uni-lab's answer below
 
-  // Gate before paying: simulate with the locally computed symmetric range (the
-  // API may adjust the upper bound afterwards, but if even this reverts —
-  // broken config, exhausted budget, cooldown — the 0.5 USDT would be wasted).
+  // Gate before paying: simulate with the locally computed range and a real
+  // swap sizing (the API may adjust the upper bound afterwards, but if even
+  // this reverts — broken config, exhausted budget, cooldown — the 0.5 USDT
+  // would be wasted).
+  const buildSwapIx = (tickLower: number, tickUpper: number) =>
+    sizeRebalanceSwap({
+      currentTick: tick,
+      newTickLower: tickLower,
+      newTickUpper: tickUpper,
+      availableToken0Raw,
+      availableToken1Raw,
+      ethPriceUsd: ethPrice,
+    });
+
   {
     const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
     const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
+    const probeTickLower = Math.min(tickA, tickB);
+    const probeTickUpper = Math.max(tickA, tickB);
+    const probeSwap = buildSwapIx(probeTickLower, probeTickUpper);
     const probeArgs = [
-      Math.min(tickA, tickB),
-      Math.max(tickA, tickB),
-      { token0ToToken1: false, amountIn: 0n, amountOutMinimum: 0n },
+      probeTickLower,
+      probeTickUpper,
+      { token0ToToken1: probeSwap.token0ToToken1, amountIn: probeSwap.amountIn, amountOutMinimum: 0n },
       0n,
       0n,
     ] as const;
@@ -277,10 +301,16 @@ export async function runRebalance(vaultAddress: Address, store: Store, reason: 
   const newTickLower = Math.min(tickA, tickB);
   const newTickUpper = Math.max(tickA, tickB);
 
+  // Re-size the swap against the FINAL range (uni-lab's answer may have moved
+  // the upper bound from the probe's fallback estimate) — this is the fix for
+  // the dust bug: without a real swap here, rebalance() mints with whatever
+  // ratio came out of the OLD position, leaving the mismatched side unused.
+  const finalSwap = buildSwapIx(newTickLower, newTickUpper);
+
   const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "rebalance", [
     newTickLower,
     newTickUpper,
-    { token0ToToken1: false, amountIn: 0n, amountOutMinimum: 0n },
+    { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum: 0n },
     0n,
     0n,
   ]);

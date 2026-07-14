@@ -49,30 +49,33 @@ export interface PositionValueInput {
   ethPriceUsd: number;
 }
 
-/** Estimated USD value of a Uniswap V3 position from its liquidity + range, using
- * the same standard formulas as sizeInitialSwap. Used only to size uni-lab.xyz API
- * calls (A1/B1 in /rc-rlp-rebalance) — not consulted by the contract. */
-export function estimatePositionValueUsd(input: PositionValueInput): number {
-  const { liquidity, currentTick, tickLower, tickUpper, ethPriceUsd } = input;
+/** Raw token0 (USDT, 6d) / token1 (WETH, 18d) amounts a position's liquidity
+ * converts to at the given current tick — the same standard Uniswap V3
+ * concentrated-liquidity formula used throughout this file. */
+export function estimatePositionAmounts(
+  input: Pick<PositionValueInput, "liquidity" | "currentTick" | "tickLower" | "tickUpper">,
+): { amount0Raw: number; amount1Raw: number } {
+  const { liquidity, currentTick, tickLower, tickUpper } = input;
   const L = Number(liquidity);
   const sqrtP = sqrtPriceAtTick(currentTick);
   const sqrtPa = sqrtPriceAtTick(tickLower);
   const sqrtPb = sqrtPriceAtTick(tickUpper);
 
-  let amount0Raw: number;
-  let amount1Raw: number;
   if (currentTick <= tickLower) {
-    amount0Raw = L * (1 / sqrtPa - 1 / sqrtPb);
-    amount1Raw = 0;
-  } else if (currentTick >= tickUpper) {
-    amount0Raw = 0;
-    amount1Raw = L * (sqrtPb - sqrtPa);
-  } else {
-    amount0Raw = L * (1 / sqrtP - 1 / sqrtPb);
-    amount1Raw = L * (sqrtP - sqrtPa);
+    return { amount0Raw: L * (1 / sqrtPa - 1 / sqrtPb), amount1Raw: 0 };
   }
+  if (currentTick >= tickUpper) {
+    return { amount0Raw: 0, amount1Raw: L * (sqrtPb - sqrtPa) };
+  }
+  return { amount0Raw: L * (1 / sqrtP - 1 / sqrtPb), amount1Raw: L * (sqrtP - sqrtPa) };
+}
 
-  return amount0Raw * 1e-6 + amount1Raw * 1e-18 * ethPriceUsd;
+/** Estimated USD value of a Uniswap V3 position from its liquidity + range, using
+ * the same standard formulas as sizeInitialSwap. Used only to size uni-lab.xyz API
+ * calls (A1/B1 in /rc-rlp-rebalance) — not consulted by the contract. */
+export function estimatePositionValueUsd(input: PositionValueInput): number {
+  const { amount0Raw, amount1Raw } = estimatePositionAmounts(input);
+  return amount0Raw * 1e-6 + amount1Raw * 1e-18 * input.ethPriceUsd;
 }
 
 export function sizeInitialSwap(input: SwapSizingInput): SwapSizingResult {
@@ -99,4 +102,72 @@ export function sizeInitialSwap(input: SwapSizingInput): SwapSizingResult {
   const amountIn = BigInt(Math.floor(Number(availableToken0Raw) * fraction));
 
   return { token0ToToken1: true, amountIn };
+}
+
+export interface RebalanceSwapInput {
+  currentTick: number;
+  /** The NEW range the position is about to be minted into — not the range
+   * being closed. */
+  newTickLower: number;
+  newTickUpper: number;
+  /** Whatever's actually sitting in the vault right now (raw units), e.g. after
+   * decreaseLiquidity+collect recovers a mix of both tokens from the closed
+   * position — unlike sizeInitialSwap, this does NOT assume an all-token0 start. */
+  availableToken0Raw: bigint;
+  availableToken1Raw: bigint;
+  ethPriceUsd: number;
+}
+
+export interface RebalanceSwapResult {
+  /** true: swap token0 (USDT) -> token1 (WETH). false: swap token1 (WETH) -> token0 (USDT). */
+  token0ToToken1: boolean;
+  amountIn: bigint;
+}
+
+/**
+ * Sizes the swap needed to rearrange the vault's recovered (possibly mixed)
+ * token0/token1 balance toward the ratio the NEW range actually needs at the
+ * current price, before minting. Without this, rebalance() mints with
+ * whatever ratio happened to come out of the OLD position — if that doesn't
+ * match the new range (routine, since ranges shift every cycle), the
+ * mismatched side sits as unminted dust in the vault, invisible to
+ * `investableUsdt` accounting for token1. This was confirmed happening live:
+ * a position minted ~100% USDT (price sitting at the top of the range, per
+ * uni-lab's own pool_setup breakdown) left ~$9.78 of recovered WETH unused.
+ */
+export function sizeRebalanceSwap(input: RebalanceSwapInput): RebalanceSwapResult {
+  const { currentTick, newTickLower, newTickUpper, availableToken0Raw, availableToken1Raw, ethPriceUsd } = input;
+
+  const value0Usd = Number(availableToken0Raw) * 1e-6;
+  const value1Usd = Number(availableToken1Raw) * 1e-18 * ethPriceUsd;
+  const totalUsd = value0Usd + value1Usd;
+
+  let targetFraction0: number; // target share of total value that should end up as token0
+  if (currentTick <= newTickLower) {
+    targetFraction0 = 1;
+  } else if (currentTick >= newTickUpper) {
+    targetFraction0 = 0;
+  } else {
+    const sqrtP = sqrtPriceAtTick(currentTick);
+    const sqrtPa = sqrtPriceAtTick(newTickLower);
+    const sqrtPb = sqrtPriceAtTick(newTickUpper);
+    const rawRatio = ((sqrtP - sqrtPa) * sqrtP * sqrtPb) / (sqrtPb - sqrtP); // amount1_raw / amount0_raw
+    const valueRatio = rawRatio * ethPriceUsd * 1e-12; // USD value of token1 per USD value of token0
+    targetFraction0 = 1 / (1 + valueRatio);
+  }
+
+  const targetValue0Usd = totalUsd * targetFraction0;
+  const delta0Usd = value0Usd - targetValue0Usd; // positive: excess token0, swap some to token1
+
+  // Dust-sized rebalances (<$0.01 off target) aren't worth a swap's gas/slippage.
+  if (Math.abs(delta0Usd) < 0.01) {
+    return { token0ToToken1: true, amountIn: 0n };
+  }
+
+  if (delta0Usd > 0) {
+    const amountIn = BigInt(Math.floor(delta0Usd * 1e6));
+    return { token0ToToken1: true, amountIn };
+  }
+  const amountIn = BigInt(Math.floor((-delta0Usd / ethPriceUsd) * 1e18));
+  return { token0ToToken1: false, amountIn };
 }
