@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { decodeEventLog, parseUnits } from "viem";
@@ -42,26 +42,26 @@ export default function CreateVault() {
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
 
-  const [investAmount, setInvestAmount] = useState("100");
-  // Min/max are independent — no forced symmetry. Prefilled at ±10% once the
-  // live price loads, but each is freely editable (asymmetric ranges allowed;
-  // the contract has never required symmetry, only the old UI did).
+  // All fields start empty — nothing is submitted until the user actually
+  // types a value. The numbers shown below (as `placeholder`, not `value`)
+  // are just worked examples, computed live where it makes sense (min/max
+  // price from the pool's current price ±10%) so there's no setState-in-effect
+  // prefill trick needed.
+  const [investAmount, setInvestAmount] = useState("");
+  // Min/max are independent — no forced symmetry; the contract has never
+  // required it, only the old UI did.
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
-  const [maxRebalances, setMaxRebalances] = useState("10");
-  const [reinjectionAmount, setReinjectionAmount] = useState("10");
-  const [periodicHours, setPeriodicHours] = useState("24");
-  const [usdtBudget, setUsdtBudget] = useState("5");
+  const [maxRebalances, setMaxRebalances] = useState("");
+  const [reinjectionAmount, setReinjectionAmount] = useState("");
+  const [periodicHours, setPeriodicHours] = useState("");
+  const [usdtBudget, setUsdtBudget] = useState("");
 
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (currentPrice === undefined || minPrice !== "" || maxPrice !== "") return;
-    setMinPrice((currentPrice * 0.9).toFixed(2));
-    setMaxPrice((currentPrice * 1.1).toFixed(2));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only prefill once, when price first arrives
-  }, [currentPrice]);
+  const minPricePlaceholder = currentPrice !== undefined ? (currentPrice * 0.9).toFixed(2) : "1604.18";
+  const maxPricePlaceholder = currentPrice !== undefined ? (currentPrice * 1.1).toFixed(2) : "1960.66";
 
   const totalUsdt =
     (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0) + (parseFloat(usdtBudget) || 0);
@@ -71,6 +71,20 @@ export default function CreateVault() {
   async function handleCreate() {
     if (!address || !publicClient || currentPrice === undefined || tickSpacing === undefined) return;
     setError(null);
+
+    if (
+      !investAmount ||
+      !minPrice ||
+      !maxPrice ||
+      !maxRebalances ||
+      !reinjectionAmount ||
+      !periodicHours ||
+      !usdtBudget
+    ) {
+      setError("Completá todos los campos — no hay valores por defecto.");
+      setStep("error");
+      return;
+    }
 
     try {
       setStep("creating");
@@ -208,12 +222,14 @@ export default function CreateVault() {
                   suffix="USDT"
                   value={investAmount}
                   onChange={setInvestAmount}
+                  placeholder="100"
                 />
                 <Field
                   label="Precio mínimo"
                   suffix="USD"
                   value={minPrice}
                   onChange={setMinPrice}
+                  placeholder={minPricePlaceholder}
                   hint="Piso del rango — no tiene que ser simétrico"
                 />
                 <Field
@@ -221,12 +237,14 @@ export default function CreateVault() {
                   suffix="USD"
                   value={maxPrice}
                   onChange={setMaxPrice}
+                  placeholder={maxPricePlaceholder}
                   hint="Techo del rango"
                 />
                 <Field
                   label="Tope de rebalanceos"
                   value={maxRebalances}
                   onChange={setMaxRebalances}
+                  placeholder="10"
                   hint="Tu techo de gasto en fees"
                 />
                 <Field
@@ -234,6 +252,7 @@ export default function CreateVault() {
                   suffix="USDT"
                   value={reinjectionAmount}
                   onChange={setReinjectionAmount}
+                  placeholder="10"
                   hint="Entra y sale de la posición en ciclos"
                 />
                 <Field
@@ -241,12 +260,14 @@ export default function CreateVault() {
                   suffix="horas"
                   value={periodicHours}
                   onChange={setPeriodicHours}
+                  placeholder="24"
                 />
                 <Field
                   label="Presupuesto uni-lab.xyz"
                   suffix="USDT"
                   value={usdtBudget}
                   onChange={setUsdtBudget}
+                  placeholder="5"
                   hint="0.5 USDT por consulta"
                 />
               </div>
@@ -316,12 +337,14 @@ function Field({
   onChange,
   suffix,
   hint,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   suffix?: string;
   hint?: string;
+  placeholder?: string;
 }) {
   return (
     <label className="flex flex-col gap-1.5">
@@ -331,6 +354,7 @@ function Field({
           className="field-input"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
           inputMode="decimal"
         />
         {suffix && (
