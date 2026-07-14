@@ -5,6 +5,7 @@ import { usePublicClient } from "wagmi";
 import { formatUnits, parseEventLogs, type Log } from "viem";
 import { rangeVaultAbi } from "@/lib/contracts";
 import { FACTORY_DEPLOY_BLOCK } from "@/lib/addresses";
+import { getLogsChunked } from "@/lib/getLogsChunked";
 
 interface FeedItem {
   txHash: string;
@@ -30,11 +31,7 @@ export function ActivityFeed({ address }: { address: `0x${string}` }) {
     refetchInterval: 10_000,
     queryFn: async (): Promise<FeedItem[]> => {
       if (!publicClient) return [];
-      const logs = await publicClient.getLogs({
-        address,
-        fromBlock: FACTORY_DEPLOY_BLOCK,
-        toBlock: "latest",
-      });
+      const logs = await getLogsChunked(publicClient, { address, fromBlock: FACTORY_DEPLOY_BLOCK, toBlock: "latest" });
       const parsed = parseEventLogs({ abi: rangeVaultAbi, logs: logs as Log[] });
 
       const feed: FeedItem[] = [];

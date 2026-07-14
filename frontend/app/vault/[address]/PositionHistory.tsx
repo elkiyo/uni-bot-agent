@@ -6,6 +6,7 @@ import { formatUnits, parseEventLogs, type Log } from "viem";
 import { rangeVaultAbi } from "@/lib/contracts";
 import { FACTORY_DEPLOY_BLOCK } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
+import { getLogsChunked } from "@/lib/getLogsChunked";
 
 interface OpenEvent {
   tokenId: bigint;
@@ -49,7 +50,7 @@ export function PositionHistory({ address }: { address: `0x${string}` }) {
     refetchInterval: 20_000,
     queryFn: async (): Promise<PositionRecord[]> => {
       if (!publicClient) return [];
-      const logs = await publicClient.getLogs({ address, fromBlock: FACTORY_DEPLOY_BLOCK, toBlock: "latest" });
+      const logs = await getLogsChunked(publicClient, { address, fromBlock: FACTORY_DEPLOY_BLOCK, toBlock: "latest" });
       const parsed = parseEventLogs({ abi: rangeVaultAbi, logs: logs as Log[] });
 
       const targetConfigs: Array<{ tickLower: number; tickUpper: number; blockNumber: bigint }> = [];
