@@ -1,0 +1,29 @@
+name: Keeper tick
+
+# Vercel's own Cron Jobs are capped at once/day on the Hobby plan (any more
+# frequent expression fails at deploy time) — see SCALING.md. This workflow
+# is the actual trigger: every 5 minutes it POSTs to the keeper's serverless
+# endpoint, which does one discovery+monitor+rebalance pass over all vaults.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # manual trigger from the Actions tab, for testing
+
+concurrency:
+  group: keeper-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/cron/tick
+        run: |
+          status=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST \
+            "https://uni-bot-agent-gules.vercel.app/api/cron/tick" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "HTTP $status"
+          cat /tmp/response.json
+          if [ "$status" -ge 300 ]; then
+            exit 1
+          fi

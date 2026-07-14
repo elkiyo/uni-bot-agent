@@ -89,6 +89,15 @@ Datos clave del hackathon:
 
 ### `agent/` — keeper multi-vault
 
+> **Nota (2026-07-13):** esta sección describe la lógica del keeper tal como
+> se diseñó originalmente para correr como proceso Node standalone en
+> `agent/`. Esa lógica sigue siendo válida y `agent/` se mantiene para debug
+> local, pero **en producción corre portada a `frontend/lib/keeper/`, invocada
+> vía `POST /api/cron/tick` y disparada por un cron de GitHub Actions cada 5
+> minutos** (no un `node-cron` en un proceso propio) — ver `SCALING.md` para
+> el porqué (Vercel Hobby limita sus Cron Jobs nativos a una vez por día) y el
+> diagrama completo.
+
 - `wallet.ts` — cuenta del operador de la plataforma (Celo mainnet).
 - `attribution.ts` — `toDataSuffix(['range_vault', ATTRIBUTION_TAG])` en cada tx del keeper (código en minúsculas/guion bajo: ERC-8021 solo acepta `[a-z0-9_]`, sin guiones).
 - `discovery.ts` — escucha `VaultCreated` del factory (evento + polling de respaldo), mantiene la lista de vaults activos.

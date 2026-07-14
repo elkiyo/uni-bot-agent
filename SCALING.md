@@ -9,47 +9,89 @@ Qué está en producción hoy, qué es el eslabón débil, y en qué orden escal
 |---|---|---|
 | Contratos (`PlatformConfig`, `VaultFactory`, `RangeVault`) | Celo mainnet | ✅ Inmutables, no requieren infra |
 | Frontend | Vercel (`uni-bot-agent-gules.vercel.app`) | ✅ Serverless, escala solo |
-| Keeper (`agent/`) | **Mac del operador** | ⚠️ Punto único de falla |
-| Estado del keeper (`agent/data/store.json`) | Disco local | ⚠️ Las api_keys de uni-lab no son recuperables si se pierde |
+| Keeper (`frontend/lib/keeper/` + `POST /api/cron/tick`) | Vercel (mismo proyecto que el frontend) | ✅ Ya no depende de la Mac — ver abajo |
+| Disparo del tick cada 5 min | GitHub Actions (`.github/workflows/keeper-cron.yml`) | ✅ Gratis; ver nota de precisión abajo |
+| Estado del keeper (vaults, api_keys de uni-lab, último bloque escaneado, log de consultas a uni-lab) | Supabase/Postgres (Vercel Marketplace, tier gratis) | ✅ Persiste entre invocaciones serverless |
+| `agent/` (Node local, node-cron) | — | 🗄️ Superseded — se mantiene solo como herramienta de debug manual, ver abajo |
 | uni-lab.xyz API | Vercel (infra propia, aparte) | ✅ |
 
-## El orden correcto para escalar
+## Keeper: por qué terminó así (no depende del PC)
 
-### 1. Keeper resiliente (ahora)
-- **Local (puente):** `agent/deploy/xyz.unilab.uni-bot-agent.plist` — servicio
-  launchd que arranca el keeper al bootear la Mac y lo reinicia si crashea:
-  ```bash
-  cp agent/deploy/xyz.unilab.uni-bot-agent.plist ~/Library/LaunchAgents/
-  launchctl load ~/Library/LaunchAgents/xyz.unilab.uni-bot-agent.plist
-  ```
-  **⚠️ Gotcha real, ya lo pisamos:** si el repo vive bajo `~/Desktop` (como
-  ahora), el proceso lanzado por `launchd` revienta con
-  `EPERM: operation not permitted` al leer `node_modules/tsx/...` — macOS
-  protege Desktop/Documents/Downloads con TCC, y un proceso arrancado por
-  `launchd` (a diferencia de uno interactivo desde Terminal, que ya heredó el
-  permiso de Terminal.app) no tiene ese acceso por defecto. Dos soluciones
-  reales, no probamos ninguna todavía:
-  1. **Mover el proyecto fuera de Desktop** (ej. `~/dev/DEFAI`) — la forma más
-     simple, esas carpetas no están protegidas por TCC.
-  2. **Dar Full Disk Access** a `/usr/local/bin/node` (o al binario que
-     invoque `launchd`) en System Settings → Privacy & Security → Full Disk
-     Access — requiere click manual del usuario, no se puede automatizar.
-  Mientras tanto, el keeper sigue corriendo como proceso de Bash manual
-  (`npm run start &` en `agent/`) — funciona, pero no sobrevive un reinicio o
-  que se cierre la sesión de Terminal.
-- **VPS (siguiente):** `agent/Dockerfile` ya está listo — `docker build` + un
-  volumen en `/app/data` + las env vars de `agent/.env.example`. Cualquier VPS
-  chico alcanza (el keeper es I/O-bound: lecturas RPC cada 5 min). Este camino
-  además evita el problema de TCC de arriba por completo.
-- Respaldar `agent/data/store.json` (contiene las api_keys de uni-lab, que se
-  muestran una sola vez; se pueden regenerar vía `/regenerate-api-key` pero es
-  fricción operativa).
+El usuario pidió explícitamente sacar el keeper de su Mac y moverlo a
+GitHub+Vercel. La opción obvia — Cron Jobs nativos de Vercel — **no sirve tal
+cual en el plan Hobby**: están limitados a **una vez por día** (cualquier
+expresión más frecuente falla al deployar, no es solo imprecisión). Confirmado
+contra la doc oficial de Vercel el 2026-07-13.
+
+Arquitectura elegida (decisión explícita del usuario entre esto y upgrade a
+Vercel Pro $20/mes): **GitHub Actions dispara el tick, Vercel lo ejecuta.**
+
+```
+GitHub Actions (cron */5 * * * *)
+  → POST https://uni-bot-agent-gules.vercel.app/api/cron/tick
+     (Authorization: Bearer $CRON_SECRET)
+  → frontend/app/api/cron/tick/route.ts
+  → frontend/lib/keeper/tick.ts: discoverAndRegisterVaults + checkVault + runInitPosition/runRebalance
+  → estado en Supabase/Postgres (frontend/lib/keeper/store.ts, schema en lib/keeper/schema.sql)
+```
+
+- **Costo: $0.** Sin upgrade de plan, sin VPS.
+- **Por qué Supabase y no un KV puro (Redis/Upstash):** se evaluó Upstash
+  primero por ser lo más simple para el uso original (un hash + un lock), pero
+  se cambió a Supabase porque da tablas reales consultables por SQL — útil
+  para eventualmente mostrar en el panel admin el historial de consultas a
+  uni-lab (`keeper_unilab_calls`), no solo una lista JSON — con el mismo costo
+  de integración (API REST vía PostgREST, sin manejo de conexiones
+  persistentes, tan serverless-friendly como Redis). Tablas y función de lock:
+  `frontend/lib/keeper/schema.sql` — **hay que correrlo a mano una vez** en el
+  SQL Editor de Supabase después de conectar la integración; no se aplica solo.
+- **Lock contra ticks superpuestos:** `store.ts#acquireTickLock` llama a una
+  función de Postgres (`acquire_tick_lock`, ver schema.sql) que hace un
+  `UPDATE ... WHERE expires_at < now()` atómico con TTL de 4 min (menor al
+  intervalo de disparo de 5 min). Necesario porque, a diferencia del scheduler
+  in-process anterior, ahora el trigger es externo: si un tick se cuelga (RPC
+  lento, una tx que tarda en confirmar), el siguiente disparo de GitHub
+  Actions no debe arrancar un segundo tick — dos keepers con la misma wallet
+  compiten por nonce.
+- **Duración de función:** Hobby permite hasta 300s con Fluid Compute
+  (confirmado en la doc de Vercel); el route pone `maxDuration = 120`, de sobra
+  para varios vaults con confirmaciones de tx incluidas.
+- **Precisión real del trigger:** el cron de GitHub Actions es *best-effort* —
+  la doc de GitHub advierte que puede demorarse durante picos de carga de la
+  plataforma. Para un puñado de vaults de hackathon esto es aceptable; no es
+  garantía de tiempo real como sí lo sería Vercel Pro.
+- **Variables de entorno del keeper** (Vercel → Project Settings →
+  Environment Variables, nunca con prefijo `NEXT_PUBLIC_`): `OPERATOR_PRIVATE_KEY`
+  (la misma wallet que ya operaba desde `agent/.env`), `CELO_RPC_URL`,
+  `ATTRIBUTION_TAG`, `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` (se completan
+  solas si se conecta la integración de Supabase desde el Marketplace de
+  Vercel — el `service_role` key tiene acceso total, por eso las tablas
+  `keeper_*` tienen RLS habilitado sin políticas: solo ese key las puede leer
+  o escribir), `CRON_SECRET` (generado con `openssl rand -hex 32`, el mismo
+  valor va como secret `CRON_SECRET` en GitHub). Ver
+  `frontend/.env.local.example`.
+
+### `agent/` local: qué hacer con él
+No se borró — sigue sirviendo para correr el keeper a mano contra un fork o
+para debug interactivo (`npm run start` en `agent/`), y documenta el gotcha de
+TCC/launchd por si alguna vez hace falta un daemon local de nuevo. Pero **ya
+no es el camino de producción**: la lógica vive duplicada intencionalmente en
+`frontend/lib/keeper/` (con `store.ts`/`logger.ts` cambiados a Supabase en vez
+de archivos locales, porque las funciones serverless no tienen disco
+persistente entre invocaciones). Si se toca la lógica de rebalanceo, hay que
+decidir conscientemente si el cambio aplica a un lado, al otro, o a ambos — no
+hay sincronización automática entre las dos copias.
 
 ### 2. Estado durable (cuando haya >5-10 vaults)
-- Migrar `store.json` a Postgres/SQLite gestionado (el `Store` ya es una clase
-  con interfaz chica — cambiar la implementación no toca el resto del keeper).
+- El estado ya vive en Postgres (Supabase) desde la migración a Vercel — ver
+  arriba y `lib/keeper/schema.sql`. Con tablas reales desde el día uno, esto
+  ya escala más allá de lo que un JSON plano hubiera aguantado; si el volumen
+  crece mucho el próximo paso natural es paginar `keeper_unilab_calls` en vez
+  de traerla entera.
 - El escaneo de eventos puede reconstruirse desde chain en cualquier momento;
-  lo único irrecuperable son las api_keys → eso es lo que importa persistir.
+  lo único irrecuperable son las api_keys de uni-lab → eso es lo que importa
+  respaldar (Supabase hace backups automáticos incluso en el tier gratis, pero
+  conviene un export propio antes de escalar con fondos de terceros).
 
 ### 3. Observabilidad (antes de promocionar públicamente)
 - `logger.ts` ya emite JSON por línea — apuntarlo a un colector (Axiom/Grafana
@@ -85,6 +127,12 @@ Qué está en producción hoy, qué es el eslabón débil, y en qué orden escal
 
 ## Qué NO hacer
 - No subir `maxDepositUsd` sin auditoría del contrato.
-- No correr dos keepers con la misma wallet a la vez.
-- No perder `agent/data/` sin respaldo (api_keys).
-- No commitear jamás `agent/.env` (clave del operador).
+- No correr dos keepers con la misma wallet a la vez — esto incluye dejar el
+  proceso local de `agent/` (`npm run start &` en la Mac) corriendo al mismo
+  tiempo que el cron de Vercel una vez confirmado el corte: compiten por nonce
+  del operador. Verificar con `ps aux | grep tsx` / matar el proceso local
+  antes de dar por hecha la migración.
+- No perder `agent/data/` sin respaldo (api_keys) si todavía se usa el keeper
+  local para debug — en producción esto ya vive en Supabase.
+- No commitear jamás `agent/.env` ni las env vars del keeper en Vercel
+  (`OPERATOR_PRIVATE_KEY`, `CRON_SECRET`) en ningún archivo del repo.
