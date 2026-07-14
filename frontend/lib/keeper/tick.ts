@@ -16,6 +16,7 @@ export interface TickSummary {
   vaultsChecked: number;
   actions: Array<{ vault: string; action: string }>;
   errors: Array<{ vault?: string; msg: string }>;
+  debug?: Record<string, unknown>;
 }
 
 /**
@@ -37,12 +38,19 @@ export async function runTick(): Promise<TickSummary> {
 
     const chainId = await publicClient.getChainId();
     const store = new Store();
+    const lastProcessedBlockBefore = await store.getLastProcessedBlock();
+    const latestBlock = await publicClient.getBlockNumber();
     const summary: TickSummary = {
       chainId,
       operator: operatorAccount?.address ?? null,
       vaultsChecked: 0,
       actions: [],
       errors: [],
+      debug: {
+        factoryAddress: FACTORY_ADDRESS,
+        lastProcessedBlockBefore: lastProcessedBlockBefore.toString(),
+        latestBlock: latestBlock.toString(),
+      },
     };
 
     try {
@@ -50,6 +58,9 @@ export async function runTick(): Promise<TickSummary> {
     } catch (err) {
       logEvent({ level: "error", msg: "discovery failed", err: String(err) });
       summary.errors.push({ msg: `discovery failed: ${String(err)}` });
+    }
+    if (summary.debug) {
+      summary.debug.lastProcessedBlockAfter = (await store.getLastProcessedBlock()).toString();
     }
 
     for (const record of await store.listVaults()) {
