@@ -323,6 +323,10 @@ export default function CreateVault() {
                 </p>
               )}
               {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
+
+              <div className="mt-6">
+                <SignatureStepper current={step} failedAt={failedAt} />
+              </div>
             </div>
 
             {/* Live summary */}
@@ -360,8 +364,6 @@ export default function CreateVault() {
                   cualquier momento.
                 </p>
               </div>
-
-              <SignatureStepper current={step} failedAt={failedAt} />
             </aside>
           </div>
         ) : (
