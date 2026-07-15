@@ -2,7 +2,7 @@ import "server-only";
 import type { Abi, Address } from "viem";
 import { publicClient, operatorAccount } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
-import { rcRlpRebalance, getPricing } from "./unilab";
+import { rcRlpRebalance, rcRlpRebalanceViaX402, getPricing, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap } from "./swapMath";
 import { POOL } from "../addresses";
@@ -318,28 +318,57 @@ async function runRebalanceViaUniLab(
     return;
   }
 
-  const payAmountRaw = await getUniLabAmountRaw();
-
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: probeArgs }, payAmountRaw))) {
+  // Rebalance-only gas check, upfront — guards against wasting EITHER
+  // payment method (x402 USDC or on-chain USDT) on a cycle whose final
+  // rebalance() call can't actually be sent for lack of CELO gas.
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: probeArgs }, null))) {
     return;
   }
 
-  const { hash: payTxHash } = await payUniLabAndGetTxHash(vaultAddress, payAmountRaw);
+  const reinjectionUsd = Number(reinjectAmount) / 1e6; // E1 = what the keeper is actually doing this cycle
+  const baseParams = {
+    currentLiquidityUsd: positionValueUsd,
+    amountToRecoverUsd: positionValueUsd,
+    currentPriceVolatileAsset: ethPrice,
+    newLowerBound: newLowerPrice,
+    reinvestmentAmountUsd: reinjectionUsd,
+  };
 
+  // Prefer x402 (operator's own USDC, no vault budget spent) — see
+  // HACKATHON.md "Track 2 — x402". Falls back to the on-chain
+  // payUniLabFee()+tx_hash flow if uni-lab.xyz doesn't have x402 wired up on
+  // this endpoint yet, or the operator has no USDC to pay with. Safe to
+  // attempt speculatively: nothing is spent unless the x402 call succeeds.
+  let resp: RcRlpRebalanceResponse | undefined;
   try {
-    const reinjectionUsd = Number(reinjectAmount) / 1e6; // E1 = what the keeper is actually doing this cycle
-    const resp = await rcRlpRebalance(
-      record.uniLabApiKey,
-      {
-        currentLiquidityUsd: positionValueUsd,
-        amountToRecoverUsd: positionValueUsd,
-        currentPriceVolatileAsset: ethPrice,
-        newLowerBound: newLowerPrice,
-        reinvestmentAmountUsd: reinjectionUsd,
-        txHash: payTxHash,
-      },
-      vaultAddress,
-    );
+    resp = await rcRlpRebalanceViaX402(record.uniLabApiKey, baseParams, vaultAddress);
+  } catch (x402Err) {
+    logEvent({
+      level: "info",
+      vault: vaultAddress,
+      msg: "x402 payment unavailable this cycle, falling back to on-chain payUniLabFee",
+      err: String(x402Err),
+    });
+
+    const payAmountRaw = await getUniLabAmountRaw();
+    if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "payUniLabFee", args: [payAmountRaw] }, null))) {
+      return;
+    }
+    const { hash: payTxHash } = await payUniLabAndGetTxHash(vaultAddress, payAmountRaw);
+
+    try {
+      resp = await rcRlpRebalance(record.uniLabApiKey, { ...baseParams, txHash: payTxHash }, vaultAddress);
+    } catch (err) {
+      logEvent({
+        level: "warn",
+        vault: vaultAddress,
+        msg: "rc-rlp-rebalance call failed, using symmetric-width estimate",
+        err: String(err),
+      });
+    }
+  }
+
+  if (resp) {
     // Confirmed schema (2026-07-13, from a real 200 response — see the
     // keeper_unilab_calls audit trail in Supabase): the upper bound is nested
     // under `calculation`, and the field name itself differs by mode — RLP
@@ -357,13 +386,6 @@ async function runRebalanceViaUniLab(
         response: resp,
       });
     }
-  } catch (err) {
-    logEvent({
-      level: "warn",
-      vault: vaultAddress,
-      msg: "rc-rlp-rebalance call failed, using symmetric-width estimate",
-      err: String(err),
-    });
   }
 
   // Higher USD price of ETH = lower tick in this pool, so the converted bounds

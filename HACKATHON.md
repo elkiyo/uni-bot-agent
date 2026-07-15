@@ -13,11 +13,14 @@ Fuente: https://celoplatform.notion.site/Agentic-Payments-DeFAI-Hackathon-364d5c
 
 1. ~~Registrar en celobuilders.xyz~~ ✅ hecho.
 2. ~~Cargar el tag en Vercel~~ ✅ hecho.
-3. Registrar el agente en ERC-8004 vía 8004scan.io (campo `erc8004Url`, requerido para publicar).
-4. Agregar `agentWalletAddress` a la submission (requerido para publicar) — la wallet del operador: `0xAe3921825fEC520cADa98EB0790BC91a61d4286b`.
-5. Grabar demo (mostrar: crear vault → depósito → el agente arma la posición → rebalanceo real con swap → panel admin cobrando fees) — explicar explícitamente el rebalanceo periódico forzado como gestión activa real (no actividad artificial), dado que es justo lo que la revisión manual anti-sybil de los jueces va a mirar.
-6. Post en X etiquetando @CeloDevs y @Celo con el link del registro ERC-8004 → va en el campo `socialLink` de la submission.
-7. Publicar (`POST /submissions/me/publish`) — se puede actualizar hasta el cierre del hackathon, no hay que apurarlo.
+3. ~~Agregar `agentWalletAddress` a la submission~~ ✅ hecho (2026-07-15) — `0xAe3921825fEC520cADa98EB0790BC91a61d4286b`, la wallet del operador. También se sumó el track `most-x402-payments` a `trackIds`. Ver sección "Track 2 — x402" más abajo, dejó de ser "no aplica".
+4. Registrar el agente en ERC-8004 vía 8004scan.io (campo `erc8004Url`, requerido para publicar).
+5. Integrar x402 (uni-lab.xyz lado servidor + keeper de uni-bot-agent lado cliente) — ver sección de abajo.
+6. Grabar demo (mostrar: crear vault → depósito → el agente arma la posición → rebalanceo real con swap → panel admin cobrando fees) — explicar explícitamente el rebalanceo periódico forzado como gestión activa real (no actividad artificial), dado que es justo lo que la revisión manual anti-sybil de los jueces va a mirar.
+7. Post en X etiquetando @CeloDevs y @Celo con el link del registro ERC-8004 → va en el campo `socialLink` de la submission.
+8. Publicar (`POST /submissions/me/publish`) — se puede actualizar hasta el cierre del hackathon, no hay que apurarlo.
+
+**Reconexión con celobuilders.xyz:** el flujo de login (Google OAuth + código corto) se puede rehacer en cualquier momento vía `POST /auth/google/start` + `POST /auth/google/claim` (ver `.agents/skills/celo-builders/SKILL.md`) — el `apiKey`/bearer que devuelve `claim` es un secreto de sesión, no se guarda en este repo ni en ningún archivo versionado.
 
 **Nota clave de la conversación:** el tag no está atado a un vault ni a una wallet — se agrega al calldata de *cada* transacción que manda el keeper operador, sin importar de qué vault sea. Esto significa que la actividad de **todos** los vaults de la plataforma suma al mismo total del leaderboard — cuantos más usuarios depositen, más alto sube el volumen tageado, sin necesidad de "gamear" nada.
 
@@ -33,9 +36,24 @@ Fuente: https://celoplatform.notion.site/Agentic-Payments-DeFAI-Hackathon-364d5c
 | Track | Premio | Condición de victoria |
 |---|---|---|
 | **1. Most Revenue Generated** (la nuestra) | $3,000 ($2000 / $1000) | El agente que genera **más volumen on-chain en Celo** durante el hackathon (7 jul – 3 ago), medido por transacciones con el Attribution Tag propio |
-| 2. Most x402 Payments | $1,000 ($700 / $300) | Más pagos x402 liquidados en Celo durante el período — no aplica a este proyecto |
+| **2. Most x402 Payments** (sumada 2026-07-15) | $1,000 ($700 / $300) | Más pagos x402 liquidados en Celo durante el período (conteo crudo de settlements exitosos) |
 | 3. Askbots | $500 (bounties) | Rating más alto en askbots.ai — no aplica |
 | 4. Best Feedback for Aigora | $500 (bounties) | Top 10 feedbacks en aigora.org — no aplica |
+
+## Track 2 — Most x402 Payments (por qué dejó de ser "no aplica")
+
+Se descartó al principio porque uni-bot-agent no usa el protocolo x402 en ningún lado — le paga a uni-lab.xyz con una transferencia ERC20 directa, no con el flujo HTTP 402 + `X-PAYMENT`. Retomado el 2026-07-15 después de ver en el dashboard de Dune que la query de **Track 1** también trae columnas `x402_volume_usd`/`x402_settlements` por código — evidencia de que x402 aporta al menos al panorama general, y de que dos proyectos competidores (`spagero763/bureau`, `oojae/remitroute`) ya construyeron soporte x402 real.
+
+**Hallazgo clave, textual del `SKILL.md` de celo-builders instalado** (`.agents/skills/celo-builders/SKILL.md`):
+
+> "x402 facilitator settlements are attributed to that wallet [`agentWalletAddress`], and the leaderboard shows them as soon as it is on file (attribution is retroactive across the whole hackathon window, but the leaderboard reads zero until the wallet is added)."
+
+Es decir: la atribución de x402 **no es por el data suffix de calldata** (ERC-8021) que usamos para transacciones normales — no podríamos inyectarlo de todas formas, porque el `transferWithAuthorization` (EIP-3009) de la settlement lo manda el *facilitator*, no nuestro keeper. Es por **wallet registrada en la submission**, y es retroactiva a toda la ventana del hackathon. Confirmado también contra `/hackathons/agentic-payments-defai/submission-fields`: el campo `agentWalletAddress` dice explícitamente *"used for on-chain tracking of x402 payments and revenue volume"*.
+
+**Plan de integración (dos repos):**
+1. **`uni-lab.xyz`** (repo separado, `/Users/elkiyo.eth/Desktop/uni-lab.xyz`, también del usuario) — agregar soporte x402 del lado servidor a las rutas pagas (`/v1/rc-rlp-rebalance`, `/v1/pool-setup-initial`) **además de**, no en reemplazo de, el flujo actual de `tx_hash` on-chain (esas rutas ya sirven a otros agentes registrados, no solo a nosotros — no romper el flujo existente). Con `@x402/express` + `x402ResourceServer`, siguiendo el patrón de `bureau/src/x402.ts`.
+2. **`uni-bot-agent`** (este repo) — el keeper (`frontend/lib/keeper/unilab.ts`) paga vía `wrapFetchWithPayment` (de `@x402/fetch` o `thirdweb/x402`) usando la wallet del operador, en vez de (o adicional a) `payUniLabFee()` on-chain.
+3. Referencia de patrón client/server: repos clonados en `/tmp/competitor-check/{bureau,remitroute}` (públicos, ya en GitHub).
 
 ## Track 1 — lo que hay que entregar, textual
 
@@ -94,7 +112,8 @@ Fuente: https://celoplatform.notion.site/Agentic-Payments-DeFAI-Hackathon-364d5c
 | **Registro en celobuilders.xyz (obtener el tag)** | ✅ Hecho — `celo_e38cdd3210a6`, cargado en Vercel |
 | Lógica económica real, no wash-trading aparente | ✅ Documentado explícitamente en `PLAN.md` (ciclo de reinyección alternada, mismo patrón que gestores reales) |
 | Registro ERC-8004 (8004scan.io) | ❌ Pendiente |
-| `agentWalletAddress` en la submission | ❌ Pendiente |
+| `agentWalletAddress` en la submission | ✅ Hecho (2026-07-15) — `0xAe3921825fEC520cADa98EB0790BC91a61d4286b` |
+| Soporte x402 (uni-lab.xyz servidor + keeper cliente) | ❌ Pendiente — ver sección "Track 2" arriba |
 | Demo grabado | ❌ Pendiente |
 | Post en X con @CeloDevs @Celo + link ERC-8004 | ❌ Pendiente |
 | Submission final (publicar) vía Celo Builders Skill | ❌ Pendiente — se puede dejar para el final, se puede editar hasta el cierre |
