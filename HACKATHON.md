@@ -6,6 +6,7 @@ Fuente: https://celoplatform.notion.site/Agentic-Payments-DeFAI-Hackathon-364d5c
 ## ✅ Registrado (2026-07-14)
 
 - **Attribution Tag real: `celo_e38cdd3210a6`** — obtenido de `PUT https://celobuilders.xyz/submissions/me` (proyecto `uni-bot-agent`, track `most-revenue-generated`, repo `github.com/elkiyo/uni-bot-agent`). Ya cargado como `ATTRIBUTION_TAG` en Vercel y redeployado — desde ahora, toda transacción real del keeper suma al leaderboard.
+- **`projectName` renombrado a "UniAgent" (2026-07-15)** — el nombre del repo (`uni-bot-agent`) y por lo tanto el attribution tag no cambian (el tag queda fijo al primer `githubUrl` guardado, no al `projectName`). Se evaluaron varias opciones antes de elegir esta — se descartó cualquier nombre con "Uniswap" completo por riesgo de marca (ej. "UniswapRebalancerVault"), y se buscó algo corto que conecte con el tema "agentic" del hackathon.
 - **Deadline confirmado, sin ambigüedad:** la API real de submission (no la página de marketing de Notion) dice `submissionDeadline: 2026-08-03T09:00:00.000Z` — **3 de agosto, 9am GMT**. La frase suelta que mencionaba 20 de julio era efectivamente texto viejo desactualizado (ver sección de abajo, dejada como registro histórico).
 - Slug real del hackathon: `agentic-payments-defai` (no `celo-onchain-agents`, que es un hackathon distinto y ya cerrado — el skill genérico usa ese como ejemplo).
 
