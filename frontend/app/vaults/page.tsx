@@ -168,6 +168,7 @@ function VaultCard({
 
   let positionValueUsd: number | undefined;
   let rangeLabel: string | undefined;
+  let inRange: boolean | undefined;
   if (positionData && currentTick !== undefined && ethPrice !== undefined) {
     const [, , , , , tickLower, tickUpper, liquidity] = positionData as readonly [
       bigint,
@@ -191,6 +192,10 @@ function VaultCard({
     const lo = Math.min(priceA, priceB);
     const hi = Math.max(priceA, priceB);
     rangeLabel = `$${lo.toFixed(0)} – $${hi.toFixed(0)}`;
+
+    // Uniswap always mints with tickLower < tickUpper numerically, so this is
+    // a plain comparison regardless of the price/tick inversion elsewhere.
+    inRange = currentTick >= tickLower && currentTick <= tickUpper;
   }
 
   const idleCapital =
@@ -212,6 +217,17 @@ function VaultCard({
             <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">Activo</span>
           )}
           {!isClosed && !hasPosition && <span className="eyebrow !px-3 !py-1">Sin posición</span>}
+          {!isClosed && hasPosition && inRange !== undefined && (
+            <span
+              className={
+                inRange
+                  ? "eyebrow !border-positive/40 !px-3 !py-1 !text-positive"
+                  : "eyebrow !border-negative/40 !px-3 !py-1 !text-negative"
+              }
+            >
+              {inRange ? "En rango" : "Fuera de rango"}
+            </span>
+          )}
         </div>
         <span className="text-xs text-faint transition-colors group-hover:text-accent">Ver detalle →</span>
       </div>
