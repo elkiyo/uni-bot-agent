@@ -7,6 +7,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 const links = [
   { href: "/vaults", label: "Mis vaults" },
   { href: "/create", label: "Crear vault" },
+  { href: "/recursos", label: "Recursos" },
   { href: "/admin", label: "Admin" },
 ];
 
