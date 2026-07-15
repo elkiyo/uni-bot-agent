@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Header } from "./components/Header";
+import { UnicornAgent } from "./components/UnicornAgent";
 import { POOL } from "@/lib/addresses";
 
 export default function Home() {
@@ -10,29 +11,33 @@ export default function Home() {
       <Header />
       <main className="section flex-1 pb-24 pt-32">
         {/* Hero */}
-        <div className="max-w-3xl">
-          <span className="eyebrow">Uniswap V3 · Celo Mainnet</span>
-          <h1
-            className="mt-6 text-balance text-4xl font-semibold leading-[1.04] tracking-tight sm:text-5xl"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            Liquidez concentrada,{" "}
-            <span className="text-accent">gestionada por un agente</span> — sin ceder la
-            custodia.
-          </h1>
-          <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-muted">
-            Depositás USDT, el agente arma y rebalancea tu posición en el pool USDT/WETH.
-            Solo vos podés retirar los fondos: el operador únicamente rebalancea, dentro
-            de los límites que vos configurás.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/create" className="btn-primary !px-6 !py-3">
-              Crear vault
-            </Link>
-            <Link href="/vaults" className="btn-secondary !px-6 !py-3">
-              Ver mis vaults
-            </Link>
+        <div className="grid items-center gap-10 lg:grid-cols-[1fr_420px]">
+          <div className="max-w-3xl">
+            <span className="eyebrow">Uniswap V3 · Celo Mainnet</span>
+            <h1
+              className="mt-6 text-balance text-4xl font-semibold leading-[1.04] tracking-tight sm:text-5xl"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Liquidez concentrada,{" "}
+              <span className="text-accent">gestionada por un agente</span> — sin ceder la
+              custodia.
+            </h1>
+            <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-muted">
+              Depositás USDT, el agente arma y rebalancea tu posición en el pool USDT/WETH.
+              Solo vos podés retirar los fondos: el operador únicamente rebalancea, dentro
+              de los límites que vos configurás.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/create" className="btn-primary !px-6 !py-3">
+                Crear vault
+              </Link>
+              <Link href="/vaults" className="btn-secondary !px-6 !py-3">
+                Ver mis vaults
+              </Link>
+            </div>
           </div>
+
+          <UnicornAgent className="hidden w-full max-w-md justify-self-center lg:block" />
         </div>
 
         {/* How it works */}
