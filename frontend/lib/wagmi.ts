@@ -9,7 +9,7 @@ import { celo } from "wagmi/chains";
 const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "00000000000000000000000000000000";
 
 export const wagmiConfig = getDefaultConfig({
-  appName: "uni-bot-agent",
+  appName: "UniAgent",
   projectId: walletConnectProjectId,
   chains: [celo],
   ssr: true,

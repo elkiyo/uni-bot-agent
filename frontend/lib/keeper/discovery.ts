@@ -48,7 +48,7 @@ export async function discoverAndRegisterVaults(factoryAddress: Address, store: 
       console.log(`Discovered new vault ${vault} (owner ${owner}) — registering with uni-lab.xyz`);
       let apiKey: string | undefined;
       try {
-        const reg = await registerAgent(`uni-bot-agent-${vault.slice(2, 8)}`, vault);
+        const reg = await registerAgent(`UniAgent-${vault.slice(2, 8)}`, vault);
         apiKey = reg.api_key;
       } catch (err) {
         console.error(`Failed to register vault ${vault} with uni-lab.xyz:`, err);
@@ -76,7 +76,7 @@ export async function discoverAndRegisterVaults(factoryAddress: Address, store: 
     if (record.uniLabApiKey) continue;
     console.log(`Retrying uni-lab.xyz registration for vault ${record.address}`);
     try {
-      const reg = await registerAgent(`uni-bot-agent-${record.address.slice(2, 8)}`, record.address);
+      const reg = await registerAgent(`UniAgent-${record.address.slice(2, 8)}`, record.address);
       await store.upsertVault({ ...record, uniLabApiKey: reg.api_key });
       console.log(`Registered vault ${record.address} with uni-lab.xyz`);
     } catch (err) {

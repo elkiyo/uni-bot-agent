@@ -17,7 +17,7 @@ const interTight = Inter_Tight({
 });
 
 export const metadata: Metadata = {
-  title: "uni-bot-agent — Vaults no-custodiales en Celo",
+  title: "UniAgent — Vaults no-custodiales en Celo",
   description:
     "Vaults no-custodiales de liquidez concentrada en Uniswap V3 (Celo), gestionados por un agente keeper. Vos depositás y retirás; el agente solo rebalancea.",
 };

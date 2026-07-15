@@ -23,7 +23,7 @@ export function Header() {
             </span>
             <span className="flex flex-col leading-none">
               <span className="text-[12.5px] font-semibold tracking-tight text-white">
-                uni-bot-agent
+                UniAgent
               </span>
               <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted">
                 Vaults · Celo
