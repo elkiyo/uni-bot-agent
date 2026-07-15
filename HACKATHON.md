@@ -53,6 +53,15 @@ Es decir: la atribución de x402 **no es por el data suffix de calldata** (ERC-8
 **Plan de integración (dos repos):**
 1. **`uni-lab.xyz`** (repo separado, `/Users/elkiyo.eth/Desktop/uni-lab.xyz`, también del usuario) — agregar soporte x402 del lado servidor a las rutas pagas (`/v1/rc-rlp-rebalance`, `/v1/pool-setup-initial`) **además de**, no en reemplazo de, el flujo actual de `tx_hash` on-chain (esas rutas ya sirven a otros agentes registrados, no solo a nosotros — no romper el flujo existente). Con `@x402/express` + `x402ResourceServer`, siguiendo el patrón de `bureau/src/x402.ts`.
 2. **`uni-bot-agent`** (este repo) — el keeper (`frontend/lib/keeper/unilab.ts`) paga vía `wrapFetchWithPayment` (de `@x402/fetch` o `thirdweb/x402`) usando la wallet del operador, en vez de (o adicional a) `payUniLabFee()` on-chain.
+
+### ✅ Funcionando de punta a punta (2026-07-15)
+
+Confirmado con un pago real: `tx_hash` `0x7b41fa69e0a153d8d26490447ed83151af17e193e2ae0dcc7ce7239baf2b2d67` — `transferWithAuthorization` (EIP-3009, selector `0xe3ee160e`) en el contrato USDC de Celo (`0xcebA9300f2b948710d2653dD7B07f33A8B32118C`), broadcasteado por el facilitator (`0x0d74D5Cefd2e7F24E623330ebE3d8D4cB45fFB48`, paga su propio gas), transfiere 0.20 USDC de la wallet del operador (`0xAe3921825fEC520cADa98EB0790BC91a61d4286b`) a la wallet de pago de uni-lab (`0x4B53D27c81f9E842D50a1940E27B8009B64c615B`). `status: 1`. El keeper de producción recibió la respuesta del cálculo real (`200`, no `402`).
+
+Tres bugs reales encontrados y corregidos en el camino, en orden:
+1. **Payer binding:** el flujo `tx_hash` exige que el pago venga de la wallet `agent_wallet` registrada (anti-replay de un tx_hash público de otro agente) — x402 no lo necesita (la autorización EIP-712 está firmada específicamente para esa request), y de hecho x402 nunca podría cumplirlo: lo paga la wallet del operador, no la wallet de cada vault individual. Se dejó sin ese requisito para x402.
+2. **Falta el desafío `402` inicial:** el gate solo entraba al camino x402 si `X-PAYMENT` ya venía en el request — pero el protocolo funciona al revés (el cliente prueba primero sin pagar, necesita que el servidor le conteste `402` con los requisitos). Se cambió la rama a decidirse por si `tx_hash` está presente o no, no por si `X-PAYMENT` está presente.
+3. **Facilitator sin API key:** `api.x402.celo.org` exige su propio API key para liquidar pagos (registro en `x402.celo.org`, iniciando sesión con la wallet de pago de uni-lab, créditos prepago para el gas que el facilitator adelanta) — sin eso, el `/settle` devolvía 401 "Missing X-API-Key". Cargado como `X402_FACILITATOR_API_KEY` en Vercel.
 3. Referencia de patrón client/server: repos clonados en `/tmp/competitor-check/{bureau,remitroute}` (públicos, ya en GitHub).
 
 ## Track 1 — lo que hay que entregar, textual
@@ -113,7 +122,7 @@ Es decir: la atribución de x402 **no es por el data suffix de calldata** (ERC-8
 | Lógica económica real, no wash-trading aparente | ✅ Documentado explícitamente en `PLAN.md` (ciclo de reinyección alternada, mismo patrón que gestores reales) |
 | Registro ERC-8004 (8004scan.io) | ❌ Pendiente |
 | `agentWalletAddress` en la submission | ✅ Hecho (2026-07-15) — `0xAe3921825fEC520cADa98EB0790BC91a61d4286b` |
-| Soporte x402 (uni-lab.xyz servidor + keeper cliente) | ❌ Pendiente — ver sección "Track 2" arriba |
+| Soporte x402 (uni-lab.xyz servidor + keeper cliente) | ✅ Hecho (2026-07-15) — pago real confirmado on-chain, ver sección "Track 2" arriba |
 | Demo grabado | ❌ Pendiente |
 | Post en X con @CeloDevs @Celo + link ERC-8004 | ❌ Pendiente |
 | Submission final (publicar) vía Celo Builders Skill | ❌ Pendiente — se puede dejar para el final, se puede editar hasta el cierre |
