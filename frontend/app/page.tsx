@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
 import { Header } from "./components/Header";
 import { vaultFactoryAbi, rangeVaultAbi } from "@/lib/contracts";
@@ -20,6 +20,18 @@ export default function Home() {
   });
 
   const vaultList = (vaults as string[] | undefined) ?? [];
+
+  // closeVault() is permanent (deposit/configureTarget/initPosition/rebalance
+  // all revert forever after) — split those out below the active list instead
+  // of mixing them in, since they can never operate again.
+  const { data: closedFlags } = useReadContracts({
+    contracts: vaultList.map(
+      (v) => ({ address: v as `0x${string}`, abi: rangeVaultAbi, functionName: "closed" }) as const,
+    ),
+    query: { enabled: vaultList.length > 0, refetchInterval: 15_000 },
+  });
+  const activeVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result !== true);
+  const closedVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result === true);
 
   return (
     <>
@@ -85,17 +97,44 @@ export default function Home() {
               </div>
             )}
 
-            {vaultList.length > 0 && (
+            {activeVaults.length > 0 && (
               <ul className="grid gap-4 sm:grid-cols-2">
-                {vaultList.map((vaultAddress) => (
+                {activeVaults.map((vaultAddress) => (
                   <li key={vaultAddress}>
                     <VaultCard vaultAddress={vaultAddress as `0x${string}`} />
                   </li>
                 ))}
               </ul>
             )}
+
+            {vaultList.length > 0 && activeVaults.length === 0 && closedVaults.length === 0 && (
+              <div className="glass rounded-2xl p-10 text-center">
+                <p className="text-muted">Cargando estado de tus vaults…</p>
+              </div>
+            )}
           </div>
         </div>
+
+        {closedVaults.length > 0 && (
+          <div className="mt-10">
+            <h2
+              className="text-lg font-semibold tracking-tight text-faint"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Vaults cerrados
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Cerrados permanentemente — no pueden recibir depósitos ni operar de nuevo.
+            </p>
+            <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+              {closedVaults.map((vaultAddress) => (
+                <li key={vaultAddress}>
+                  <VaultCard vaultAddress={vaultAddress as `0x${string}`} isClosed />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* How it works */}
         <div className="mt-20 grid gap-4 sm:grid-cols-3">
@@ -144,19 +183,47 @@ export default function Home() {
   );
 }
 
-function VaultCard({ vaultAddress }: { vaultAddress: `0x${string}` }) {
-  const { data: rebalanceCount } = useReadContract({
-    address: vaultAddress,
-    abi: rangeVaultAbi,
-    functionName: "rebalanceCount",
+const cardReads = (address: `0x${string}`) =>
+  [
+    "paused",
+    "positionTokenId",
+    "rebalanceCount",
+    "maxRebalances",
+    "investableUsdt",
+    "reserveBalance",
+    "usdtBudget",
+  ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName }) as const);
+
+function VaultCard({ vaultAddress, isClosed }: { vaultAddress: `0x${string}`; isClosed?: boolean }) {
+  const { data } = useReadContracts({
+    contracts: cardReads(vaultAddress),
     query: { refetchInterval: 15_000 },
   });
+  const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance, usdtBudget] =
+    data?.map((d) => d.result) ?? [];
   const { data: feesSummary } = useVaultFeesSummary(vaultAddress);
 
+  const hasPosition = Boolean(positionTokenId && (positionTokenId as bigint) > 0n);
+  const totalCapital =
+    ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + ((usdtBudget as bigint) ?? 0n);
+
   return (
-    <Link href={`/vault/${vaultAddress}`} className="glass glass-hover group block rounded-2xl p-5">
+    <Link
+      href={`/vault/${vaultAddress}`}
+      className={`glass glass-hover group block rounded-2xl p-5 ${isClosed ? "opacity-60" : ""}`}
+    >
       <div className="flex items-center justify-between">
-        <span className="eyebrow !px-3 !py-1">Vault</span>
+        <div className="flex items-center gap-2">
+          <span className="eyebrow !px-3 !py-1">Vault</span>
+          {isClosed ? (
+            <span className="eyebrow !px-3 !py-1">Cerrado</span>
+          ) : paused ? (
+            <span className="eyebrow !border-negative/40 !px-3 !py-1 !text-negative">Pausado</span>
+          ) : (
+            <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">Activo</span>
+          )}
+          {!isClosed && !hasPosition && <span className="eyebrow !px-3 !py-1">Sin posición</span>}
+        </div>
         <span className="text-xs text-faint transition-colors group-hover:text-accent">
           Ver detalle →
         </span>
@@ -165,16 +232,26 @@ function VaultCard({ vaultAddress }: { vaultAddress: `0x${string}` }) {
       <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
         USDT / WETH · 0.3%
       </p>
-      <div className="mt-4 flex gap-6 border-t border-hairline pt-4">
+      <div className="mt-4 grid grid-cols-3 gap-4 border-t border-hairline pt-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            Capital
+          </p>
+          <p className="mt-1 text-sm font-medium text-white/90">
+            {formatUnits(totalCapital, 6)} USDT
+          </p>
+        </div>
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
             Rebalanceos
           </p>
-          <p className="mt-1 text-sm font-medium text-white/90">{String(rebalanceCount ?? 0)}</p>
+          <p className="mt-1 text-sm font-medium text-white/90">
+            {String(rebalanceCount ?? 0)} / {String(maxRebalances ?? 0)}
+          </p>
         </div>
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-            Comisiones generadas
+            Comisiones
           </p>
           <p className="mt-1 text-sm font-medium text-positive">
             {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT
