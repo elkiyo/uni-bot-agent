@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 const links = [
-  { href: "/", label: "Mis vaults" },
+  { href: "/vaults", label: "Mis vaults" },
   { href: "/create", label: "Crear vault" },
   { href: "/admin", label: "Admin" },
 ];
