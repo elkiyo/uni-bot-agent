@@ -1,16 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, usePublicClient, useReadContracts, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useReadContracts, useWriteContract } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 import { Header } from "../../components/Header";
 import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
-import { rangeVaultAbi, erc20Abi } from "@/lib/contracts";
-import { USDT } from "@/lib/addresses";
-import { ethPriceFromTick } from "@/lib/priceMath";
+import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi } from "@/lib/contracts";
+import { USDT, POOL } from "@/lib/addresses";
+import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 
 const reads = (address: `0x${string}`) =>
@@ -70,6 +70,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   ] = data?.map((d) => d.result) ?? [];
 
   const { data: feesSummary } = useVaultFeesSummary(address);
+  const { data: tickSpacing } = useReadContract({ address: POOL, abi: uniswapV3PoolAbi, functionName: "tickSpacing" });
 
   const isOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
@@ -81,6 +82,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
   const [cfgReinjection, setCfgReinjection] = useState("");
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
+  const [cfgMinPrice, setCfgMinPrice] = useState("");
+  const [cfgMaxPrice, setCfgMaxPrice] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,14 +125,34 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleReconfigure() {
-    // Re-calls configureTarget keeping the existing on-chain tick range, so the
-    // owner can tune cadence/caps without recomputing prices. The min/max sort
-    // also repairs vaults configured with inverted ticks by an older create
-    // flow (higher USD price of ETH = lower tick in this pool; the create page
-    // used to convert price bounds without sorting).
-    if (targetTickLower === undefined || targetTickUpper === undefined) return;
-    const lo = Math.min(Number(targetTickLower), Number(targetTickUpper));
-    const hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
+    // Leaving both price fields blank keeps the existing on-chain tick range
+    // (the min/max sort also repairs vaults configured with inverted ticks by
+    // an older create flow — higher USD price of ETH = lower tick in this
+    // pool). Filling them in sets a FRESH range — the only way to finish
+    // configuring a vault that only ever got as far as createVault() (e.g.
+    // the create flow was abandoned mid-way): targetTickLower/Upper are both
+    // 0 on those, so there's no "existing range" to fall back to.
+    let lo: number;
+    let hi: number;
+    const settingFreshRange = Boolean(cfgMinPrice && cfgMaxPrice);
+    if (settingFreshRange) {
+      if (tickSpacing === undefined) return;
+      const lowerPrice = Number(cfgMinPrice);
+      const upperPrice = Number(cfgMaxPrice);
+      if (!(lowerPrice > 0) || !(upperPrice > lowerPrice)) {
+        setError("El precio máximo debe ser mayor al mínimo, ambos positivos");
+        return;
+      }
+      const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice), Number(tickSpacing));
+      const tickB = alignToTickSpacing(tickFromEthPrice(upperPrice), Number(tickSpacing));
+      lo = Math.min(tickA, tickB);
+      hi = Math.max(tickA, tickB);
+    } else {
+      if (targetTickLower === undefined || targetTickUpper === undefined) return;
+      lo = Math.min(Number(targetTickLower), Number(targetTickUpper));
+      hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
+    }
+
     await withTx("Reconfigurando", () =>
       writeContractAsync({
         address,
@@ -145,6 +168,23 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         ],
       }),
     );
+
+    // A fresh range needs its near-market tolerance set too — the vault
+    // starts with maxRangeDeviationBps = 0, which makes _checkRangeNearMarket
+    // reject initPosition() almost always. Same half-width heuristic the
+    // create flow uses, so this isn't needed when just tuning cadence/caps
+    // on an already-working vault.
+    if (settingFreshRange) {
+      const halfWidthTicks = Math.max(100, Math.round(Math.abs(hi - lo) / 2));
+      await withTx("Fijando límites de riesgo", () =>
+        writeContractAsync({
+          address,
+          abi: rangeVaultAbi,
+          functionName: "setRiskParams",
+          args: [500n, 0n, BigInt(halfWidthTicks)],
+        }),
+      );
+    }
   }
 
   return (
@@ -323,9 +363,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 <div className="mt-8">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Reconfigurar agente (mantiene el rango actual)
+                    Reconfigurar agente
                   </span>
+                  <p className="mt-1 text-xs text-faint">
+                    {targetConfigured
+                      ? "Dejá precio mínimo/máximo vacíos para mantener el rango actual, o completalos para fijar uno nuevo (también actualiza los límites de riesgo)."
+                      : "Este vault todavía no tiene rango — completá precio mínimo y máximo para terminar de configurarlo."}
+                  </p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <MiniField label="Precio mínimo (USD)" value={cfgMinPrice} onChange={setCfgMinPrice} />
+                    <MiniField label="Precio máximo (USD)" value={cfgMaxPrice} onChange={setCfgMaxPrice} />
                     <MiniField
                       label={`Tope rebalanceos (hoy: ${maxRebalances ?? "…"})`}
                       value={cfgMaxRebalances}
