@@ -15,26 +15,6 @@ export interface RegisterAgentResponse {
   created_at: string;
 }
 
-export interface PricingResponse {
-  price_usdt: number;
-  payment_wallet: string;
-  blockchain: string;
-}
-
-/**
- * uni-lab.xyz's price isn't fixed — confirmed 2026-07-14 when a real
- * pool-setup-initial call 402'd (RangeVault used to pay a hardcoded 0.5 USDT,
- * the live price was 0.2). Query this right before every payUniLabFee() call
- * instead of assuming any number. Unauthenticated, no api_key needed.
- */
-export async function getPricing(): Promise<PricingResponse> {
-  const res = await fetch(`${UNILAB_BASE_URL}/pricing`);
-  if (!res.ok) {
-    throw new Error(`pricing failed: ${res.status} ${await res.text()}`);
-  }
-  return res.json() as Promise<PricingResponse>;
-}
-
 export async function registerAgent(agentName: string, agentWallet: string): Promise<RegisterAgentResponse> {
   const res = await fetch(`${UNILAB_BASE_URL}/register-agent`, {
     method: "POST",
@@ -60,32 +40,10 @@ export interface RcRlpRebalanceParams {
   currentPriceVolatileAsset: number; // C1
   newLowerBound: number; // D1
   reinvestmentAmountUsd: number; // E1 — 0 = RC, >0 = RLP
-  txHash: string;
 }
 
 export interface RcRlpRebalanceResponse {
   [key: string]: unknown; // expected to include the new upper bound; schema not pinned down
-}
-
-export async function rcRlpRebalance(
-  apiKey: string,
-  params: RcRlpRebalanceParams,
-  vaultAddress: string,
-): Promise<RcRlpRebalanceResponse> {
-  return callPaidEndpoint(
-    apiKey,
-    "rc-rlp-rebalance",
-    {
-      A1: params.currentLiquidityUsd,
-      B1: params.amountToRecoverUsd,
-      C1: params.currentPriceVolatileAsset,
-      D1: params.newLowerBound,
-      E1: params.reinvestmentAmountUsd,
-      tx_hash: params.txHash,
-      blockchain: "celo",
-    },
-    vaultAddress,
-  );
 }
 
 const CELO_NETWORK = "eip155:42220"; // CAIP-2, confirmed against https://api.x402.celo.org/supported
@@ -102,59 +60,38 @@ function getPayFetch() {
   return payFetch;
 }
 
-export type RcRlpRebalanceParamsX402 = Omit<RcRlpRebalanceParams, "txHash">;
-
 /**
- * Same call, paid via the x402 protocol instead of the vault's on-chain
- * usdtBudget — an X-PAYMENT header settled by Celo's facilitator
- * (api.x402.celo.org) in USDC from the operator's OWN wallet, not the vault
- * (see HACKATHON.md "Track 2 — x402": the vault contract can't sign an
- * EIP-712 authorization, only an EOA can). No tx_hash to send — payment
- * proof travels in the header, verified by uni-lab.xyz's x402 middleware
- * before the handler ever runs.
+ * Pays via the x402 protocol — an X-PAYMENT header settled by Celo's
+ * facilitator (api.x402.celo.org) in USDC from the operator's OWN wallet,
+ * not the vault (see HACKATHON.md "Track 2 — x402": a vault contract can't
+ * sign an EIP-712 authorization, only an EOA can). This is the only payment
+ * path uni-bot-agent uses as of 2026-07-15 — the earlier on-chain
+ * payUniLabFee()+tx_hash flow (paid per-vault, out of each owner's own
+ * deposited budget) was retired once x402 was confirmed working end-to-end
+ * on-chain: no vault budget needed anymore, the operator covers uni-lab
+ * costs directly. Confirmed live with a real settled USDC transfer.
  *
- * Throws if uni-lab.xyz doesn't have x402 wired up on this endpoint yet, or
- * if the operator has no USDC to authorize the payment with — the caller
- * (rebalancer.ts) catches that and falls back to payUniLabFee()+tx_hash, so
- * this is safe to call speculatively even before uni-lab.xyz ships their side.
+ * Throws if the operator has no USDC to authorize the payment with, or on
+ * any other x402/network failure — the caller (rebalancer.ts) catches that
+ * and proceeds with a fallback width estimate rather than treating it as fatal.
  */
 export async function rcRlpRebalanceViaX402(
   apiKey: string,
-  params: RcRlpRebalanceParamsX402,
+  params: RcRlpRebalanceParams,
   vaultAddress: string,
 ): Promise<RcRlpRebalanceResponse> {
   const fetchImpl = getPayFetch();
   if (!fetchImpl) throw new Error("no operator account configured for x402 payment");
-  return callPaidEndpoint(
-    apiKey,
-    "rc-rlp-rebalance",
-    {
-      A1: params.currentLiquidityUsd,
-      B1: params.amountToRecoverUsd,
-      C1: params.currentPriceVolatileAsset,
-      D1: params.newLowerBound,
-      E1: params.reinvestmentAmountUsd,
-      blockchain: "celo",
-    },
-    vaultAddress,
-    fetchImpl,
-  );
-}
 
-/** Every call (request + response or error) is persisted via logUniLabCall —
- * see the "guardar los datos de la consulta" ask: this is the single choke
- * point both paid endpoints go through, so it's the natural place to record
- * a full audit trail of what uni-lab was asked and what it answered. */
-async function callPaidEndpoint(
-  apiKey: string,
-  endpoint: string,
-  body: Record<string, unknown>,
-  vaultAddress: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<Record<string, unknown>> {
-  // x402's wrapped fetch signs/retries under the hood, so a call through it
-  // is visibly distinct in the audit trail from a plain tx_hash-paid call.
-  const logLabel = fetchImpl === fetch ? endpoint : `${endpoint} (x402)`;
+  const endpoint = "rc-rlp-rebalance";
+  const body = {
+    A1: params.currentLiquidityUsd,
+    B1: params.amountToRecoverUsd,
+    C1: params.currentPriceVolatileAsset,
+    D1: params.newLowerBound,
+    E1: params.reinvestmentAmountUsd,
+    blockchain: "celo",
+  };
   const startedAt = Date.now();
   try {
     const res = await fetchImpl(`${UNILAB_BASE_URL}/${endpoint}`, {
@@ -172,7 +109,7 @@ async function callPaidEndpoint(
 
     await logUniLabCall({
       vault: vaultAddress,
-      endpoint: logLabel,
+      endpoint: `${endpoint} (x402)`,
       request: body,
       httpStatus: res.status,
       response: parsed,
@@ -180,18 +117,14 @@ async function callPaidEndpoint(
       durationMs: Date.now() - startedAt,
     });
 
-    if (!res.ok) {
-      // 402 here means the on-chain payment tx wasn't found/valid yet — the
-      // caller should confirm more blocks and retry rather than treat this as fatal.
-      throw new Error(`${logLabel} failed: ${res.status} ${text}`);
-    }
+    if (!res.ok) throw new Error(`${endpoint} (x402) failed: ${res.status} ${text}`);
     return parsed as Record<string, unknown>;
   } catch (err) {
-    if (!(err instanceof Error && err.message.startsWith(`${logLabel} failed:`))) {
+    if (!(err instanceof Error && err.message.startsWith(`${endpoint} (x402) failed:`))) {
       // Network-level failure (never got an HTTP response) — still log it.
       await logUniLabCall({
         vault: vaultAddress,
-        endpoint: logLabel,
+        endpoint: `${endpoint} (x402)`,
         request: body,
         httpStatus: 0,
         response: null,

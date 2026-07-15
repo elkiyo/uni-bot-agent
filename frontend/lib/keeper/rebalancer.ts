@@ -2,7 +2,7 @@ import "server-only";
 import type { Abi, Address } from "viem";
 import { publicClient, operatorAccount } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
-import { rcRlpRebalance, rcRlpRebalanceViaX402, getPricing, type RcRlpRebalanceResponse } from "./unilab";
+import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap } from "./swapMath";
 import { POOL } from "../addresses";
@@ -27,44 +27,26 @@ async function tickSpacing(): Promise<number> {
   })) as number;
 }
 
-/** uni-lab.xyz's price isn't fixed (confirmed 2026-07-14: a hardcoded 0.5 USDT
- * 402'd against a real 0.2 USDT price) — queried live, never assumed. */
-async function getUniLabAmountRaw(): Promise<bigint> {
-  const pricing = await getPricing();
-  return BigInt(Math.round(pricing.price_usdt * 1e6));
-}
-
-/**
- * Pays uni-lab.xyz (a real on-chain USDT transfer from the vault's own budget
- * — see PLAN.md) and waits for the confirmation the API requires as proof of
- * payment before it will answer.
- */
-async function payUniLabAndGetTxHash(vaultAddress: Address, amountRaw: bigint): Promise<{ hash: `0x${string}` }> {
-  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "payUniLabFee", [amountRaw]);
-  await publicClient.waitForTransactionReceipt({ hash });
-  return { hash };
-}
-
 const GAS_SAFETY_MULTIPLIER_PCT = 130n; // 30% buffer over the current estimate, for gas-price drift between check and send
 
 /**
  * Real gas-cost estimate against the operator's actual CELO balance — NOT
  * covered by `wouldSucceed`'s free simulation, which never checks funds.
  * Missing this check is exactly how a vault burned 0.8 USDT of its uni-lab
- * budget on 2026-07-14: with the operator low on CELO, payUniLabFee (cheap,
- * a plain ERC20 transfer) kept succeeding while the much heavier rebalance()
- * that had to follow kept reverting for insufficient funds — paying for a
- * calculation that could never be used, cycle after cycle. This runs BEFORE
- * payUniLabFee so a low balance skips the whole cycle without spending
- * anything.
+ * budget on 2026-07-14, back when uni-lab was still paid on-chain per vault
+ * (retired 2026-07-15 in favor of x402 — see HACKATHON.md "Track 2 — x402"):
+ * with the operator low on CELO, the cheap payment call kept succeeding
+ * while the much heavier rebalance() that had to follow kept reverting for
+ * insufficient funds. Still worth checking before rebalance() itself for the
+ * same reason — no point letting the (now free, x402-paid) uni-lab call
+ * succeed if the operator can't afford to act on its answer.
  */
 async function hasEnoughOperatorGas(
   vaultAddress: Address,
   mainCall: { functionName: string; args: readonly unknown[] },
-  payAmountRaw: bigint | null,
 ): Promise<boolean> {
   if (!operatorAccount) return false;
-  const [gasPrice, balance, mainGas, payGas] = await Promise.all([
+  const [gasPrice, balance, mainGas] = await Promise.all([
     publicClient.getGasPrice(),
     publicClient.getBalance({ address: operatorAccount.address }),
     publicClient.estimateContractGas({
@@ -74,23 +56,14 @@ async function hasEnoughOperatorGas(
       args: mainCall.args as unknown[],
       account: operatorAccount.address,
     }),
-    payAmountRaw !== null
-      ? publicClient.estimateContractGas({
-          address: vaultAddress,
-          abi: rangeVaultAbi as Abi,
-          functionName: "payUniLabFee",
-          args: [payAmountRaw],
-          account: operatorAccount.address,
-        })
-      : Promise.resolve(0n),
   ]);
 
-  const estimatedCost = ((mainGas + payGas) * gasPrice * GAS_SAFETY_MULTIPLIER_PCT) / 100n;
+  const estimatedCost = (mainGas * gasPrice * GAS_SAFETY_MULTIPLIER_PCT) / 100n;
   if (balance < estimatedCost) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
-      msg: `operator CELO balance too low to complete ${mainCall.functionName} — skipping cycle${payAmountRaw !== null ? " without paying uni-lab" : ""}`,
+      msg: `operator CELO balance too low to complete ${mainCall.functionName} — skipping cycle`,
       balance: balance.toString(),
       estimatedCost: estimatedCost.toString(),
     });
@@ -177,7 +150,7 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     return;
   }
 
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "initPosition", args: initArgs }, null))) {
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "initPosition", args: initArgs }))) {
     return;
   }
 
@@ -318,10 +291,10 @@ async function runRebalanceViaUniLab(
     return;
   }
 
-  // Rebalance-only gas check, upfront — guards against wasting EITHER
-  // payment method (x402 USDC or on-chain USDT) on a cycle whose final
-  // rebalance() call can't actually be sent for lack of CELO gas.
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: probeArgs }, null))) {
+  // Rebalance-only gas check, upfront — guards against wasting the x402
+  // payment on a cycle whose final rebalance() call can't actually be sent
+  // for lack of CELO gas.
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: probeArgs }))) {
     return;
   }
 
@@ -334,38 +307,22 @@ async function runRebalanceViaUniLab(
     reinvestmentAmountUsd: reinjectionUsd,
   };
 
-  // Prefer x402 (operator's own USDC, no vault budget spent) — see
-  // HACKATHON.md "Track 2 — x402". Falls back to the on-chain
-  // payUniLabFee()+tx_hash flow if uni-lab.xyz doesn't have x402 wired up on
-  // this endpoint yet, or the operator has no USDC to pay with. Safe to
-  // attempt speculatively: nothing is spent unless the x402 call succeeds.
+  // x402-only (2026-07-15) — the operator's own USDC pays uni-lab directly,
+  // no vault budget involved at all. Confirmed working end-to-end on-chain,
+  // see HACKATHON.md "Track 2 — x402". The retired on-chain
+  // payUniLabFee()+tx_hash path is gone; if x402 fails (operator out of
+  // USDC, uni-lab/facilitator issue) the cycle just proceeds with the
+  // fallback width estimate below instead of paying twice for one answer.
   let resp: RcRlpRebalanceResponse | undefined;
   try {
     resp = await rcRlpRebalanceViaX402(record.uniLabApiKey, baseParams, vaultAddress);
-  } catch (x402Err) {
+  } catch (err) {
     logEvent({
-      level: "info",
+      level: "warn",
       vault: vaultAddress,
-      msg: "x402 payment unavailable this cycle, falling back to on-chain payUniLabFee",
-      err: String(x402Err),
+      msg: "rc-rlp-rebalance (x402) call failed, using symmetric-width estimate",
+      err: String(err),
     });
-
-    const payAmountRaw = await getUniLabAmountRaw();
-    if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "payUniLabFee", args: [payAmountRaw] }, null))) {
-      return;
-    }
-    const { hash: payTxHash } = await payUniLabAndGetTxHash(vaultAddress, payAmountRaw);
-
-    try {
-      resp = await rcRlpRebalance(record.uniLabApiKey, { ...baseParams, txHash: payTxHash }, vaultAddress);
-    } catch (err) {
-      logEvent({
-        level: "warn",
-        vault: vaultAddress,
-        msg: "rc-rlp-rebalance call failed, using symmetric-width estimate",
-        err: String(err),
-      });
-    }
   }
 
   if (resp) {
@@ -504,7 +461,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     return;
   }
 
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: rebalanceArgs }, null))) {
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: rebalanceArgs }))) {
     return;
   }
 

@@ -78,7 +78,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
   const [depInvestable, setDepInvestable] = useState("0");
   const [depReserve, setDepReserve] = useState("0");
-  const [depBudget, setDepBudget] = useState("0");
   const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
   const [cfgReinjection, setCfgReinjection] = useState("");
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
@@ -101,12 +100,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleDepositMore() {
-    // The vault keeps three separate internal ledgers — the deposit has to say
-    // how the USDT splits across them, otherwise the uni-lab budget/reinjection
-    // reserve never get funded and the agent can't operate.
+    // No uni-lab budget deposit anymore — the operator pays uni-lab.xyz
+    // directly via x402, out of its own USDC (see HACKATHON.md "Track 2 —
+    // x402"), not the vault's own usdtBudget ledger.
     const investable = parseUnits(depInvestable || "0", 6);
     const reserve = parseUnits(depReserve || "0", 6);
-    const budget = parseUnits(depBudget || "0", 6);
+    const budget = 0n;
     const total = investable + reserve + budget;
     if (total === 0n) return;
     await withTx("Aprobando", () =>
@@ -188,6 +187,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <Stat
                 label="Presupuesto uni-lab"
                 value={`${formatUnits((usdtBudget as bigint) ?? 0n, 6)} USDT`}
+                hint="legado — el agente ahora paga uni-lab directo vía x402, esto ya no se gasta"
               />
               <Stat
                 label="Reserva reinyección"
@@ -310,12 +310,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 <div className="mt-6">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Depositar USDT (repartido en los 3 ledgers del vault)
+                    Depositar USDT (repartido entre capital invertible y reserva de reinyección)
                   </span>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField label="Invertible" value={depInvestable} onChange={setDepInvestable} />
                     <MiniField label="Reserva" value={depReserve} onChange={setDepReserve} />
-                    <MiniField label="Presupuesto uni-lab" value={depBudget} onChange={setDepBudget} />
                     <button onClick={handleDepositMore} disabled={Boolean(busy)} className="btn-primary !py-3">
                       Depositar
                     </button>

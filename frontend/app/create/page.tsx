@@ -49,7 +49,7 @@ const SIGNATURE_STEPS: { key: Exclude<Step, "idle" | "done" | "error">; title: s
   {
     key: "depositing",
     title: "Depositar",
-    desc: "Transfiere el USDT real al vault, repartido en capital invertible, reserva de reinyección y presupuesto de uni-lab.",
+    desc: "Transfiere el USDT real al vault, repartido en capital invertible y reserva de reinyección.",
   },
 ];
 const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
@@ -87,7 +87,6 @@ export default function CreateVault() {
   const [maxRebalances, setMaxRebalances] = useState("");
   const [reinjectionAmount, setReinjectionAmount] = useState("");
   const [periodicHours, setPeriodicHours] = useState("");
-  const [usdtBudget, setUsdtBudget] = useState("");
 
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -96,8 +95,7 @@ export default function CreateVault() {
   const minPricePlaceholder = currentPrice !== undefined ? (currentPrice * 0.9).toFixed(2) : "1604.18";
   const maxPricePlaceholder = currentPrice !== undefined ? (currentPrice * 1.1).toFixed(2) : "1960.66";
 
-  const totalUsdt =
-    (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0) + (parseFloat(usdtBudget) || 0);
+  const totalUsdt = (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0);
   const lowerPreview = parseFloat(minPrice) || undefined;
   const upperPreview = parseFloat(maxPrice) || undefined;
 
@@ -107,15 +105,7 @@ export default function CreateVault() {
     setFailedAt(null);
     let currentPhase: Step = "creating"; // tracked outside React state — setStep() batches, so `step` itself isn't reliable to read back mid-function
 
-    if (
-      !investAmount ||
-      !minPrice ||
-      !maxPrice ||
-      !maxRebalances ||
-      !reinjectionAmount ||
-      !periodicHours ||
-      !usdtBudget
-    ) {
+    if (!investAmount || !minPrice || !maxPrice || !maxRebalances || !reinjectionAmount || !periodicHours) {
       setError("Completá todos los campos — no hay valores por defecto.");
       setStep("error");
       return;
@@ -161,7 +151,11 @@ export default function CreateVault() {
 
       const investable = parseUnits(investAmount, 6);
       const reserve = parseUnits(reinjectionAmount, 6);
-      const budget = parseUnits(usdtBudget, 6);
+      // No uni-lab budget deposit anymore — the operator pays uni-lab.xyz
+      // directly via x402 (see HACKATHON.md "Track 2 — x402"), out of its own
+      // USDC, not the vault's USDT. The contract's usdtBudget ledger still
+      // exists but is deliberately never funded going forward.
+      const budget = 0n;
       const total = investable + reserve + budget;
 
       currentPhase = "approving";
@@ -303,14 +297,6 @@ export default function CreateVault() {
                   onChange={setPeriodicHours}
                   placeholder="24"
                 />
-                <Field
-                  label="Presupuesto uni-lab.xyz"
-                  suffix="USDT"
-                  value={usdtBudget}
-                  onChange={setUsdtBudget}
-                  placeholder="5"
-                  hint="Solo para rebalanceos — armar la posición inicial no consulta la API. El precio por consulta lo fija uni-lab.xyz y puede cambiar"
-                />
               </div>
 
               <button onClick={handleCreate} disabled={busy || !FACTORY_ADDRESS} className="btn-primary mt-8 w-full">
@@ -351,7 +337,6 @@ export default function CreateVault() {
                   <div className="my-1 border-t border-hairline" />
                   <SummaryRow k="Capital invertible" v={`${investAmount || "0"} USDT`} />
                   <SummaryRow k="Reserva de reinyección" v={`${reinjectionAmount || "0"} USDT`} />
-                  <SummaryRow k="Presupuesto de cálculo" v={`${usdtBudget || "0"} USDT`} />
                   <div className="my-1 border-t border-hairline" />
                   <SummaryRow k="Total a depositar" v={`${totalUsdt.toFixed(2)} USDT`} strong />
                 </dl>
