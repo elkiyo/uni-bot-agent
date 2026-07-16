@@ -14,7 +14,6 @@ contract VaultFactory {
     address public immutable platformConfig;
     address public immutable positionManager;
     address public immutable swapRouter;
-    address public immutable uniLabPaymentWallet;
 
     mapping(address => address[]) private _vaultsByOwner;
     address[] public allVaults;
@@ -23,17 +22,11 @@ contract VaultFactory {
         address indexed owner, address indexed vault, address pool, address token0, address token1, uint24 fee
     );
 
-    constructor(
-        address _platformConfig,
-        address _positionManager,
-        address _swapRouter,
-        address _uniLabPaymentWallet
-    ) {
+    constructor(address _platformConfig, address _positionManager, address _swapRouter) {
         implementation = address(new RangeVault());
         platformConfig = _platformConfig;
         positionManager = _positionManager;
         swapRouter = _swapRouter;
-        uniLabPaymentWallet = _uniLabPaymentWallet;
     }
 
     /// @notice Deploy a fresh vault for `msg.sender`, pointed at `pool` (token0/token1/fee
@@ -44,9 +37,7 @@ contract VaultFactory {
         returns (address vault)
     {
         vault = Clones.clone(implementation);
-        RangeVault(vault).initialize(
-            msg.sender, platformConfig, pool, token0, token1, fee, positionManager, swapRouter, uniLabPaymentWallet
-        );
+        RangeVault(vault).initialize(msg.sender, platformConfig, pool, token0, token1, fee, positionManager, swapRouter);
 
         _vaultsByOwner[msg.sender].push(vault);
         allVaults.push(vault);

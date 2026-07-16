@@ -8,6 +8,7 @@ import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Po
 import {PlatformConfig} from "../src/PlatformConfig.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {RangeVault} from "../src/RangeVault.sol";
+import {INonfungiblePositionManager} from "../src/interfaces/INonfungiblePositionManager.sol";
 
 /// Fork tests against real Celo mainnet contracts — see PLAN.md "Verificación":
 /// nothing here touches real capital, `deal()` mints test balances on the fork only.
@@ -22,9 +23,6 @@ contract RangeVaultTest is Test {
     address defaultOperator = makeAddr("defaultOperator");
     address lp = makeAddr("lp");
     address stranger = makeAddr("stranger");
-    // Test-only stand-in for uni-lab.xyz's payment wallet — real one is
-    // 0x4B53D27c81f9E842D50a1940E27B8009B64c615B per PLAN.md, doesn't matter for these tests.
-    address uniLabWallet = makeAddr("uniLabWallet");
 
     PlatformConfig config;
     VaultFactory factory;
@@ -40,7 +38,7 @@ contract RangeVaultTest is Test {
         tickSpacing = pool.tickSpacing();
 
         config = new PlatformConfig(platformOwner, USDT, defaultOperator, REBALANCE_FEE, MAX_DEPOSIT_USD);
-        factory = new VaultFactory(address(config), POSITION_MANAGER, SWAP_ROUTER02, uniLabWallet);
+        factory = new VaultFactory(address(config), POSITION_MANAGER, SWAP_ROUTER02);
 
         vm.prank(lp);
         address v = factory.createVault(POOL, USDT, WETH, 3000);
@@ -72,7 +70,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000); // ~20% wide, plenty of room
 
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
         vault.configureTarget({
             investmentAmountUsd: 4_800_000_000,
             _targetTickLower: lower,
@@ -84,7 +82,6 @@ contract RangeVaultTest is Test {
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
-        assertEq(vault.usdtBudget(), 5_000_000);
         assertEq(vault.reserveBalance(), 200_000_000);
         assertEq(vault.investableUsdt(), 4_800_000_000);
 
@@ -99,8 +96,7 @@ contract RangeVaultTest is Test {
         assertGt(tokenId, 0, "position should be minted");
         assertEq(vault.positionTokenId(), tokenId);
 
-        // Budget/reserve untouched by initPosition.
-        assertEq(vault.usdtBudget(), 5_000_000);
+        // Reserve untouched by initPosition.
         assertEq(vault.reserveBalance(), 200_000_000);
 
         // --- rebalance, forced by the periodic trigger (no price move needed) ---
@@ -153,10 +149,6 @@ contract RangeVaultTest is Test {
         vm.prank(stranger);
         vm.expectRevert(RangeVault.NotOperator.selector);
         vault.initPosition(noSwap, 0, 0);
-
-        vm.prank(stranger);
-        vm.expectRevert(RangeVault.NotOperator.selector);
-        vault.payUniLabFee(500_000);
     }
 
     function test_ownerCanRevokeOperator_thenOperatorCannotRebalance() public {
@@ -172,7 +164,7 @@ contract RangeVaultTest is Test {
 
     function test_emergencyWithdraw_worksEvenWithNoOperator() public {
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 0, reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
         vault.setOperator(address(0)); // simulate a compromised/unresponsive keeper
         uint256 before = IERC20(USDT).balanceOf(lp);
         vault.emergencyWithdrawPosition();
@@ -186,7 +178,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 0, investableAmount: 5_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
         vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 days);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -212,7 +204,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 0, investableAmount: 5_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
         vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 days);
         vault.setRiskParams(500, 0, 500);
         vault.setRiskParams(500, 12 hours, 100_000); // minRebalanceInterval = 12h
@@ -236,7 +228,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 0, investableAmount: 5_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
         vault.configureTarget(5_000_000_000, lower, upper, 1, 0, 1 hours); // maxRebalances = 1
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -261,34 +253,11 @@ contract RangeVaultTest is Test {
         vault.rebalance(l3, u3, noSwap, 0, 0, 0);
     }
 
-    function test_payUniLabFee_revertsWhenBudgetInsufficient() public {
-        vm.prank(lp);
-        vault.deposit({usdtBudgetAmount: 100_000, reserveAmount: 0, investableAmount: 0}); // 0.1 USDT budget
-
-        vm.prank(defaultOperator);
-        vm.expectRevert(RangeVault.InsufficientUsdtBudget.selector);
-        vault.payUniLabFee(200_000); // asking for 0.2 USDT, more than the 0.1 USDT budget
-    }
-
-    function test_payUniLabFee_sendsExactAmountKeeperRequests() public {
-        vm.prank(lp);
-        vault.deposit({usdtBudgetAmount: 2_000_000, reserveAmount: 0, investableAmount: 0}); // 2 USDT budget
-
-        // uni-lab's price isn't fixed (see PLAN.md) — the keeper supplies whatever
-        // GET /api/v1/pricing said at call time, e.g. 0.2 USDT here.
-        uint256 amount = 200_000;
-        uint256 before = IERC20(USDT).balanceOf(uniLabWallet);
-        vm.prank(defaultOperator);
-        vault.payUniLabFee(amount);
-        assertEq(IERC20(USDT).balanceOf(uniLabWallet) - before, amount);
-        assertEq(vault.usdtBudget(), 2_000_000 - amount);
-    }
-
     function test_platformFeeChangeAppliesLiveToExistingVault() public {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 0, investableAmount: 5_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
         vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 hours);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -315,7 +284,7 @@ contract RangeVaultTest is Test {
     function test_depositRevertsAbovePlatformCap() public {
         vm.prank(lp);
         vm.expectRevert(RangeVault.DepositExceedsPlatformCap.selector);
-        vault.deposit({usdtBudgetAmount: 0, reserveAmount: 0, investableAmount: MAX_DEPOSIT_USD + 1});
+        vault.deposit({reserveAmount: 0, investableAmount: MAX_DEPOSIT_USD + 1});
     }
 
     function test_onlyPlatformOwnerCanChangeConfig() public {
@@ -333,7 +302,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
         vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 hours); // cap = 50 USDT
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -359,7 +328,7 @@ contract RangeVaultTest is Test {
         vm.startPrank(lp);
         // reserveBalance = 10 USDT, but the owner's per-cycle cap is much higher (100 USDT) —
         // the keeper still can't reinject more than what's actually sitting in reserve.
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 10_000_000, investableAmount: 4_990_000_000});
+        vault.deposit({reserveAmount: 10_000_000, investableAmount: 4_990_000_000});
         vault.configureTarget(4_990_000_000, lower, upper, 5, 100_000_000, 1 hours);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -383,7 +352,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 5_000_000, reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
         vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 hours);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -410,7 +379,7 @@ contract RangeVaultTest is Test {
 
     function test_closeVault_revertsIfFundsRemain() public {
         vm.prank(lp);
-        vault.deposit({usdtBudgetAmount: 0, reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
 
         vm.prank(lp);
         vm.expectRevert(RangeVault.VaultNotEmpty.selector);
@@ -420,7 +389,7 @@ contract RangeVaultTest is Test {
     function test_closeVault_revertsIfPositionOpen() public {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 0, reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
         vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 hours);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -437,13 +406,13 @@ contract RangeVaultTest is Test {
 
     function test_closeVault_succeedsWhenEmpty_thenBlocksEverything() public {
         vm.startPrank(lp);
-        vault.deposit({usdtBudgetAmount: 0, reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
         vault.withdrawAll();
         vault.closeVault();
         assertTrue(vault.closed());
 
         vm.expectRevert(RangeVault.VaultClosed.selector);
-        vault.deposit({usdtBudgetAmount: 0, reserveAmount: 0, investableAmount: 1});
+        vault.deposit({reserveAmount: 0, investableAmount: 1});
 
         vm.expectRevert(RangeVault.VaultClosed.selector);
         vault.configureTarget(1, 0, 100, 1, 0, 1 hours);
@@ -472,5 +441,274 @@ contract RangeVaultTest is Test {
         vault.closeVault();
         vault.withdrawAll(); // must not revert — owner is never locked out, even post-close
         vm.stopPrank();
+    }
+
+    // ---------------------------------------------------------------------
+    // Partial withdraw / immediate increase (2026-07-15)
+    // ---------------------------------------------------------------------
+
+    function test_partialWithdraw_leavesPositionOpenWithRemainder() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 days);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        uint256 tokenId = vault.initPosition(initSwap, 0, 0);
+
+        uint256 lpUsdtBefore = IERC20(USDT).balanceOf(lp);
+        vm.prank(lp);
+        vault.withdraw(5_000, 5_000); // 50% of the position, 50% of idle funds
+
+        assertGt(IERC20(USDT).balanceOf(lp), lpUsdtBefore, "LP should receive a partial payout");
+        assertEq(vault.positionTokenId(), tokenId, "position should stay open, not closed");
+        assertEq(vault.reserveBalance(), 100_000_000, "reserve should be halved");
+    }
+
+    function test_withdraw_fundsOnly_leavesPositionFullyStaked() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 days);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        uint256 tokenId = vault.initPosition(initSwap, 0, 0);
+        (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+
+        vm.prank(lp);
+        vault.withdraw(0, 10_000); // pull 100% of idle reserve, leave the position untouched
+
+        (,,,,,,, uint128 liquidityAfter,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+        assertEq(liquidityAfter, liquidityBefore, "position liquidity should be untouched");
+        assertEq(vault.reserveBalance(), 0, "reserve should be fully withdrawn");
+        assertEq(vault.positionTokenId(), tokenId, "position stays open");
+    }
+
+    function test_partialWithdraw_revertsOnInvalidShareBps() public {
+        vm.startPrank(lp);
+        vm.expectRevert(RangeVault.InvalidShareBps.selector);
+        vault.withdraw(0, 0);
+
+        vm.expectRevert(RangeVault.InvalidShareBps.selector);
+        vault.withdraw(10_001, 0);
+
+        vm.expectRevert(RangeVault.InvalidShareBps.selector);
+        vault.withdraw(0, 10_001);
+        vm.stopPrank();
+    }
+
+    function test_fullShareWithdraw_clearsPositionTokenId() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        vm.prank(lp);
+        vault.withdraw(10_000, 10_000); // 100% via the partial-withdraw path
+
+        assertEq(vault.positionTokenId(), 0, "fully-drained position should be cleared, same as withdrawAll()");
+    }
+
+    function test_strangerCannotPartialWithdraw() public {
+        vm.prank(stranger);
+        vm.expectRevert(RangeVault.NotOwner.selector);
+        vault.withdraw(5_000, 5_000);
+    }
+
+    function test_increasePosition_addsLiquidityToOpenPosition() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        uint256 tokenId = vault.initPosition(initSwap, 0, 0);
+
+        (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+
+        // Same rough half-swap approximation the other tests use for a fresh
+        // mint — an in-range position needs both tokens in its live ratio,
+        // not just token0 (see increasePosition()'s natspec).
+        RangeVault.SwapInstruction memory topUpSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 100_000_000, amountOutMinimum: 0});
+        vm.prank(lp);
+        vault.increasePosition(topUpSwap, 200_000_000, 0, 0); // top up with 200 more USDT
+
+        (,,,,,,, uint128 liquidityAfter,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+        assertGt(liquidityAfter, liquidityBefore, "increasePosition should add real liquidity immediately");
+    }
+
+    function test_increasePosition_revertsWithNoPosition() public {
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
+        vm.expectRevert(RangeVault.NoPosition.selector);
+        vault.increasePosition(noSwap, 100_000_000, 0, 0);
+        vm.stopPrank();
+    }
+
+    function test_strangerCannotIncreasePosition() public {
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.prank(stranger);
+        vm.expectRevert(RangeVault.NotOwner.selector);
+        vault.increasePosition(noSwap, 100_000_000, 0, 0);
+    }
+
+    function test_reinjectIntoPosition_addsLiquidityFromReserve() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 1_000_000_000});
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 200_000_000, 1 days);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        uint256 tokenId = vault.initPosition(initSwap, 0, 0);
+
+        (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+
+        RangeVault.SwapInstruction memory topUpSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 50_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.reinjectIntoPosition(topUpSwap, 100_000_000, 0, 0);
+
+        (,,,,,,, uint128 liquidityAfter,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+        assertGt(liquidityAfter, liquidityBefore, "reinjectIntoPosition should add real liquidity immediately");
+        assertEq(vault.reserveBalance(), 100_000_000, "reserve should drop by the reinjected amount");
+        assertEq(vault.positionTokenId(), tokenId, "same position, not a new mint");
+    }
+
+    function test_reinjectIntoPosition_revertsWhenExceedingOwnerCap() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 1_000_000_000});
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 50_000_000, 1 days); // cap: 50 USDT/cycle
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vm.expectRevert(RangeVault.ReinjectionExceedsCap.selector);
+        vault.reinjectIntoPosition(noSwap, 100_000_000, 0, 0); // asking for 100, cap is 50
+    }
+
+    function test_reinjectIntoPosition_revertsWhenExceedingReserve() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 10_000_000, investableAmount: 1_000_000_000}); // only 10 USDT in reserve
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 200_000_000, 1 days);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vm.expectRevert(RangeVault.InsufficientReserve.selector);
+        vault.reinjectIntoPosition(noSwap, 50_000_000, 0, 0); // asking for more than the 10 USDT in reserve
+    }
+
+    function test_reinjectIntoPosition_revertsWithNoPosition() public {
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 0});
+        vault.configureTarget(0, 0, 100, 5, 200_000_000, 1 days);
+        vm.stopPrank();
+
+        vm.prank(defaultOperator);
+        vm.expectRevert(RangeVault.NoPosition.selector);
+        vault.reinjectIntoPosition(noSwap, 100_000_000, 0, 0);
+    }
+
+    function test_strangerCannotReinjectIntoPosition() public {
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.prank(stranger);
+        vm.expectRevert(RangeVault.NotOperator.selector);
+        vault.reinjectIntoPosition(noSwap, 100_000_000, 0, 0);
+    }
+
+    function test_sweepIdleDust_convertsOneSidedLeftoverIntoLiquidity() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        uint256 tokenId = vault.initPosition(initSwap, 0, 0);
+
+        // Simulate a badly-oversized initial swap leaving one-sided WETH dust
+        // with zero USDT to pair it with — exactly what production hit
+        // (vault 0x982b8435...c47505) and what _sweepDustIntoPosition() alone
+        // can't fix, since it never swaps, only re-offers the as-is leftover.
+        deal(WETH, address(vault), IERC20(WETH).balanceOf(address(vault)) + 0.03 ether);
+
+        (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+        uint256 wethBefore = IERC20(WETH).balanceOf(address(vault));
+
+        RangeVault.SwapInstruction memory correctiveSwap =
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0.015 ether, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.sweepIdleDust(correctiveSwap, 0, 0);
+
+        (,,,,,,, uint128 liquidityAfter,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+        assertGt(liquidityAfter, liquidityBefore, "sweepIdleDust should add real liquidity from the stranded WETH");
+        assertLt(
+            IERC20(WETH).balanceOf(address(vault)), wethBefore, "stranded WETH should be reduced after the sweep"
+        );
+    }
+
+    function test_sweepIdleDust_revertsWithNoPosition() public {
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vm.expectRevert(RangeVault.NoPosition.selector);
+        vault.sweepIdleDust(noSwap, 0, 0);
+    }
+
+    function test_strangerCannotSweepIdleDust() public {
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+        vm.prank(stranger);
+        vm.expectRevert(RangeVault.NotOperator.selector);
+        vault.sweepIdleDust(noSwap, 0, 0);
     }
 }

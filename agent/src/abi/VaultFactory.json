@@ -16,11 +16,6 @@
         "name": "_swapRouter",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "_uniLabPaymentWallet",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -139,19 +134,6 @@
   {
     "type": "function",
     "name": "swapRouter",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "uniLabPaymentWallet",
     "inputs": [],
     "outputs": [
       {

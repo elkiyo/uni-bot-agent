@@ -10,6 +10,13 @@ Fuente: https://celoplatform.notion.site/Agentic-Payments-DeFAI-Hackathon-364d5c
 - **Deadline confirmado, sin ambigüedad:** la API real de submission (no la página de marketing de Notion) dice `submissionDeadline: 2026-08-03T09:00:00.000Z` — **3 de agosto, 9am GMT**. La frase suelta que mencionaba 20 de julio era efectivamente texto viejo desactualizado (ver sección de abajo, dejada como registro histórico).
 - Slug real del hackathon: `agentic-payments-defai` (no `celo-onchain-agents`, que es un hackathon distinto y ya cerrado — el skill genérico usa ese como ejemplo).
 
+## Re-verificado (2026-07-16)
+
+Repetí la extracción vía API interna de Notion contra la misma página. Cambios encontrados: ninguno relevante.
+- **Timeline sin contradicción esta vez:** ambas secciones de la página ("🗓️ Timeline" y "📝 How to Participate") dicen ahora **August 3rd, 9am GMT** para todo — incluido el texto que antes decía 20 de julio para el tag. Coincide con `submissionDeadline: 2026-08-03T09:00:00.000Z` de la API de `celobuilders.xyz`. Kick-off 7 jul, ganadores anunciados **6 de agosto**.
+- Único detalle nuevo notado en el texto: *"If you are applying for the x402 track, add your agent/payTo wallet to your submission"* — ya cumplido (`agentWalletAddress` cargado 2026-07-15, ver arriba).
+- No pude releer el contenido expandido de los toggles (detalle por track, FAQ) — `getRecordValues` de la API de Notion devolvió `MemcachedCrossCellError` (500) de forma consistente, en varios reintentos; parece un problema transitorio del lado de Notion, no algo corregible desde acá. El contenido de esos toggles ya extraído el 2026-07-14 (más abajo en este archivo) sigue siendo la referencia.
+
 ## Próximos pasos inmediatos (pendiente, en orden)
 
 1. ~~Registrar en celobuilders.xyz~~ ✅ hecho.

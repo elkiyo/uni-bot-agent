@@ -162,6 +162,31 @@ Next.js + wagmi/viem + RainbowKit (auth = conectar wallet, sin login propio).
 - **Contratos Uniswap V3 en Celo** (NonfungiblePositionManager, SwapRouter02 — ya no hace falta el Factory para crear el pool, dado que ya existe) — direcciones sacadas de la doc oficial de Uniswap, **reverificar contra Celopedia** (`npx skills add celo-org/celopedia-skills`) antes de hardcodearlas.
 - Endpoints de uni-lab usados: `POST /register-agent` (por vault), `POST /pool-setup-initial` (una vez, en `initPosition`), `POST /rc-rlp-rebalance` (cada `rebalance`). Rate limit 100 req/hora por `api_key`.
 
+### Contratos desplegados en Celo mainnet
+
+**Vigentes (2026-07-16) — `create/page.tsx` solo crea vaults contra este factory; `FACTORY_DEPLOY_BLOCK` en `frontend/lib/addresses.ts` apunta a este deploy:**
+
+| Contrato | Dirección | Notas |
+|---|---|---|
+| `PlatformConfig` | `0x29380E64B3dcffF36529feA62F982fBbd486855A` | `rebalanceFee` 0.2 USDT, `maxDepositUsd` 1,000 USDT (mismos valores que el deploy anterior) |
+| `VaultFactory` | `0x2db821Ec15D959e0ab181aB8A78D046A43FC1918` | |
+| `RangeVault` (implementación, clonada por el factory) | `0x0AD47C96B4b8AF64757F1a37Ef6aD66C562E5bE1` | Todo lo del deploy anterior (ver retirados) + `sweepIdleDust(swapIx, amount0Min, amount1Min)` (operator-only): swap correctivo real sobre lo que esté suelto en el vault (fuera de `reserveBalance`) y lo suma a la posición abierta — a diferencia del barrido automático interno (`_sweepDustIntoPosition`, que solo reintenta el sobrante tal cual, sin swap), este sí puede recuperar sobrante 100% de un solo token. El keeper lo llama automáticamente después de cada `initPosition()`/`rebalance()` cuando el sobrante supera ~$1 (`maybeSweepIdleDust` en `rebalancer.ts`) |
+
+Deploy: `forge script script/Deploy.s.sol:Deploy --rpc-url https://forno.celo.org --ledger --mnemonic-indexes 2 --sender 0xBBC5a34000B7655ac469020944D4a550727BD0a4 --broadcast`. Tx de `PlatformConfig`: `0x95df11b31062aeec2cb5bd3ae31be43699b824ef4a9af0f5e3e3647d851f5c81` (bloque 72269257). Tx de `VaultFactory`: `0xfca1a094d60bca9ca129a0a552f8316158285767eb06f6b73a6a2790dc4dd35c` (bloque 72269264).
+
+**Verificados en Celoscan (2026-07-16)** — código fuente público, vía `forge verify-contract --chain 42220 --etherscan-api-key $ETHERSCAN_API_KEY` (Celoscan migró a la API unificada de Etherscan V2, exige key incluso para lectura; key guardada en `contracts/.env`, gitignorado):
+- [`PlatformConfig`](https://celoscan.io/address/0x29380e64b3dcfff36529fea62f982fbbd486855a)
+- [`VaultFactory`](https://celoscan.io/address/0x2db821ec15d959e0ab181ab8a78d046a43fc1918)
+- [`RangeVault`](https://celoscan.io/address/0x0ad47c96b4b8af64757f1a37ef6ad66c562e5be1) (implementación)
+
+**Retirados — el frontend dejó de leerlos (decisión explícita: no vale la pena el soporte multi-factory a cambio de perder visibilidad de vaults viejos en `/vaults`/`/admin`). Los vaults ya creados en estos factories siguen existiendo y operando on-chain, solo dejaron de listarse en la interfaz — accesibles directo en `/vault/0x...` si se conoce la dirección:**
+
+| Factory | Retirado por |
+|---|---|
+| `0xd61F1BFBeA5132545A0CF6C66956a481966875e4` | Este mismo redeploy (2026-07-16) — huérfana 5 vaults creados ese mismo día, incluidos `0x982b8435...c47505` y `0x8Ed2ad9f...42737C88`, que estaban siendo revisados en vivo |
+| `0x6d674B0d1A4bC498866401Ba3F1d2D63C24085a5` | Redeploy del 2026-07-15 |
+| `0x3dBFb9f9F4f0CAa02a323e106dB1B73e7d7F01ae` | Visto en `agent/.env` (implementación standalone, no desplegada) — origen/fecha sin confirmar |
+
 ## Pasos de implementación (8 días)
 
 1. **Día 1:** `npx skills add celo-org/celopedia-skills` (reverificar direcciones Uniswap) + repo público + Telegram del hackathon. Scaffold Foundry. *(El registro en `celobuilders.xyz` se deja para el final por decisión explícita del usuario — ver Context. El código de `attribution.ts` se construye igual desde el día 1, listo para usar el tag en cuanto exista, pero durante el desarrollo las transacciones van sin tag real.)*
@@ -196,11 +221,15 @@ Next.js + wagmi/viem + RainbowKit (auth = conectar wallet, sin login propio).
 - **Rebalanceo periódico forzado + revisión anti-sybil de los jueces:** rebalancear aunque el precio siga en rango es una decisión deliberada para generar volumen constante, pero es exactamente el tipo de patrón que la revisión manual de los jueces está buscando. El ciclo de reinyección alternada ayuda (cada rebalanceo mueve capital real, no es un no-op idéntico), pero conviene documentarlo con total transparencia en el README/demo como una estrategia de gestión activa real, con su propia lógica (RC/RLP alternado), no ocultarlo.
 - El pool objetivo (`0x6F42...4897`, USDT/WETH 0.3%) ya tiene liquidez real de terceros — las posiciones del vault comparten el pool con otros LPs, no es un entorno aislado; el precio se mueve por la actividad de todo el mercado, no solo la del vault.
 
-## Backlog técnico (pendiente de próximo redeploy de contrato)
+## Backlog técnico
 
-Mejoras identificadas en producción, deliberadamente diferidas para no encadenar más de un redeploy de `VaultFactory`/`RangeVault` el mismo día (cada redeploy huérfana los vaults existentes del factory anterior — ver notas de redeploy más arriba). Agruparlas en un solo redeploy futuro:
+Mejoras identificadas en producción. Ver "Contratos desplegados en Celo mainnet" más arriba para lo que ya se resolvió en el redeploy del 2026-07-15.
 
-- **Barrer el dust de `initPosition`/`rebalance` con `increaseLiquidity()`.** Confirmado en vivo (2026-07-14, vault `0x79BC1a46...535da`, $200 invertidos): el swap se dimensiona con el precio DE ANTES de swapear, pero el swap mismo mueve el precio — en un pool poco profundo (esta posición nueva representó ~15% de la liquidez activa ya existente en ese rango) eso dejó ~$21 (10.5%) de WETH sin invertir, sentado como balance suelto del vault hasta el próximo rebalanceo. `INonfungiblePositionManager.increaseLiquidity(tokenId, ...)` permite sumarle liquidez a la posición YA minteada sin cerrarla — llamarlo como paso extra después del mint recuperaría casi todo ese sobrante en el momento. Ojo: como el precio no se mueve entre el mint y un `increaseLiquidity()` inmediato en la misma tx, sumar el dust tal cual (sin ajustar el ratio) va a dejar un resto más chico pero no cero — para barrerlo del todo haría falta un mini-swap de ajuste antes.
-- **Protección de slippage real en los swaps.** Hoy todo `SwapInstruction` que arma el keeper usa `amountOutMinimum: 0n` siempre (`sizeInitialSwap`/`sizeRebalanceSwap` en `frontend/lib/keeper/swapMath.ts`) — sin piso, un swap en un pool poco profundo (como el de arriba) queda expuesto a sandwich attacks sin que el contrato lo detecte.
-- **`requestRebalance()` — trigger manual del owner.** Hoy el owner puede depositar más reserva y subir el tope de reinyección (`configureTarget`), pero no puede forzar que el keeper actúe antes de que se cumpla `periodicRebalanceInterval` o de que el precio salga de rango — solo el `operator` puede llamar `rebalance()`. Agregar una función owner-callable que ponga una bandera on-chain (`rebalanceRequested`), que `monitor.ts` trate como disparador válido en el próximo tick (máx. 5 min), respetando igual `minRebalanceInterval`/`maxRebalances`.
-- **Sacar `usdtBudget`/`payUniLabFee()` del contrato.** Retirados del lado keeper/frontend el 2026-07-15 (ver "Track 2 — x402" en `HACKATHON.md`): el operador le paga a uni-lab.xyz directo vía x402 (USDC propio), no desde el presupuesto de cada vault — `create/page.tsx` y "Depositar más" ya no piden ni depositan a ese ledger. El campo sigue existiendo en `RangeVault.sol` (siempre en 0 para vaults nuevos, posible saldo viejo en vaults anteriores, retirable con `withdrawAll()`), simplemente ya no se usa — sacarlo del todo requiere el mismo redeploy de contrato que el resto de este backlog.
+**Hecho (redeploy 2026-07-15):**
+- ~~Barrer el dust de `initPosition`/`rebalance` con `increaseLiquidity()`~~ — confirmado en vivo (2026-07-14, vault `0x79BC1a46...535da`, $200 invertidos, ~$21/10.5% de WETH sin invertir). `_sweepDustIntoPosition()` lo hace ahora automáticamente tras cada mint (best-effort, con `try/catch` — si el precio queda 100% de un lado no revierte el ciclo entero).
+- ~~Sacar `usdtBudget`/`payUniLabFee()` del contrato~~ — ya no se usan desde que el operador paga a uni-lab vía x402 (ver "Track 2 — x402" en `HACKATHON.md`).
+- **Nuevo, no estaba en este backlog:** `_checkRangeNearMarket` rediseñado (validaba contra un "centro" derivado que rechazaba rebalanceos periódicos legítimos — bloqueaba 3 vaults reales antes de este fix), `withdraw(positionShareBps, fundsShareBps)` (retiro parcial independiente entre posición y fondos idle), `increasePosition()` (el owner suma capital a la posición abierta al instante), `reinjectIntoPosition()` (el operador reinyecta reserva sin cerrar la posición).
+
+**Pendiente:**
+- **Protección de slippage real en los swaps.** Hoy todo `SwapInstruction` que arma el keeper usa `amountOutMinimum: 0n` siempre (`sizeInitialSwap`/`sizeRebalanceSwap` en `frontend/lib/keeper/swapMath.ts`) — sin piso, un swap en un pool poco profundo queda expuesto a sandwich attacks sin que el contrato lo detecte. No requiere redeploy de contrato, es un fix del lado del keeper.
+- **`requestRebalance()` — trigger manual del owner.** Hoy el owner puede depositar más reserva y subir el tope de reinyección (`configureTarget`), pero no puede forzar que el keeper actúe antes de que se cumpla `periodicRebalanceInterval` o de que el precio salga de rango — solo el `operator` puede llamar `rebalance()`. Agregar una función owner-callable que ponga una bandera on-chain (`rebalanceRequested`), que `monitor.ts` trate como disparador válido en el próximo tick (máx. 5 min), respetando igual `minRebalanceInterval`/`maxRebalances`. Requiere redeploy de contrato — candidata para agrupar con la próxima mejora que sí lo necesite.

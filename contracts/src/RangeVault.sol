@@ -39,7 +39,6 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     error RangeTooFarFromMarket();
     error TooSoonToRebalance();
     error RebalanceLimitReached();
-    error InsufficientUsdtBudget();
     error InsufficientReserve();
     error InsufficientInvestableBalance();
     error InvalidSwapInstruction();
@@ -49,6 +48,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     error VaultClosed();
     error VaultNotEmpty();
     error ReinjectionExceedsCap();
+    error InvalidShareBps();
 
     // ---------------------------------------------------------------------
     // Immutable-ish config (set once in initialize())
@@ -65,11 +65,6 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     INonfungiblePositionManager public positionManager;
     ISwapRouter02 public swapRouter;
 
-    address public uniLabPaymentWallet;
-    // No fixed fee constant: uni-lab.xyz's pricing (GET /api/v1/pricing) can
-    // change at any time, so the amount is supplied by the keeper per call
-    // (see payUniLabFee) instead of hardcoded here — see PLAN.md.
-
     // ---------------------------------------------------------------------
     // Operator
     // ---------------------------------------------------------------------
@@ -77,12 +72,15 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     address public operator;
 
     // ---------------------------------------------------------------------
-    // Ledgers — all three are carved out of the same token0 balance but must
+    // Ledgers — both are carved out of the same token0 balance but must
     // never be spent on each other's behalf (see PLAN.md "Nota de contabilidad").
+    // A third ledger, usdtBudget (earmarked for uni-lab.xyz's on-chain
+    // payUniLabFee()), was retired 2026-07-15 when uni-lab payments moved
+    // entirely to x402 (the operator's own USDC, no vault budget involved) —
+    // see HACKATHON.md "Track 2 — x402" and PLAN.md's backlog note.
     // ---------------------------------------------------------------------
 
     uint256 public investableUsdt; // capital not yet deployed into a position
-    uint256 public usdtBudget; // earmarked for payUniLabFee()
     uint256 public reserveBalance; // capital available for the keeper to reinject into a position, over time
 
     // ---------------------------------------------------------------------
@@ -105,7 +103,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     uint256 public maxSlippageBps; // basis points, applied by the keeper off-chain when it sizes amountOutMinimum
     uint256 public minRebalanceInterval; // seconds, floor between rebalances
-    uint256 public maxRangeDeviationBps; // max ticks (1 bps == 1 tick, see _checkRangeNearMarket) the new range's center may sit from the current pool tick
+    uint256 public maxRangeDeviationBps; // extra slack in ticks (1 bps == 1 tick, see _checkRangeNearMarket) the pool price may sit outside the proposed [tickLower, tickUpper] and still be accepted
 
     // ---------------------------------------------------------------------
     // Runtime state
@@ -139,7 +137,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     // Events
     // ---------------------------------------------------------------------
 
-    event Deposited(uint256 investableAmount, uint256 usdtBudgetAmount, uint256 reserveAmount);
+    event Deposited(uint256 investableAmount, uint256 reserveAmount);
     event TargetConfigured(
         uint256 investmentAmountUsd,
         int24 targetTickLower,
@@ -152,9 +150,11 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     event Rebalanced(
         uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, uint256 reinjectedAmount, uint256 feePaid
     );
-    event UniLabFeePaid(uint256 amount, uint256 remainingBudget);
     event LpFeesPaidToOwner(uint256 amount0, uint256 amount1);
     event Withdrawn(uint256 amount0, uint256 amount1);
+    event PositionIncreased(uint256 usdtAmount, uint256 used0, uint256 used1);
+    event ReinjectedIntoPosition(uint256 amount, uint256 used0, uint256 used1);
+    event IdleDustSwept(uint256 used0, uint256 used1);
     event OperatorUpdated(address newOperator);
     event RiskParamsUpdated(uint256 maxSlippageBps, uint256 minRebalanceInterval, uint256 maxRangeDeviationBps);
     event PausedSet(bool isPaused);
@@ -198,12 +198,11 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         address _token1,
         uint24 _feeTier,
         address _positionManager,
-        address _swapRouter,
-        address _uniLabPaymentWallet
+        address _swapRouter
     ) external initializer {
         if (
             _owner == address(0) || _platformConfig == address(0) || _pool == address(0)
-                || _positionManager == address(0) || _swapRouter == address(0) || _uniLabPaymentWallet == address(0)
+                || _positionManager == address(0) || _swapRouter == address(0)
         ) {
             revert ZeroAddress();
         }
@@ -217,7 +216,6 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         feeTier = _feeTier;
         positionManager = INonfungiblePositionManager(_positionManager);
         swapRouter = ISwapRouter02(_swapRouter);
-        uniLabPaymentWallet = _uniLabPaymentWallet;
 
         operator = IPlatformConfig(_platformConfig).defaultOperator();
 
@@ -232,25 +230,81 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     // Owner: capital + configuration
     // ---------------------------------------------------------------------
 
-    /// @notice Deposit USDT only (token0). Split across the three ledgers by the owner.
-    function deposit(uint256 usdtBudgetAmount, uint256 reserveAmount, uint256 investableAmount)
-        external
-        onlyOwner
-        notClosed
-        nonReentrant
-    {
-        uint256 total = usdtBudgetAmount + reserveAmount + investableAmount;
+    /// @notice Deposit USDT only (token0). Split across the two ledgers by the owner.
+    function deposit(uint256 reserveAmount, uint256 investableAmount) external onlyOwner notClosed nonReentrant {
+        uint256 total = reserveAmount + investableAmount;
         uint256 cap = IPlatformConfig(platformConfig).maxDepositUsd();
-        uint256 currentTotal = usdtBudget + reserveBalance + investableUsdt;
+        uint256 currentTotal = reserveBalance + investableUsdt;
         if (cap != 0 && currentTotal + total > cap) revert DepositExceedsPlatformCap();
 
         IERC20(token0).safeTransferFrom(msg.sender, address(this), total);
 
-        usdtBudget += usdtBudgetAmount;
         reserveBalance += reserveAmount;
         investableUsdt += investableAmount;
 
-        emit Deposited(investableAmount, usdtBudgetAmount, reserveAmount);
+        emit Deposited(investableAmount, reserveAmount);
+    }
+
+    /// @notice Tops up the CURRENTLY OPEN position immediately, instead of
+    /// depositing into investableUsdt and waiting for the operator's next
+    /// rebalance cycle to fold it in via reinjection. Deposits USDT only
+    /// (token0), consistent with the rest of the vault — the owner never
+    /// holds WETH directly — but unlike a fresh mint, adding to an
+    /// ALREADY-IN-RANGE position requires both tokens in the position's
+    /// exact live ratio (Uniswap computes zero liquidity, and reverts, for
+    /// any one-sided add to an in-range position — confirmed against a real
+    /// fork test, 2026-07-15). `swapIx` is the owner-supplied split to get
+    /// there; unlike initPosition()/rebalance() this needs no off-chain
+    /// pricing service to size (no split to *solve*, just the position's
+    /// already-known current ratio at the pool's live price) — the frontend
+    /// computes it client-side from `positionManager.positions()` + the
+    /// pool's `slot0()`, both already public reads. Whatever portion Uniswap
+    /// still can't use stays as investableUsdt dust, same as
+    /// initPosition()/rebalance(). Deliberately NOT blocked by
+    /// `whenNotPaused` — pause() stops the operator, never the owner.
+    function increasePosition(
+        SwapInstruction calldata swapIx,
+        uint256 usdtAmount,
+        uint256 amount0Min,
+        uint256 amount1Min
+    ) external onlyOwner notClosed nonReentrant {
+        if (positionTokenId == 0) revert NoPosition();
+        if (usdtAmount == 0) return;
+
+        uint256 cap = IPlatformConfig(platformConfig).maxDepositUsd();
+        uint256 currentTotal = reserveBalance + investableUsdt;
+        if (cap != 0 && currentTotal + usdtAmount > cap) revert DepositExceedsPlatformCap();
+
+        // Isolate this call's own deposit from any pre-existing investableUsdt
+        // dust (e.g. left over from a prior rebalance) — same reason
+        // initPosition() zeroes it before computing amount0: without this,
+        // old dust sitting in the same raw token0 balance could get silently
+        // swept into this mint while investableUsdt never got debited for it,
+        // leaving the ledger overstating what's actually still free.
+        uint256 preExistingInvestable = investableUsdt;
+        investableUsdt = 0;
+
+        IERC20(token0).safeTransferFrom(msg.sender, address(this), usdtAmount);
+
+        _executeSwap(swapIx);
+
+        uint256 amount0 = IERC20(token0).balanceOf(address(this)) - preExistingInvestable - reserveBalance;
+        uint256 amount1 = IERC20(token1).balanceOf(address(this));
+        if (amount0 > usdtAmount) amount0 = usdtAmount; // guard, same as initPosition()
+
+        (, uint256 used0, uint256 used1) = positionManager.increaseLiquidity(
+            INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: positionTokenId,
+                amount0Desired: amount0,
+                amount1Desired: amount1,
+                amount0Min: amount0Min,
+                amount1Min: amount1Min,
+                deadline: block.timestamp
+            })
+        );
+
+        investableUsdt = preExistingInvestable + (amount0 - used0);
+        emit PositionIncreased(usdtAmount, used0, used1);
     }
 
     /// @notice Define what the agent should build and the caps it must respect.
@@ -302,24 +356,6 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     }
 
     // ---------------------------------------------------------------------
-    // Operator: uni-lab.xyz payment (separate tx — see PLAN.md, the keeper
-    // needs this tx's hash before it can call uni-lab's API for the range)
-    // ---------------------------------------------------------------------
-
-    /// @notice Pays uni-lab.xyz `amount` of token0 from usdtBudget. `amount` is
-    /// supplied by the keeper, which queries GET /api/v1/pricing right before
-    /// calling this — uni-lab's price isn't fixed and can change at any time,
-    /// so this contract doesn't hardcode or cap it; the owner's exposure is
-    /// already bounded by however much they chose to put in usdtBudget.
-    function payUniLabFee(uint256 amount) external onlyOperator nonReentrant returns (uint256 remainingBudget) {
-        if (usdtBudget < amount) revert InsufficientUsdtBudget();
-        usdtBudget -= amount;
-        IERC20(token0).safeTransfer(uniLabPaymentWallet, amount);
-        emit UniLabFeePaid(amount, usdtBudget);
-        return usdtBudget;
-    }
-
-    // ---------------------------------------------------------------------
     // Operator: build the initial position
     // ---------------------------------------------------------------------
 
@@ -340,7 +376,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
         _executeSwap(swapIx);
 
-        uint256 amount0 = IERC20(token0).balanceOf(address(this)) - usdtBudget - reserveBalance;
+        uint256 amount0 = IERC20(token0).balanceOf(address(this)) - reserveBalance;
         uint256 amount1 = IERC20(token1).balanceOf(address(this));
         if (amount0 > investable) {
             // swap direction was token1->token0 (shouldn't happen pre-position, but guard anyway)
@@ -368,10 +404,16 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         positionTokenId = tokenId;
         lastRebalanceTimestamp = block.timestamp;
 
-        // Any leftover dust that didn't go into the mint stays as investableUsdt/token1 dust.
-        investableUsdt = amount0 - used0;
+        // The mint's ratio rarely matches amount0/amount1 exactly, leaving dust
+        // that would otherwise sit idle until the next rebalance — top up the
+        // same just-minted position with whatever's left over instead.
+        (uint256 swept0, uint256 swept1) =
+            _sweepDustIntoPosition(tokenId, amount0 - used0, amount1 - used1);
 
-        emit PositionInitialized(tokenId, used0, used1);
+        // Any leftover dust that didn't go into either call stays as investableUsdt/token1 dust.
+        investableUsdt = amount0 - used0 - swept0;
+
+        emit PositionInitialized(tokenId, used0 + swept0, used1 + swept1);
     }
 
     // ---------------------------------------------------------------------
@@ -454,14 +496,14 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         // 4) Platform fee, paid to whoever is currently operator, priced live by PlatformConfig.
         uint256 fee = IPlatformConfig(platformConfig).rebalanceFee();
         if (fee > 0) {
-            uint256 freeToken0 = IERC20(token0).balanceOf(address(this)) - usdtBudget - reserveBalance;
+            uint256 freeToken0 = IERC20(token0).balanceOf(address(this)) - reserveBalance;
             if (freeToken0 < fee) revert InsufficientInvestableBalance();
             IERC20(token0).safeTransfer(operator, fee);
         }
 
         // 5) Mint the new position with whatever's left over (investable pool only —
-        // usdtBudget and reserveBalance are excluded and untouched).
-        uint256 amount0 = IERC20(token0).balanceOf(address(this)) - usdtBudget - reserveBalance;
+        // reserveBalance is excluded and untouched).
+        uint256 amount0 = IERC20(token0).balanceOf(address(this)) - reserveBalance;
         uint256 amount1 = IERC20(token1).balanceOf(address(this));
 
         uint256 used0;
@@ -483,16 +525,173 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         );
 
         positionTokenId = newTokenId;
-        investableUsdt = amount0 - used0;
+
+        // Same dust top-up as initPosition() — see PLAN.md backlog note
+        // (2026-07-14 production case: ~10% of a rebalance left unswept).
+        (uint256 swept0,) = _sweepDustIntoPosition(newTokenId, amount0 - used0, amount1 - used1);
+
+        investableUsdt = amount0 - used0 - swept0;
         rebalanceCount += 1;
         lastRebalanceTimestamp = block.timestamp;
 
         emit Rebalanced(newTokenId, newTickLower, newTickUpper, reinjectAmount, fee);
     }
 
+    /// @notice Tops up the CURRENTLY OPEN position from reserveBalance
+    /// directly, without closing and reopening it via a full rebalance()
+    /// cycle. Operator-triggered symmetric counterpart to increasePosition()
+    /// (the owner's version, sourced from a fresh deposit instead of
+    /// reserve). Gated exactly like rebalance()'s own reinjectAmount
+    /// parameter: capped by both the owner's per-cycle ceiling
+    /// (reinjectionAmount) and by whatever's actually sitting in reserve.
+    function reinjectIntoPosition(
+        SwapInstruction calldata swapIx,
+        uint256 amount,
+        uint256 amount0Min,
+        uint256 amount1Min
+    ) external onlyOperator whenNotPaused notClosed nonReentrant {
+        if (positionTokenId == 0) revert NoPosition();
+        if (amount == 0) return;
+        if (amount > reinjectionAmount) revert ReinjectionExceedsCap();
+        if (amount > reserveBalance) revert InsufficientReserve();
+
+        reserveBalance -= amount;
+
+        uint256 preExistingInvestable = investableUsdt;
+        investableUsdt = 0;
+
+        _executeSwap(swapIx);
+
+        uint256 amount0 = IERC20(token0).balanceOf(address(this)) - preExistingInvestable - reserveBalance;
+        uint256 amount1 = IERC20(token1).balanceOf(address(this));
+        if (amount0 > amount) amount0 = amount; // guard, same as increasePosition()
+
+        (, uint256 used0, uint256 used1) = positionManager.increaseLiquidity(
+            INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: positionTokenId,
+                amount0Desired: amount0,
+                amount1Desired: amount1,
+                amount0Min: amount0Min,
+                amount1Min: amount1Min,
+                deadline: block.timestamp
+            })
+        );
+
+        investableUsdt = preExistingInvestable + (amount0 - used0);
+        emit ReinjectedIntoPosition(amount, used0, used1);
+    }
+
+    /// @notice Sweeps whatever token0/token1 the vault holds outside
+    /// reserveBalance into the currently open position, with a real
+    /// corrective swap first — not just an as-is top-up like the internal
+    /// `_sweepDustIntoPosition()` helper (called automatically after every
+    /// mint, which can only add dust in whatever ratio it already has).
+    /// Needed when a prior swap overshot badly enough to leave dust that's
+    /// almost entirely one token, with nothing to pair it with — confirmed
+    /// in production 2026-07-16 (vault 0x982b8435...c47505: initPosition()'s
+    /// swap left ~$67 of WETH stranded with zero matching USDT, past what
+    /// the automatic sweep could use). `swapIx` is sized off-chain from the
+    /// vault's actual idle balances (investableUsdt + raw token1
+    /// balanceOf), same math as initPosition()/rebalance().
+    function sweepIdleDust(SwapInstruction calldata swapIx, uint256 amount0Min, uint256 amount1Min)
+        external
+        onlyOperator
+        whenNotPaused
+        notClosed
+        nonReentrant
+    {
+        if (positionTokenId == 0) revert NoPosition();
+
+        _executeSwap(swapIx);
+
+        uint256 amount0 = IERC20(token0).balanceOf(address(this)) - reserveBalance;
+        uint256 amount1 = IERC20(token1).balanceOf(address(this));
+
+        (, uint256 used0, uint256 used1) = positionManager.increaseLiquidity(
+            INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: positionTokenId,
+                amount0Desired: amount0,
+                amount1Desired: amount1,
+                amount0Min: amount0Min,
+                amount1Min: amount1Min,
+                deadline: block.timestamp
+            })
+        );
+
+        investableUsdt = amount0 - used0;
+        emit IdleDustSwept(used0, used1);
+    }
+
     // ---------------------------------------------------------------------
     // Owner: withdraw — the only path principal can ever leave the vault
     // ---------------------------------------------------------------------
+
+    /// @notice Withdraws from the open position and from the vault's idle
+    /// funds (investableUsdt + reserveBalance) INDEPENDENTLY — `positionShareBps`
+    /// controls how much of the live position's liquidity to pull,
+    /// `fundsShareBps` controls how much of the idle ledgers to pull. Either
+    /// can be 0 (skip that pool of capital entirely) or 10_000 (all of it),
+    /// on its own — e.g. pull 100% of idle reserve while leaving the position
+    /// fully staked, or trim the position while leaving reserve untouched for
+    /// future reinjection cycles. Leaves whatever isn't withdrawn operating
+    /// normally, unlike withdrawAll()/emergencyWithdrawPosition() which
+    /// always close everything. Always `owner`, never a parameter — see
+    /// PLAN.md. Untracked token1 dust (see initPosition()/rebalance()) isn't
+    /// split proportionally here — it stays in the vault and gets picked up
+    /// by the next cycle, same as today.
+    function withdraw(uint256 positionShareBps, uint256 fundsShareBps) external onlyOwner nonReentrant {
+        if (positionShareBps > 10_000 || fundsShareBps > 10_000) revert InvalidShareBps();
+        if (positionShareBps == 0 && fundsShareBps == 0) revert InvalidShareBps();
+
+        uint256 amount0;
+        uint256 amount1;
+
+        if (positionShareBps > 0 && positionTokenId != 0) {
+            (,,,,,,, uint128 liquidity,,,,) = positionManager.positions(positionTokenId);
+            uint128 partialLiquidity = uint128((uint256(liquidity) * positionShareBps) / 10_000);
+            if (partialLiquidity > 0) {
+                positionManager.decreaseLiquidity(
+                    INonfungiblePositionManager.DecreaseLiquidityParams({
+                        tokenId: positionTokenId,
+                        liquidity: partialLiquidity,
+                        amount0Min: 0,
+                        amount1Min: 0,
+                        deadline: block.timestamp
+                    })
+                );
+            }
+            // collect() always sweeps 100% of what's owed — the principal just
+            // freed above plus any accrued trading fees, which belong to owner
+            // in full regardless of positionShareBps (same as rebalance()'s
+            // LpFeesPaidToOwner logic).
+            (amount0, amount1) = positionManager.collect(
+                INonfungiblePositionManager.CollectParams({
+                    tokenId: positionTokenId,
+                    recipient: address(this),
+                    amount0Max: type(uint128).max,
+                    amount1Max: type(uint128).max
+                })
+            );
+            // 100% withdrawn from an existing position: the NFT is now empty,
+            // so clear positionTokenId the same way withdrawAll() does —
+            // otherwise it'd dangle as a reference to a zero-liquidity
+            // position instead of a clean "no position" state.
+            if (positionShareBps == 10_000) positionTokenId = 0;
+        }
+
+        uint256 investableShare = (investableUsdt * fundsShareBps) / 10_000;
+        uint256 reserveShare = (reserveBalance * fundsShareBps) / 10_000;
+        investableUsdt -= investableShare;
+        reserveBalance -= reserveShare;
+
+        uint256 total0 = amount0 + investableShare + reserveShare;
+        uint256 total1 = amount1;
+
+        if (total0 > 0) IERC20(token0).safeTransfer(owner, total0);
+        if (total1 > 0) IERC20(token1).safeTransfer(owner, total1);
+
+        emit Withdrawn(total0, total1);
+    }
 
     /// @notice Closes the position (if any) and sends every token0/token1 the vault
     /// holds to `owner`. Always `owner`, never a parameter — see PLAN.md.
@@ -524,7 +723,6 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         uint256 amount0 = IERC20(token0).balanceOf(address(this));
         uint256 amount1 = IERC20(token1).balanceOf(address(this));
         investableUsdt = 0;
-        usdtBudget = 0;
         reserveBalance = 0;
 
         if (amount0 > 0) IERC20(token0).safeTransfer(owner, amount0);
@@ -566,7 +764,6 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         uint256 amount0 = IERC20(token0).balanceOf(address(this));
         uint256 amount1 = IERC20(token1).balanceOf(address(this));
         investableUsdt = 0;
-        usdtBudget = 0;
         reserveBalance = 0;
 
         if (amount0 > 0) IERC20(token0).safeTransfer(owner, amount0);
@@ -577,7 +774,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     /// @notice Permanently deactivates the vault. The owner must have already
     /// drained everything via withdrawAll()/emergencyWithdrawPosition() first —
-    /// this reverts unless the position is closed AND all three ledgers AND the
+    /// this reverts unless the position is closed AND both ledgers AND the
     /// vault's actual token0/token1 balances are all exactly zero, so a vault can
     /// never end up "closed" while still holding funds. Irreversible: once closed,
     /// deposit/configureTarget/setRiskParams/initPosition/rebalance all revert
@@ -586,7 +783,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     function closeVault() external onlyOwner {
         if (closed) revert VaultClosed();
         if (
-            positionTokenId != 0 || investableUsdt != 0 || usdtBudget != 0 || reserveBalance != 0
+            positionTokenId != 0 || investableUsdt != 0 || reserveBalance != 0
                 || IERC20(token0).balanceOf(address(this)) != 0 || IERC20(token1).balanceOf(address(this)) != 0
         ) {
             revert VaultNotEmpty();
@@ -598,6 +795,41 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     // ---------------------------------------------------------------------
     // Internal helpers
     // ---------------------------------------------------------------------
+
+    /// @dev A mint's amount0Desired/amount1Desired rarely land in the exact
+    /// ratio the range needs, leaving one side as dust that would otherwise
+    /// sit idle until the next rebalance (confirmed in production 2026-07-14:
+    /// ~10% of a rebalance left unswept in a shallow pool — see PLAN.md
+    /// backlog note). Top up the position just minted with whatever's left,
+    /// instead of a separate swap+re-mint. Uniswap's own ratio math applies
+    /// here too, so this reduces the dust but generally won't zero it out.
+    /// Best-effort, wrapped in try/catch: if the current price sits entirely
+    /// outside the range on one side, the leftover on the *other* side prices
+    /// out to zero liquidity and the pool's mint() reverts — confirmed against
+    /// a real fork test (2026-07-15) — which must never fail the
+    /// initPosition()/rebalance() it's called from, only skip the top-up.
+    function _sweepDustIntoPosition(uint256 tokenId, uint256 leftover0, uint256 leftover1)
+        internal
+        returns (uint256 swept0, uint256 swept1)
+    {
+        if (leftover0 == 0 && leftover1 == 0) return (0, 0);
+        try positionManager.increaseLiquidity(
+            INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: tokenId,
+                amount0Desired: leftover0,
+                amount1Desired: leftover1,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp
+            })
+        ) returns (uint128, uint256 used0, uint256 used1) {
+            swept0 = used0;
+            swept1 = used1;
+        } catch {
+            swept0 = 0;
+            swept1 = 0;
+        }
+    }
 
     function _executeSwap(SwapInstruction calldata swapIx) internal {
         if (swapIx.amountIn == 0) return;
@@ -616,19 +848,28 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         );
     }
 
-    /// @dev In Uniswap V3, `1.0001^1` is exactly a 1 bps price move — so a tick
-    /// delta and a basis-point price delta are the same number. This lets us bound
-    /// how far the operator's proposed range may sit from the live pool price
-    /// without any extra math or oracle: compare the range's center tick directly
-    /// against `maxRangeDeviationBps`.
+    /// @dev A legitimate concentrated-liquidity range contains the live pool
+    /// price — that's what "in range" means, independent of how wide the
+    /// range is. This validates the operator's proposed range directly
+    /// against that invariant (the actual [tickLower, tickUpper] bounds a
+    /// pricing calculation like uni-lab.xyz's RC/RLP split produces), instead
+    /// of computing a derived midpoint and bounding its distance from market —
+    /// a legitimate periodic rebalance that deliberately pins one edge (e.g.
+    /// keeping the existing floor and only recentering the ceiling) can land
+    /// its midpoint arbitrarily far from price while the range itself still
+    /// correctly contains it, which the old center-distance check rejected
+    /// (see PLAN.md, 2026-07-15).
+    /// `maxRangeDeviationBps` is slack (1 bps == 1 tick, exact in Uniswap V3's
+    /// `1.0001^tick` pricing) allowed OUTSIDE the strict bounds — room for the
+    /// pool price to move between an off-chain quote and this tx landing
+    /// on-chain, not a tolerance for genuinely mispriced ranges.
     function _checkRangeNearMarket(int24 tickLower, int24 tickUpper) internal view {
         (, int24 currentTick,,,,,) = pool.slot0();
-        int24 centerTick = (tickLower + tickUpper) / 2;
-        int24 delta = centerTick > currentTick ? centerTick - currentTick : currentTick - centerTick;
-        // delta is always >= 0 by construction above, and ticks are bounded to +-887272
-        // (well within uint24), so both casts are lossless.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        if (uint256(uint24(delta)) > maxRangeDeviationBps) revert RangeTooFarFromMarket();
+        int256 slack = int256(maxRangeDeviationBps);
+        int256 lowerBound = int256(tickLower) - slack;
+        int256 upperBound = int256(tickUpper) + slack;
+        int256 current = int256(currentTick);
+        if (current < lowerBound || current > upperBound) revert RangeTooFarFromMarket();
     }
 
     function _isOutOfRange() internal view returns (bool) {
