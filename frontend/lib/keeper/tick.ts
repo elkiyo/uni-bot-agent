@@ -4,7 +4,7 @@ import { publicClient, operatorAccount } from "./wallet";
 import { Store, acquireTickLock, releaseTickLock } from "./store";
 import { discoverAndRegisterVaults } from "./discovery";
 import { checkVault } from "./monitor";
-import { runInitPosition, runRebalance } from "./rebalancer";
+import { runInitPosition, runRebalance, maybeSweepIdleDust } from "./rebalancer";
 import { logEvent } from "./logger";
 import { FACTORY_ADDRESS } from "../addresses";
 
@@ -62,6 +62,9 @@ export async function runTick(): Promise<TickSummary> {
         } else if (action.kind === "rebalance") {
           await runRebalance(record.address as Address, store, action.reason);
           summary.actions.push({ vault: record.address, action: `rebalance:${action.reason}` });
+        } else if (action.kind === "sweep") {
+          await maybeSweepIdleDust(record.address as Address);
+          summary.actions.push({ vault: record.address, action: "sweepIdleDust" });
         }
       } catch (err) {
         logEvent({ level: "error", vault: record.address, msg: "vault check/action failed", err: String(err) });

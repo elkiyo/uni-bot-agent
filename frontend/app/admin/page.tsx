@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount, usePublicClient, useReadContracts, useWriteContract } from "wagmi";
+import { useAccount, useBalance, usePublicClient, useReadContract, useReadContracts, useWriteContract } from "wagmi";
 import { formatUnits, parseUnits, type Address } from "viem";
 import { Header } from "../components/Header";
-import { platformConfigAbi, vaultFactoryAbi, rangeVaultAbi } from "@/lib/contracts";
-import { PLATFORM_CONFIG_ADDRESS, FACTORY_ADDRESS, FACTORY_DEPLOY_BLOCK } from "@/lib/addresses";
+import { VolumeChart } from "./VolumeChart";
+import { platformConfigAbi, vaultFactoryAbi, rangeVaultAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
+import { PLATFORM_CONFIG_ADDRESS, FACTORY_ADDRESS, FACTORY_DEPLOY_BLOCK, POOL, WETH, USDC, POSITION_MANAGER } from "@/lib/addresses";
+import { ethPriceFromTick } from "@/lib/priceMath";
+import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 
 interface UniLabCallRow {
   id: number;
@@ -54,7 +57,12 @@ export default function Admin() {
   });
   const vaultAddresses = (allVaultsData?.map((d) => d.result) ?? []).filter(Boolean) as Address[];
 
-  const [platformStats, setPlatformStats] = useState<{ totalRebalances: number; totalFeesUsd: number } | null>(null);
+  const [platformStats, setPlatformStats] = useState<{
+    totalRebalances: number;
+    totalFeesUsd: number;
+    totalLpFees0Usd: number;
+    totalLpFees1Weth: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!publicClient || vaultAddresses.length === 0) return;
@@ -65,28 +73,48 @@ export default function Admin() {
       const MAX_RANGE = 5_000n;
       let totalRebalances = 0;
       let totalFeesRaw = 0n;
+      let totalLpFees0Raw = 0n;
+      let totalLpFees1Raw = 0n;
 
       for (const vault of vaultAddresses) {
         let fromBlock = FACTORY_DEPLOY_BLOCK;
         while (fromBlock <= latest) {
           const toBlock = fromBlock + MAX_RANGE > latest ? latest : fromBlock + MAX_RANGE;
-          const logs = await publicClient!.getContractEvents({
-            address: vault,
-            abi: rangeVaultAbi,
-            eventName: "Rebalanced",
-            fromBlock,
-            toBlock,
-          });
-          for (const log of logs as unknown as Array<{ args: { feePaid: bigint } }>) {
+          const [rebalancedLogs, lpFeeLogs] = await Promise.all([
+            publicClient!.getContractEvents({
+              address: vault,
+              abi: rangeVaultAbi,
+              eventName: "Rebalanced",
+              fromBlock,
+              toBlock,
+            }),
+            publicClient!.getContractEvents({
+              address: vault,
+              abi: rangeVaultAbi,
+              eventName: "LpFeesPaidToOwner",
+              fromBlock,
+              toBlock,
+            }),
+          ]);
+          for (const log of rebalancedLogs as unknown as Array<{ args: { feePaid: bigint } }>) {
             totalRebalances += 1;
             totalFeesRaw += log.args.feePaid;
+          }
+          for (const log of lpFeeLogs as unknown as Array<{ args: { amount0: bigint; amount1: bigint } }>) {
+            totalLpFees0Raw += log.args.amount0;
+            totalLpFees1Raw += log.args.amount1;
           }
           fromBlock = toBlock + 1n;
         }
       }
 
       if (!cancelled) {
-        setPlatformStats({ totalRebalances, totalFeesUsd: Number(formatUnits(totalFeesRaw, 6)) });
+        setPlatformStats({
+          totalRebalances,
+          totalFeesUsd: Number(formatUnits(totalFeesRaw, 6)),
+          totalLpFees0Usd: Number(formatUnits(totalLpFees0Raw, 6)),
+          totalLpFees1Weth: Number(formatUnits(totalLpFees1Raw, 18)),
+        });
       }
     }
 
@@ -97,6 +125,98 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- vaultAddresses is a derived array, re-created every render; comparing its content via length+publicClient is enough here
   }, [publicClient, vaultAddresses.length]);
 
+  // --- Live per-vault snapshot: active/closed split, idle capital, TVL, in-range health ---
+  const { data: slot0 } = useReadContract({
+    address: POOL,
+    abi: uniswapV3PoolAbi,
+    functionName: "slot0",
+    query: { refetchInterval: 15_000 },
+  });
+  const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
+  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
+
+  const { data: vaultLedgers } = useReadContracts({
+    contracts: vaultAddresses.flatMap(
+      (v) =>
+        [
+          { address: v, abi: rangeVaultAbi, functionName: "closed" },
+          { address: v, abi: rangeVaultAbi, functionName: "positionTokenId" },
+          { address: v, abi: rangeVaultAbi, functionName: "investableUsdt" },
+          { address: v, abi: rangeVaultAbi, functionName: "reserveBalance" },
+        ] as const,
+    ),
+    query: { enabled: vaultAddresses.length > 0, refetchInterval: 30_000 },
+  });
+
+  const { data: vaultWethBalances } = useReadContracts({
+    contracts: vaultAddresses.map(
+      (v) => ({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [v] }) as const,
+    ),
+    query: { enabled: vaultAddresses.length > 0, refetchInterval: 30_000 },
+  });
+
+  const perVault = vaultAddresses.map((address, i) => ({
+    address,
+    closed: vaultLedgers?.[i * 4]?.result as boolean | undefined,
+    positionTokenId: vaultLedgers?.[i * 4 + 1]?.result as bigint | undefined,
+    investableUsdt: (vaultLedgers?.[i * 4 + 2]?.result as bigint | undefined) ?? 0n,
+    reserveBalance: (vaultLedgers?.[i * 4 + 3]?.result as bigint | undefined) ?? 0n,
+    idleWeth: (vaultWethBalances?.[i]?.result as bigint | undefined) ?? 0n,
+  }));
+
+  const activeVaults = perVault.filter((v) => v.closed !== true);
+  const closedVaultsCount = perVault.filter((v) => v.closed === true).length;
+  const vaultsWithPosition = activeVaults.filter((v) => v.positionTokenId && v.positionTokenId > 0n);
+
+  const { data: positionsData } = useReadContracts({
+    contracts: vaultsWithPosition.map(
+      (v) =>
+        ({
+          address: POSITION_MANAGER,
+          abi: positionManagerAbi,
+          functionName: "positions",
+          args: [v.positionTokenId as bigint],
+        }) as const,
+    ),
+    query: { enabled: vaultsWithPosition.length > 0, refetchInterval: 30_000 },
+  });
+
+  let totalPositionValueUsd = 0;
+  let vaultsOutOfRange = 0;
+  if (positionsData && currentTick !== undefined && ethPrice !== undefined) {
+    positionsData.forEach((r) => {
+      const pos = r.result as
+        | readonly [bigint, Address, Address, Address, number, number, number, bigint, bigint, bigint, bigint, bigint]
+        | undefined;
+      if (!pos) return;
+      const [, , , , , tickLower, tickUpper, liquidity] = pos;
+      const { amount0Raw, amount1Raw } = estimatePositionAmounts({ liquidity, currentTick, tickLower, tickUpper });
+      totalPositionValueUsd += amount0Raw * 1e-6 + amount1Raw * 1e-18 * ethPrice;
+      if (currentTick < tickLower || currentTick > tickUpper) vaultsOutOfRange += 1;
+    });
+  }
+
+  const totalIdleUsdt = activeVaults.reduce((sum, v) => sum + v.investableUsdt + v.reserveBalance, 0n);
+  const totalIdleWeth = activeVaults.reduce((sum, v) => sum + v.idleWeth, 0n);
+  const totalIdleUsdtNum = Number(formatUnits(totalIdleUsdt, 6));
+  const totalIdleWethNum = Number(formatUnits(totalIdleWeth, 18));
+  const tvlUsd =
+    ethPrice !== undefined ? totalIdleUsdtNum + totalIdleWethNum * ethPrice + totalPositionValueUsd : undefined;
+
+  // --- Operator health — real incident 2026-07-16: ran out of CELO gas mid-session ---
+  const { data: operatorCelo } = useBalance({
+    address: defaultOperator as Address | undefined,
+    query: { enabled: Boolean(defaultOperator), refetchInterval: 30_000 },
+  });
+  const { data: operatorUsdc } = useReadContract({
+    address: USDC,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: defaultOperator ? [defaultOperator as Address] : undefined,
+    query: { enabled: Boolean(defaultOperator), refetchInterval: 30_000 },
+  });
+  const operatorCeloLow = operatorCelo !== undefined && Number(operatorCelo.formatted) < 1;
+
   const [uniLabCalls, setUniLabCalls] = useState<UniLabCallRow[] | null>(null);
   useEffect(() => {
     if (!isPlatformOwner) return;
@@ -105,6 +225,9 @@ export default function Admin() {
       .then((body) => setUniLabCalls(body.calls ?? []))
       .catch((err) => console.error("failed to load uni-lab call log", err));
   }, [isPlatformOwner]);
+
+  const x402Ok = uniLabCalls?.filter((c) => c.ok).length ?? 0;
+  const x402Failed = uniLabCalls ? uniLabCalls.length - x402Ok : 0;
 
   const [newFee, setNewFee] = useState("");
   const [newOperator, setNewOperator] = useState("");
@@ -131,16 +254,16 @@ export default function Admin() {
     <>
       <Header />
       <main className="section flex-1 pb-24 pt-32">
-        <span className="eyebrow">Plataforma</span>
+        <span className="eyebrow">Operaciones</span>
         <h1
           className="mt-5 text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Panel de administración
+          Panel operativo
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
-          Configuración global que aplica en vivo a todos los vaults: precio por rebalanceo,
-          operador por defecto y tope de depósito por vault.
+          Salud de la plataforma en vivo — capital bajo gestión, estado del operador, y la
+          configuración global que aplica a todos los vaults.
         </p>
 
         {(!PLATFORM_CONFIG_ADDRESS || !FACTORY_ADDRESS) && (
@@ -149,36 +272,93 @@ export default function Admin() {
           </div>
         )}
 
-        {data && (
-          <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat label="Vaults totales" value={String(vaultCount ?? 0)} accent />
-            <Stat
-              label="Fee por rebalanceo"
-              value={`${formatUnits((rebalanceFee as bigint) ?? 0n, 6)} USDT`}
-            />
-            <Stat
-              label="Tope por vault"
-              value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} USDT`}
-            />
-            <div className="glass rounded-2xl p-5">
-              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                Operador por defecto
-              </span>
-              <p className="mt-2 break-all font-mono text-xs text-white/90">
-                {String(defaultOperator)}
-              </p>
-            </div>
-            <Stat
-              label="Rebalanceos totales"
-              value={platformStats ? String(platformStats.totalRebalances) : "…"}
-              accent
-            />
-            <Stat
-              label="Revenue acumulado"
-              value={platformStats ? `$${platformStats.totalFeesUsd.toFixed(2)}` : "…"}
-              accent
-            />
+        {operatorCeloLow && (
+          <div className="glass mt-8 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
+            <p className="text-sm font-medium text-negative">
+              El operador tiene menos de 1 CELO — puede quedarse sin gas para rebalancear o
+              barrer dust en cualquier momento.
+            </p>
+            <p className="mt-1 font-mono text-xs text-muted">Mandale CELO a {String(defaultOperator)}</p>
           </div>
+        )}
+
+        {data && (
+          <>
+            <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+              Capital bajo gestión
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <Stat label="TVL total" value={tvlUsd !== undefined ? `$${tvlUsd.toFixed(2)}` : "…"} accent />
+              <Stat
+                label="En posiciones"
+                value={ethPrice !== undefined ? `$${totalPositionValueUsd.toFixed(2)}` : "…"}
+              />
+              <Stat
+                label="Capital libre"
+                value={`${totalIdleUsdtNum.toFixed(2)} USDT${
+                  totalIdleWethNum > 0 ? ` + ${totalIdleWethNum.toFixed(6)} WETH` : ""
+                }`}
+              />
+              <Stat
+                label="Comisiones LP generadas"
+                value={
+                  platformStats
+                    ? `${platformStats.totalLpFees0Usd.toFixed(2)} USDT${
+                        platformStats.totalLpFees1Weth > 0
+                          ? ` + ${platformStats.totalLpFees1Weth.toFixed(6)} WETH`
+                          : ""
+                      }`
+                    : "…"
+                }
+              />
+            </div>
+
+            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Vaults</p>
+            <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <Stat label="Activos" value={String(activeVaults.length)} accent />
+              <Stat label="Cerrados" value={String(closedVaultsCount)} />
+              <Stat
+                label="Fuera de rango ahora"
+                value={String(vaultsOutOfRange)}
+                accent={vaultsOutOfRange > 0}
+                negative={vaultsOutOfRange > 0}
+              />
+              <Stat label="Rebalanceos totales" value={platformStats ? String(platformStats.totalRebalances) : "…"} />
+            </div>
+
+            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Operador</p>
+            <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <Stat
+                label="CELO (gas)"
+                value={operatorCelo ? `${Number(operatorCelo.formatted).toFixed(3)} CELO` : "…"}
+                negative={operatorCeloLow}
+              />
+              <Stat
+                label="USDC (x402)"
+                value={operatorUsdc !== undefined ? `${formatUnits(operatorUsdc as bigint, 6)} USDC` : "…"}
+              />
+              <Stat
+                label="Consultas a uni-lab"
+                value={uniLabCalls ? `${x402Ok} ok / ${x402Failed} fallidas` : "…"}
+              />
+              <Stat label="Revenue de plataforma" value={platformStats ? `$${platformStats.totalFeesUsd.toFixed(2)}` : "…"} accent />
+            </div>
+
+            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Configuración</p>
+            <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <Stat label="Fee por rebalanceo" value={`${formatUnits((rebalanceFee as bigint) ?? 0n, 6)} USDT`} />
+              <Stat label="Tope por vault" value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} USDT`} />
+              <div className="glass rounded-2xl p-5">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                  Operador por defecto
+                </span>
+                <p className="mt-2 break-all font-mono text-xs text-white/90">{String(defaultOperator)}</p>
+              </div>
+              <Stat label="Precio ETH" value={ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"} />
+            </div>
+
+            <VolumeChart vaultAddresses={vaultAddresses} />
+          </>
         )}
 
         {data && !isPlatformOwner && (
@@ -338,16 +518,32 @@ function UniLabCallRowView({ call }: { call: UniLabCallRow }) {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Stat({
+  label,
+  value,
+  accent,
+  negative,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  negative?: boolean;
+}) {
   return (
     <div
       className={
-        accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"
+        negative
+          ? "glass rounded-2xl border-negative/40 bg-negative/[0.06] p-5"
+          : accent
+            ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5"
+            : "glass rounded-2xl p-5"
       }
     >
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
       <p
-        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent" : "text-white/90"}`}
+        className={`mt-2 text-lg font-semibold tabular-nums ${
+          negative ? "text-negative" : accent ? "text-accent" : "text-white/90"
+        }`}
         style={{ fontFamily: "var(--font-display)" }}
       >
         {value}

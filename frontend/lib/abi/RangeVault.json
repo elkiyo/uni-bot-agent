@@ -67,11 +67,6 @@
     "name": "deposit",
     "inputs": [
       {
-        "name": "usdtBudgetAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "reserveAmount",
         "type": "uint256",
         "internalType": "uint256"
@@ -104,6 +99,51 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "increasePosition",
+    "inputs": [
+      {
+        "name": "swapIx",
+        "type": "tuple",
+        "internalType": "struct RangeVault.SwapInstruction",
+        "components": [
+          {
+            "name": "token0ToToken1",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "amountIn",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "amountOutMinimum",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "usdtAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount0Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -192,11 +232,6 @@
       },
       {
         "name": "_swapRouter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "_uniLabPaymentWallet",
         "type": "address",
         "internalType": "address"
       }
@@ -364,25 +399,6 @@
   },
   {
     "type": "function",
-    "name": "payUniLabFee",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "remainingBudget",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "periodicRebalanceInterval",
     "inputs": [],
     "outputs": [
@@ -522,6 +538,51 @@
   },
   {
     "type": "function",
+    "name": "reinjectIntoPosition",
+    "inputs": [
+      {
+        "name": "swapIx",
+        "type": "tuple",
+        "internalType": "struct RangeVault.SwapInstruction",
+        "components": [
+          {
+            "name": "token0ToToken1",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "amountIn",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "amountOutMinimum",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount0Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "reinjectionAmount",
     "inputs": [],
     "outputs": [
@@ -597,6 +658,46 @@
   },
   {
     "type": "function",
+    "name": "sweepIdleDust",
+    "inputs": [
+      {
+        "name": "swapIx",
+        "type": "tuple",
+        "internalType": "struct RangeVault.SwapInstruction",
+        "components": [
+          {
+            "name": "token0ToToken1",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "amountIn",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "amountOutMinimum",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "amount0Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Min",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "targetConfigured",
     "inputs": [],
     "outputs": [
@@ -662,19 +763,6 @@
   },
   {
     "type": "function",
-    "name": "uniLabPaymentWallet",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "unpause",
     "inputs": [],
     "outputs": [],
@@ -682,16 +770,21 @@
   },
   {
     "type": "function",
-    "name": "usdtBudget",
-    "inputs": [],
-    "outputs": [
+    "name": "withdraw",
+    "inputs": [
       {
-        "name": "",
+        "name": "positionShareBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "fundsShareBps",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -717,12 +810,6 @@
         "internalType": "uint256"
       },
       {
-        "name": "usdtBudgetAmount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
         "name": "reserveAmount",
         "type": "uint256",
         "indexed": false,
@@ -743,6 +830,25 @@
       },
       {
         "name": "amount1",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "IdleDustSwept",
+    "inputs": [
+      {
+        "name": "used0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "used1",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -810,6 +916,31 @@
   },
   {
     "type": "event",
+    "name": "PositionIncreased",
+    "inputs": [
+      {
+        "name": "usdtAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "used0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "used1",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "PositionInitialized",
     "inputs": [
       {
@@ -863,6 +994,31 @@
       },
       {
         "name": "feePaid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ReinjectedIntoPosition",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "used0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "used1",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -940,25 +1096,6 @@
   },
   {
     "type": "event",
-    "name": "UniLabFeePaid",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "remainingBudget",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Withdrawn",
     "inputs": [
       {
@@ -998,12 +1135,12 @@
   },
   {
     "type": "error",
-    "name": "InsufficientUsdtBudget",
+    "name": "InvalidInitialization",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidInitialization",
+    "name": "InvalidShareBps",
     "inputs": []
   },
   {

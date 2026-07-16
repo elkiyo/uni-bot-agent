@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
 import { Header } from "../components/Header";
-import { vaultFactoryAbi, rangeVaultAbi, uniswapV3PoolAbi, positionManagerAbi } from "@/lib/contracts";
-import { FACTORY_ADDRESS, POOL, POSITION_MANAGER } from "@/lib/addresses";
+import { vaultFactoryAbi, rangeVaultAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
+import { FACTORY_ADDRESS, POOL, POSITION_MANAGER, WETH } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
@@ -134,7 +134,6 @@ const cardReads = (address: `0x${string}`) =>
     "maxRebalances",
     "investableUsdt",
     "reserveBalance",
-    "usdtBudget",
   ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName }) as const);
 
 function VaultCard({
@@ -150,7 +149,7 @@ function VaultCard({
     contracts: cardReads(vaultAddress),
     query: { refetchInterval: 15_000 },
   });
-  const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance, usdtBudget] =
+  const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance] =
     data?.map((d) => d.result) ?? [];
   const { data: feesSummary } = useVaultFeesSummary(vaultAddress);
 
@@ -198,8 +197,23 @@ function VaultCard({
     inRange = currentTick >= tickLower && currentTick <= tickUpper;
   }
 
-  const idleCapital =
-    ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + ((usdtBudget as bigint) ?? 0n);
+  const idleCapital = ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n);
+
+  // Raw WETH the vault holds outside the position — never tracked by a
+  // ledger (unlike investableUsdt/reserveBalance), so it's invisible unless
+  // read directly. Left out of "Capital libre" before, this stat quietly
+  // hid real stranded value from a mis-sized swap (confirmed repeatedly in
+  // production 2026-07-16, e.g. vault 0x0Bf394B3...5dEBCE5b8: $191 of WETH
+  // sitting here with the USDT-only stat showing $0).
+  const { data: idleWeth } = useReadContract({
+    address: WETH,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [vaultAddress],
+    query: { refetchInterval: 15_000 },
+  });
+  const idleWethRaw = (idleWeth as bigint) ?? 0n;
+  const idleWethUsd = ethPrice !== undefined ? Number(idleWethRaw) * 1e-18 * ethPrice : undefined;
 
   return (
     <Link
@@ -253,6 +267,12 @@ function VaultCard({
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Capital libre</p>
           <p className="mt-1 text-sm font-medium text-white/90">{formatUnits(idleCapital, 6)} USDT</p>
+          {idleWethRaw > 0n && (
+            <p className="mt-0.5 font-mono text-xs text-negative">
+              + {Number(formatUnits(idleWethRaw, 18)).toFixed(6)} WETH
+              {idleWethUsd !== undefined ? ` (~$${idleWethUsd.toFixed(2)})` : ""}
+            </p>
+          )}
         </div>
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Rebalanceos</p>

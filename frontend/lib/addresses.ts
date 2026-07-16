@@ -2,19 +2,35 @@
 // direct RPC calls before being trusted here. Keep in sync with agent/src/addresses.ts
 // and contracts/script/Deploy.s.sol.
 export const USDT = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e" as const;
+// USDC on Celo — NOT the pool's stablecoin (that's USDT above), only relevant
+// as what the operator holds to pay uni-lab.xyz via x402 (see
+// HACKATHON.md "Track 2 — x402"). Used to show the operator's own
+// balance/health on /admin — real incident 2026-07-16: the operator ran out
+// of CELO gas mid-session and every rebalance/sweep silently stalled for
+// hours before anyone noticed.
+export const USDC = "0xcebA9300f2b948710d2653dD7B07f33A8B32118C" as const;
 export const WETH = "0xD221812de1BD094f35587EE8E174B07B6167D9Af" as const;
 export const POOL = "0x6F42B9D2085a0dEb711C00A460a98B9863ae4897" as const; // USDT/WETH 0.3%
 export const FEE_TIER = 3000;
 export const POSITION_MANAGER = "0x3d79EdAaBC0EaB6F08ED885C05Fc0B014290D95A" as const; // Uniswap V3 NonfungiblePositionManager
+export const SWAP_ROUTER02 = "0x5615CDAb10dc425a742d643d949a7F474C01abc4" as const; // Uniswap V3 SwapRouter02
+// Deliberately NOT using Uniswap's own Quoter (0x82825d05...) here — its
+// CREATE2 pool-address computation (PoolAddress.computeAddress, hardcoded
+// POOL_INIT_CODE_HASH from @uniswap/v3-periphery 1.0.0) doesn't match Celo's
+// real deployed pool bytecode hash, confirmed 2026-07-16 via a direct
+// eth_call revert. simulateContract'ing SWAP_ROUTER02.exactInputSingle
+// itself instead — as the vault's own account, via eth_call, never
+// committed — gets the same real price-impact-aware amountOut without
+// depending on that offline address computation at all, since the router
+// looks the pool up through the real factory. See rebalancer.ts.
 
-// Block the factory was deployed in (2026-07-14 — redeployed again same day
-// to ship RangeVault.rebalance() paying accrued Uniswap LP fees straight to
-// owner instead of silently recycling them into the next position; vaults
-// cloned from the PREVIOUS factory keep running the old bytecode forever —
-// EIP-1167 clones aren't upgradeable — so they'll never emit
-// LpFeesPaidToOwner) — no vault event can precede it, so it's the safe lower
-// bound for event scans.
-export const FACTORY_DEPLOY_BLOCK = 72157682n;
+// Block the current factory was deployed in (2026-07-16 — added
+// sweepIdleDust(), an operator-only corrective-swap dust sweep). No vault
+// event from THIS factory can precede it, so it's the safe lower bound for
+// event scans. Vaults from any earlier, now-retired factory are out of scope
+// for this platform going forward — see PLAN.md for their addresses if ever
+// needed.
+export const FACTORY_DEPLOY_BLOCK = 72269264n;
 
 // Set once contracts/script/Deploy.s.sol has been run against Celo mainnet.
 export const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_FACTORY_ADDRESS || "") as `0x${string}`;

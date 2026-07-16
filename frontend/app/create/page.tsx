@@ -151,12 +151,7 @@ export default function CreateVault() {
 
       const investable = parseUnits(investAmount, 6);
       const reserve = parseUnits(reinjectionAmount, 6);
-      // No uni-lab budget deposit anymore — the operator pays uni-lab.xyz
-      // directly via x402 (see HACKATHON.md "Track 2 — x402"), out of its own
-      // USDC, not the vault's USDT. The contract's usdtBudget ledger still
-      // exists but is deliberately never funded going forward.
-      const budget = 0n;
-      const total = investable + reserve + budget;
+      const total = investable + reserve;
 
       currentPhase = "approving";
       setStep(currentPhase);
@@ -189,17 +184,29 @@ export default function CreateVault() {
       // maxRangeDeviationBps = 0, and RangeVault._checkRangeNearMarket rejects
       // any range whose center isn't exactly the current tick under that value
       // — so without this call the agent's initPosition() would revert with
-      // RangeTooFarFromMarket almost every time. maxRangeDeviationBps is set to
-      // the range's half-width (1 tick == 1 bps), so the recentered range the
-      // agent proposes always fits while genuinely wild ranges stay blocked.
+      // RangeTooFarFromMarket almost every time.
+      //
+      // A half-width-of-initial-range heuristic used to live here, but real
+      // production data (2026-07-15) showed it's not a reliable estimate: the
+      // periodic-rebalance path pins the old floor and lets uni-lab's real RC
+      // calculation pick the ceiling, and that real (paid, on-chain-confirmed)
+      // answer landed the range's center ~260-290 ticks from market on 3
+      // vaults whose half-width was only 135-150 — genuinely blocked, not a
+      // keeper-side estimation bug (see rebalancer.ts's own fix the same day,
+      // which stopped trusting a local guess and started using uni-lab's real
+      // range — the real range still didn't fit). Fixed value instead, with
+      // enough margin that a legitimate uni-lab-driven periodic cycle should
+      // never hit it in practice; still bounded well short of Uniswap's
+      // absolute tick range, so a genuinely deranged proposal (bug or a
+      // compromised operator key) stays blocked.
       currentPhase = "risk";
       setStep(currentPhase);
-      const halfWidthTicks = Math.max(100, Math.round(Math.abs(targetTickUpper - targetTickLower) / 2));
+      const MAX_RANGE_DEVIATION_TICKS = 5_000n; // ~50% price deviation tolerance
       const riskHash = await writeContractAsync({
         address: vaultAddress,
         abi: rangeVaultAbi,
         functionName: "setRiskParams",
-        args: [500n, 0n, BigInt(halfWidthTicks)], // 5% slippage cap, no extra cooldown, half-width deviation
+        args: [500n, 0n, MAX_RANGE_DEVIATION_TICKS], // 5% slippage cap, no extra cooldown, generous deviation cap
       });
       await publicClient.waitForTransactionReceipt({ hash: riskHash });
 
@@ -209,7 +216,7 @@ export default function CreateVault() {
         address: vaultAddress,
         abi: rangeVaultAbi,
         functionName: "deposit",
-        args: [budget, reserve, investable],
+        args: [reserve, investable],
       });
       await publicClient.waitForTransactionReceipt({ hash: depositHash });
 

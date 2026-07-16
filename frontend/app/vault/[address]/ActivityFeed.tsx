@@ -18,9 +18,9 @@ interface FeedItem {
 
 /**
  * Live on-chain activity feed for a vault. Everything the agent does emits an
- * event (UniLabFeePaid, PositionInitialized, Rebalanced, ...), so the feed is
- * reconstructed straight from the RPC — no backend, and it shows the keeper
- * acting in real time (10s polling) during a demo.
+ * event (PositionInitialized, Rebalanced, LpFeesPaidToOwner, ...), so the
+ * feed is reconstructed straight from the RPC — no backend, and it shows the
+ * keeper acting in real time (10s polling) during a demo.
  */
 export function ActivityFeed({ address }: { address: `0x${string}` }) {
   const publicClient = usePublicClient();
@@ -135,7 +135,7 @@ function describe(
       return {
         kind: "money",
         title: "Depósito del owner",
-        detail: `Invertible ${usdt(args.investableAmount)} · presupuesto uni-lab ${usdt(args.usdtBudgetAmount)} · reserva ${usdt(args.reserveAmount)}`,
+        detail: `Invertible ${usdt(args.investableAmount)} · reserva ${usdt(args.reserveAmount)}`,
       };
     case "TargetConfigured":
       return {
@@ -148,12 +148,6 @@ function describe(
         kind: "config",
         title: "Límites de riesgo",
         detail: `Slippage máx. ${Number(args.maxSlippageBps) / 100}% · desviación de rango máx. ${args.maxRangeDeviationBps} ticks`,
-      };
-    case "UniLabFeePaid":
-      return {
-        kind: "agent",
-        title: "Consulta pagada a uni-lab.xyz",
-        detail: `${usdt(args.amount)} transferidos on-chain desde el vault · presupuesto restante ${usdt(args.remainingBudget)}`,
       };
     case "PositionInitialized":
       return {
@@ -183,6 +177,26 @@ function describe(
         title: "Retiro del owner",
         detail: `${usdt(args.amount0)} + ${Number(formatUnits((args.amount1 as bigint) ?? 0n, 18)).toFixed(6)} WETH devueltos al owner`,
       };
+    case "PositionIncreased":
+      return {
+        kind: "money",
+        title: "El owner sumó capital a la posición",
+        detail: `${usdt(args.usdtAmount)} depositados, ${usdt(args.used0)} entraron a la posición al instante`,
+      };
+    case "ReinjectedIntoPosition":
+      return {
+        kind: "agent",
+        title: "El agente reinyectó reserva a la posición",
+        detail: `${usdt(args.amount)} salieron de la reserva, ${usdt(args.used0)} entraron a la posición sin cerrarla`,
+      };
+    case "IdleDustSwept": {
+      const used1 = (args.used1 as bigint) ?? 0n;
+      return {
+        kind: "agent",
+        title: "El agente barrió sobrante suelto con un swap",
+        detail: `${usdt(args.used0)}${used1 > 0n ? ` + ${Number(formatUnits(used1, 18)).toFixed(6)} WETH` : ""} que estaban sueltos entraron a la posición`,
+      };
+    }
     case "EmergencyWithdraw":
       return {
         kind: "money",

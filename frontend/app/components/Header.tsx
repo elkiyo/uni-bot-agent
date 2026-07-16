@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -7,8 +8,12 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 const links = [
   { href: "/vaults", label: "Mis vaults" },
   { href: "/create", label: "Crear vault" },
-  { href: "/recursos", label: "Recursos" },
-  { href: "/admin", label: "Admin" },
+];
+
+const resourceLinks = [
+  { href: "/recursos", label: "Guías" },
+  { href: "/docs", label: "Doc" },
+  { href: "/admin", label: "Operaciones" },
 ];
 
 export function Header() {
@@ -46,11 +51,79 @@ export function Header() {
                 {label}
               </Link>
             ))}
+            <ResourcesMenu pathname={pathname} />
           </nav>
         </div>
 
         <ConnectButton showBalance={false} chainStatus="icon" />
       </div>
     </header>
+  );
+}
+
+function ResourcesMenu({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isActive = resourceLinks.some((l) => l.href === pathname);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={
+          isActive
+            ? "flex items-center gap-1 text-sm font-medium text-accent"
+            : "flex items-center gap-1 text-sm text-white/60 transition-colors hover:text-white"
+        }
+      >
+        Recursos
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+          className={`transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="glass absolute left-0 top-full mt-2 w-44 rounded-xl p-1.5">
+          {resourceLinks.map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setOpen(false)}
+              className={
+                pathname === href
+                  ? "block rounded-lg px-3 py-2 text-sm font-medium text-accent"
+                  : "block rounded-lg px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/5 hover:text-white"
+              }
+            >
+              {label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

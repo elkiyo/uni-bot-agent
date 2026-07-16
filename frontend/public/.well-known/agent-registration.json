@@ -1,0 +1,33 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "UniAgent",
+  "description": "Vaults no-custodiales de liquidez concentrada en Uniswap V3 (Celo). Cualquiera deposita USDT y un agente keeper arma y rebalancea la posicion dentro de limites configurados por el owner; el operador nunca puede retirar el principal.",
+  "image": "https://uni-bot-agent-gules.vercel.app/favicon.ico",
+  "active": true,
+  "services": [
+    {
+      "type": "web",
+      "url": "https://uni-bot-agent-gules.vercel.app"
+    },
+    {
+      "type": "web",
+      "name": "docs",
+      "url": "https://uni-bot-agent-gules.vercel.app/docs"
+    }
+  ],
+  "x402Support": true,
+  "supportedTrust": ["reputation"],
+  "registrations": [],
+  "extensions": {
+    "chain": "celo-mainnet",
+    "chainId": 42220,
+    "agentWallet": "0xAe3921825fEC520cADa98EB0790BC91a61d4286b",
+    "contracts": {
+      "platformConfig": "0x29380E64B3dcffF36529feA62F982fBbd486855A",
+      "vaultFactory": "0x2db821Ec15D959e0ab181aB8A78D046A43FC1918",
+      "rangeVaultImplementation": "0x0AD47C96B4b8AF64757F1a37Ef6aD66C562E5bE1"
+    },
+    "githubRepo": "https://github.com/elkiyo/uni-bot-agent",
+    "attributionTag": "celo_e38cdd3210a6"
+  }
+}

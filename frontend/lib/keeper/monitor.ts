@@ -2,12 +2,20 @@ import "server-only";
 import type { Address } from "viem";
 import { publicClient } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi } from "./serverContracts";
-import { POOL } from "../addresses";
+import { erc20Abi } from "../contracts";
+import { POOL, WETH } from "../addresses";
+import { ethPriceFromTick } from "../priceMath";
 
 export type VaultAction =
   | { kind: "none" }
   | { kind: "init"; reason: string }
-  | { kind: "rebalance"; reason: "out-of-range-top" | "out-of-range-bottom" | "periodic" };
+  | { kind: "rebalance"; reason: "out-of-range-top" | "out-of-range-bottom" | "periodic" }
+  | { kind: "sweep" };
+
+// Not worth a transaction below this — matches DUST_SWEEP_MIN_USD in
+// rebalancer.ts (kept as a separate constant since monitor.ts is the
+// free-read-only side of this check, rebalancer.ts is the one that acts).
+const DUST_SWEEP_MIN_USD = 1;
 
 /**
  * Free, read-only check of whether a vault needs attention right now. Mirrors
@@ -82,6 +90,29 @@ export async function checkVault(vaultAddress: Address): Promise<VaultAction> {
   if (currentTick > tickUpper) {
     return { kind: "rebalance", reason: "out-of-range-bottom" }; // price broke below the floor
   }
+
+  // In range and nothing else to do this cycle — but check for stranded
+  // dust before giving up. Ideally sweepIdleDust() runs right after the mint
+  // that created it (see rebalancer.ts's own inline calls), but that can be
+  // missed (confirmed in production 2026-07-16, vault
+  // 0x0Bf394B3...5dEBCE5b8: the serverless function's own tick likely ran
+  // out of time right after initPosition(), before the sweep could fire —
+  // $191 of WETH sat stranded with zero USDT to pair it with for over 5
+  // minutes with no retry). Checking again independently every tick means a
+  // missed sweep gets caught on the very next cycle instead of sitting idle
+  // indefinitely.
+  const [idleUsdt, idleWeth] = await Promise.all([
+    vault.read.investableUsdt() as Promise<bigint>,
+    publicClient.readContract({
+      address: WETH,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [vaultAddress],
+    }) as Promise<bigint>,
+  ]);
+  const ethPrice = ethPriceFromTick(currentTick);
+  const idleUsdValue = Number(idleUsdt) * 1e-6 + Number(idleWeth) * 1e-18 * ethPrice;
+  if (idleUsdValue >= DUST_SWEEP_MIN_USD) return { kind: "sweep" };
 
   return { kind: "none" };
 }

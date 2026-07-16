@@ -1,14 +1,14 @@
 import "server-only";
-import type { Abi, Address } from "viem";
+import { BaseError, ContractFunctionRevertedError, type Abi, type Address } from "viem";
 import { publicClient, operatorAccount } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
 import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
-import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap } from "./swapMath";
-import { POOL } from "../addresses";
+import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, targetRawRatio } from "./swapMath";
+import { POOL, WETH, USDT, SWAP_ROUTER02 } from "../addresses";
 import { Store } from "./store";
 import { logEvent } from "./logger";
-import { rangeVaultAbi } from "../contracts";
+import { rangeVaultAbi, erc20Abi, swapRouter02Abi } from "../contracts";
 
 async function currentTick(): Promise<number> {
   const [, tick] = (await publicClient.readContract({
@@ -84,6 +84,21 @@ async function wouldSucceed(
   functionName: string,
   args: readonly unknown[],
 ): Promise<boolean> {
+  return (await simulateAttempt(vaultAddress, functionName, args)).ok;
+}
+
+/**
+ * Same simulation as `wouldSucceed`, but keeps the decoded custom-error name
+ * instead of collapsing everything to a boolean — needed by the periodic
+ * rebalance path below to tell "genuinely blocked" (NoPosition,
+ * RebalanceLimitReached, TooSoonToRebalance, ...) apart from "our own local
+ * range guess tripped RangeTooFarFromMarket, uni-lab's real answer might not."
+ */
+async function simulateAttempt(
+  vaultAddress: Address,
+  functionName: string,
+  args: readonly unknown[],
+): Promise<{ ok: boolean; errorName?: string }> {
   try {
     await publicClient.simulateContract({
       address: vaultAddress,
@@ -92,9 +107,172 @@ async function wouldSucceed(
       args: args as unknown[],
       account: operatorAccount?.address,
     });
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (err) {
+    const reverted =
+      err instanceof BaseError ? err.walk((e) => e instanceof ContractFunctionRevertedError) : undefined;
+    const errorName = reverted instanceof ContractFunctionRevertedError ? reverted.data?.errorName : undefined;
+    return { ok: false, errorName };
+  }
+}
+
+const DUST_SWEEP_MIN_USD = 1; // not worth the gas below this
+
+/**
+ * Best-effort follow-up after a mint: if there's dust left over that the
+ * contract's own automatic same-ratio top-up (`_sweepDustIntoPosition`)
+ * couldn't use — typically because a prior swap overshot badly enough to
+ * leave dust that's almost entirely one token, with nothing to pair it
+ * with — swap and add it for real via `sweepIdleDust()`. Confirmed
+ * necessary in production 2026-07-16 (vault 0x982b8435...c47505: ~$67 of
+ * WETH stranded after initPosition() with zero matching USDT). Never blocks
+ * the caller — errors are logged, not thrown, since the mint/rebalance this
+ * runs after already succeeded by the time this executes.
+ */
+export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
+  try {
+    const vault = vaultContract(vaultAddress);
+    const [positionTokenId, idleUsdt, positionManager] = await Promise.all([
+      vault.read.positionTokenId() as Promise<bigint>,
+      vault.read.investableUsdt() as Promise<bigint>,
+      vault.read.positionManager() as Promise<Address>,
+    ]);
+    if (positionTokenId === 0n) return;
+
+    const [idleWeth, tick, position] = await Promise.all([
+      publicClient.readContract({
+        address: WETH,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [vaultAddress],
+      }) as Promise<bigint>,
+      currentTick(),
+      publicClient.readContract({
+        address: positionManager,
+        abi: positionManagerAbi,
+        functionName: "positions",
+        args: [positionTokenId],
+      }) as Promise<
+        readonly [bigint, Address, Address, Address, number, number, number, bigint, bigint, bigint, bigint, bigint]
+      >,
+    ]);
+    const [, , , , , tickLower, tickUpper] = position;
+    const ethPrice = ethPriceFromTick(tick);
+
+    const idleUsdValue = Number(idleUsdt) * 1e-6 + Number(idleWeth) * 1e-18 * ethPrice;
+    if (idleUsdValue < DUST_SWEEP_MIN_USD) return;
+
+    const swap = sizeRebalanceSwap({
+      currentTick: tick,
+      newTickLower: tickLower,
+      newTickUpper: tickUpper,
+      availableToken0Raw: idleUsdt,
+      availableToken1Raw: idleWeth,
+      ethPriceUsd: ethPrice,
+    });
+    if (swap.amountIn === 0n) return;
+
+    const swapIx = { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n };
+    const args = [swapIx, 0n, 0n] as const;
+
+    const check = await simulateAttempt(vaultAddress, "sweepIdleDust", args);
+    if (!check.ok) {
+      logEvent({
+        level: "warn",
+        vault: vaultAddress,
+        msg: "sweepIdleDust simulation reverts — skipping",
+        errorName: check.errorName,
+        idleUsdValue,
+      });
+      return;
+    }
+    if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "sweepIdleDust", args }))) {
+      return;
+    }
+
+    const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "sweepIdleDust", args);
+    await publicClient.waitForTransactionReceipt({ hash });
+    logEvent({ level: "info", vault: vaultAddress, msg: "swept idle dust", idleUsdValue, txHash: hash });
+  } catch (err) {
+    logEvent({ level: "warn", vault: vaultAddress, msg: "maybeSweepIdleDust failed, ignoring", err: String(err) });
+  }
+}
+
+/** Real amountOut for a hypothetical swap, reflecting this specific pool's
+ * actual current depth/price impact — unlike the constant-spot-price
+ * assumption everywhere else in this file. Simulates SWAP_ROUTER02's own
+ * exactInputSingle (via eth_call, never committed) as `vaultAddress` itself,
+ * rather than using Uniswap's Quoter contract: the Quoter's pool lookup is
+ * an offline CREATE2 computation against a hardcoded init-code hash that
+ * doesn't match Celo's real deployed pool bytecode (confirmed 2026-07-16 —
+ * every call to it reverts), while the router looks the pool up through the
+ * real factory, same as any real swap would. Needs `vaultAddress` (not just
+ * any account) because the simulated call still checks real token
+ * balance/allowance — only the vault itself has both. */
+async function quoteExactInputSingle(
+  vaultAddress: Address,
+  tokenIn: Address,
+  tokenOut: Address,
+  amountIn: bigint,
+): Promise<bigint> {
+  const { result } = await publicClient.simulateContract({
+    address: SWAP_ROUTER02,
+    abi: swapRouter02Abi,
+    functionName: "exactInputSingle",
+    args: [{ tokenIn, tokenOut, fee: 3000, recipient: vaultAddress, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }],
+    account: vaultAddress,
+  });
+  return result;
+}
+
+/**
+ * Same target as sizeInitialSwap, corrected for the swap's own price impact
+ * using a real quote instead of assuming the pre-swap spot price holds all
+ * the way through. sizeInitialSwap alone reliably leaves a large one-sided
+ * leftover in this pool's real (thin) depth — confirmed repeatedly in
+ * production 2026-07-16 (e.g. vault 0x721e1B69...C94C37: ~$94 of WETH left
+ * unswept after initPosition, ~38% of the deposit).
+ *
+ * Method: size a first guess the old way, get a REAL quote for exactly that
+ * amount, then solve directly in raw-unit space for the swap size that
+ * would actually balance the position — using the range's true target
+ * ratio (targetRawRatio) against the OBSERVED execution rate
+ * (quotedOut/guessIn) instead of the spot price. This is a linear
+ * approximation around the first guess (the pool's marginal rate does shift
+ * a little between the guess and the corrected amount), so it's not exact —
+ * sweepIdleDust()/the independent monitor retry stay as the backstop for
+ * whatever's left, same as before, just with much less for them to clean up.
+ */
+async function sizeInitialSwapAccurate(
+  vaultAddress: Address,
+  input: {
+    currentTick: number;
+    tickLower: number;
+    tickUpper: number;
+    availableToken0Raw: bigint;
+    ethPriceUsd: number;
+  },
+): Promise<{ token0ToToken1: true; amountIn: bigint }> {
+  const guess = sizeInitialSwap(input);
+  if (guess.amountIn === 0n) return guess;
+
+  try {
+    const realAmountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, guess.amountIn);
+    const rawRatio = targetRawRatio(input);
+    if (!Number.isFinite(rawRatio) || rawRatio <= 0) return guess;
+
+    const execRate = Number(realAmountOut) / Number(guess.amountIn); // WETH raw per USDT raw, actually observed
+    if (!Number.isFinite(execRate) || execRate <= 0) return guess;
+
+    // Solve x*execRate / (investable - x) = rawRatio for x.
+    const investable = Number(input.availableToken0Raw);
+    const corrected = (rawRatio * investable) / (execRate + rawRatio);
+    if (!Number.isFinite(corrected) || corrected <= 0) return guess;
+
+    return { token0ToToken1: true, amountIn: BigInt(Math.floor(Math.min(corrected, investable))) };
+  } catch (err) {
+    logEvent({ level: "warn", msg: "quote-corrected swap sizing failed, using naive estimate", err: String(err) });
+    return guess;
   }
 }
 
@@ -118,8 +296,11 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   const tick = await currentTick();
   const ethPrice = ethPriceFromTick(tick);
 
-  // Sized entirely locally — the standard Uniswap V3 balanced-deposit ratio
-  // for [tickLower, tickUpper] at the current price. Used to call uni-lab's
+  // Sized locally, corrected against a real Uniswap Quoter call for the
+  // swap's own price impact (see sizeInitialSwapAccurate) — the standard
+  // Uniswap V3 balanced-deposit ratio for [tickLower, tickUpper] at the
+  // current price, adjusted for what this specific swap actually does to
+  // that price in this pool's real depth. Used to call uni-lab's
   // /pool-setup-initial here too, paid out of the vault's own budget, but
   // that response was never actually used (it only got logged) even when it
   // succeeded — this same formula was always what got sent. Paying for a
@@ -127,7 +308,7 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   // owner for zero benefit, so initPosition no longer calls uni-lab at all;
   // only rebalance() does, where the API's answer (the new upper bound)
   // genuinely drives the outcome. See PLAN.md.
-  const swapIx = sizeInitialSwap({
+  const swapIx = await sizeInitialSwapAccurate(vaultAddress, {
     currentTick: tick,
     tickLower: targetTickLower,
     tickUpper: targetTickUpper,
@@ -159,6 +340,8 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
 
   await store.upsertVault({ ...record, positionInitialized: true });
   logEvent({ level: "info", vault: vaultAddress, msg: "position initialized", txHash: hash });
+
+  await maybeSweepIdleDust(vaultAddress);
 }
 
 /**
@@ -191,11 +374,14 @@ async function runRebalanceViaUniLab(
   }
 
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, reinjectionCap, positionManager, reserveBalance] = await Promise.all([
+  const [positionTokenId, reinjectionCap, positionManager, reserveBalance, idleInvestableUsdt, idleWeth] =
+    await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.reinjectionAmount() as Promise<bigint>, // owner's per-cycle ceiling — see RangeVault.sol
     vault.read.positionManager() as Promise<Address>,
     vault.read.reserveBalance() as Promise<bigint>,
+    vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a PRIOR cycle — see availableToken0Raw below
+    publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>, // WETH-side counterpart of idleInvestableUsdt — see availableToken1Raw below
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -220,8 +406,28 @@ async function runRebalanceViaUniLab(
   // the USD-price FLOOR.
   const floorTick = Math.max(posTickLower, posTickUpper); // higher tick = lower USD price
 
-  const newLowerPrice = reason === "periodic" ? ethPriceFromTick(floorTick) : ethPrice * 0.95; // D1
-  let newUpperPrice = ethPrice; // C1 fallback — uni-lab's answer below normally echoes this back anyway
+  // Pin D1 to the existing floor only when the position is still genuinely
+  // in range — a periodic cycle firing at the same moment the position has
+  // ALSO already broken below its floor must recenter like a real
+  // out-of-range-bottom cycle instead. Otherwise the "new" range still needs
+  // the same ~100%-token1 ratio as what's already held: sizeRebalanceSwap
+  // correctly computes amountIn=0, no USDT is ever produced, and rebalance()
+  // reverts trying to pay the token0-denominated platform fee
+  // (InsufficientInvestableBalance) — silently blocking every cycle forever.
+  // Confirmed in production 2026-07-16, vault 0x721e1B69...C94C37: stuck for
+  // 5+ hours, no tx sent, no alert.
+  const stillInRangeForPeriodicPin = reason === "periodic" && tick <= floorTick;
+  const newLowerPrice = stillInRangeForPeriodicPin ? ethPriceFromTick(floorTick) : ethPrice * 0.95; // D1
+  // C1 fallback, only used if uni-lab's real answer below is unavailable
+  // (x402 failure, non-200, or no usable field). A zero-margin fallback
+  // (ceiling == price at calculation time) reliably mints a position that's
+  // already out of range the moment price moves at all before the tx
+  // confirms — confirmed in production 2026-07-16 (vault 0x8Ed2ad9f...
+  // 42737C88: x402 returned 402, fell back to this, minted, and the position
+  // was out of range within the same cron tick). 0.3% headroom is enough to
+  // absorb normal price drift across a ~5s confirmation without meaningfully
+  // changing what a legitimate periodic recenter is trying to do.
+  let newUpperPrice = ethPrice * 1.003;
 
   const { amount0Raw: closedAmount0Raw, amount1Raw: closedAmount1Raw } = estimatePositionAmounts({
     liquidity,
@@ -245,12 +451,25 @@ async function runRebalanceViaUniLab(
     : 0n;
 
   // What decreaseLiquidity+collect will hand back, plus whatever gets
-  // reinjected this cycle. Platform-fee dust (step 4, paid in token0) is
-  // small enough to skip modeling here — the swap only needs to get the
-  // token0/token1 RATIO right, not the exact wei amount, since Uniswap's
-  // mint() only uses what the range needs.
-  const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + reinjectAmount;
-  const availableToken1Raw = BigInt(Math.floor(closedAmount1Raw));
+  // reinjected this cycle, plus any dust already sitting idle from a PRIOR
+  // cycle — both sides, not just token0. The contract's own mint() reads
+  // the vault's full token0/token1 balances (token0 minus reserveBalance),
+  // so it already tries to use old dust too — but only succeeds if the SWAP
+  // was sized for the true total. Leaving either side out here means the
+  // swap ratio is only ever correct for the freshly-closed position, so old
+  // dust can never enter the mint's ratio and just keeps growing every cycle
+  // instead of shrinking — confirmed in production 2026-07-15 for the
+  // token0 case (vault 0x8Ed2ad9f...42737C88: $88.56 idle against a $61
+  // position after 2 rebalances) and 2026-07-16 for token1 (vault
+  // 0x721e1B69...C94C37: a periodic rebalance left ~$7.6 of WETH stranded
+  // right after sweepIdleDust() had just cleaned up the SAME vault, because
+  // this swap sizing only ever accounted for the token0 side of leftover
+  // dust). Platform-fee dust (step 4, paid in token0) is small enough to
+  // skip modeling here — the swap only needs to get the token0/token1 RATIO
+  // right, not the exact wei amount, since Uniswap's mint() only uses what
+  // the range needs.
+  const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + reinjectAmount + idleInvestableUsdt;
+  const availableToken1Raw = BigInt(Math.floor(closedAmount1Raw)) + idleWeth;
 
   // Gate before paying: simulate with the locally computed range and a real
   // swap sizing (the API may adjust the upper bound afterwards, but if even
@@ -282,20 +501,40 @@ async function runRebalanceViaUniLab(
     ] as const;
   })();
 
-  if (!(await wouldSucceed(vaultAddress, "rebalance", probeArgs))) {
+  const probeCheck = await simulateAttempt(vaultAddress, "rebalance", probeArgs);
+
+  // RangeTooFarFromMarket on the PROBE isn't a real block: probeArgs' ceiling
+  // is our own local fallback guess (current price), not uni-lab's actual
+  // calculation — and the periodic path deliberately pins the old floor and
+  // only recenters the ceiling, so this guess can land further from market
+  // than the contract's maxRangeDeviationBps tolerance even when uni-lab's
+  // real RC/RLP answer (queried below) would clear it fine. Confirmed in
+  // production 2026-07-15: this guess-based gate silently blocked periodic
+  // cycles on 3 vaults forever, never once asking uni-lab for the real
+  // number. Any other revert here (NoPosition, RebalanceLimitReached,
+  // TooSoonToRebalance, insufficient swap liquidity, ...) is a genuine block
+  // unrelated to the ceiling guess, so it still short-circuits before paying.
+  const probeBlockedByRangeGuessOnly = !probeCheck.ok && probeCheck.errorName === "RangeTooFarFromMarket";
+  if (!probeCheck.ok && !probeBlockedByRangeGuessOnly) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
       msg: "rebalance simulation reverts — skipping cycle without paying uni-lab",
+      errorName: probeCheck.errorName,
     });
     return;
   }
 
   // Rebalance-only gas check, upfront — guards against wasting the x402
   // payment on a cycle whose final rebalance() call can't actually be sent
-  // for lack of CELO gas.
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: probeArgs }))) {
-    return;
+  // for lack of CELO gas. Skipped when the probe itself would revert (the
+  // guess-only case above): estimateContractGas throws on a call that would
+  // revert, so there's nothing useful to estimate from probeArgs here — gas
+  // gets checked below instead, once uni-lab's real range is known.
+  if (!probeBlockedByRangeGuessOnly) {
+    if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: probeArgs }))) {
+      return;
+    }
   }
 
   const reinjectionUsd = Number(reinjectAmount) / 1e6; // E1 = what the keeper is actually doing this cycle
@@ -357,15 +596,36 @@ async function runRebalanceViaUniLab(
   // the dust bug: without a real swap here, rebalance() mints with whatever
   // ratio came out of the OLD position, leaving the mismatched side unused.
   const finalSwap = buildSwapIx(newTickLower, newTickUpper);
-
-  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "rebalance", [
+  const finalArgs = [
     newTickLower,
     newTickUpper,
     { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum: 0n },
     reinjectAmount,
     0n,
     0n,
-  ]);
+  ] as const;
+
+  // Real gate, using uni-lab's actual computed range instead of the earlier
+  // local guess — the probe above only ever checked our own estimate, and
+  // never validated what actually gets sent. uni-lab is already paid at this
+  // point either way; this only prevents burning gas on a doomed send.
+  const finalCheck = await simulateAttempt(vaultAddress, "rebalance", finalArgs);
+  if (!finalCheck.ok) {
+    logEvent({
+      level: "warn",
+      vault: vaultAddress,
+      msg: "rebalance reverts on uni-lab's real range — skipping send (uni-lab already paid this cycle)",
+      errorName: finalCheck.errorName,
+      newTickLower,
+      newTickUpper,
+    });
+    return;
+  }
+  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: finalArgs }))) {
+    return;
+  }
+
+  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "rebalance", finalArgs);
   await publicClient.waitForTransactionReceipt({ hash });
 
   // Persist the keeper's own alternation bookkeeping for next cycle — the
@@ -382,6 +642,8 @@ async function runRebalanceViaUniLab(
     reinjectAmount: reinjectAmount.toString(),
     txHash: hash,
   });
+
+  await maybeSweepIdleDust(vaultAddress);
 }
 
 /**
@@ -396,9 +658,11 @@ async function runRebalanceViaUniLab(
  */
 async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, positionManager] = await Promise.all([
+  const [positionTokenId, positionManager, idleInvestableUsdt, idleWeth] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.positionManager() as Promise<Address>,
+    vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a prior cycle — see runRebalanceViaUniLab
+    publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>,
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -434,12 +698,15 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     tickUpper: posTickUpper,
   });
 
+  // Same fix as runRebalanceViaUniLab: fold in any dust already idle from a
+  // prior cycle, both sides, or it never enters the swap ratio and just
+  // keeps growing.
   const swapIx = sizeRebalanceSwap({
     currentTick: tick,
     newTickLower,
     newTickUpper,
-    availableToken0Raw: BigInt(Math.floor(closedAmount0Raw)),
-    availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)),
+    availableToken0Raw: BigInt(Math.floor(closedAmount0Raw)) + idleInvestableUsdt,
+    availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)) + idleWeth,
     ethPriceUsd: ethPrice,
   });
 
@@ -478,6 +745,8 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     reinjectAmount: "0",
     txHash: hash,
   });
+
+  await maybeSweepIdleDust(vaultAddress);
 }
 
 export async function runRebalance(

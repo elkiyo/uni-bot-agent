@@ -8,9 +8,10 @@ import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
-import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi } from "@/lib/contracts";
-import { USDT, POOL } from "@/lib/addresses";
+import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, positionManagerAbi } from "@/lib/contracts";
+import { USDT, WETH, POOL, POSITION_MANAGER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
+import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 
 const reads = (address: `0x${string}`) =>
@@ -21,7 +22,6 @@ const reads = (address: `0x${string}`) =>
     "rebalanceCount",
     "maxRebalances",
     "investableUsdt",
-    "usdtBudget",
     "reserveBalance",
     "targetTickLower",
     "targetTickUpper",
@@ -54,7 +54,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     rebalanceCount,
     maxRebalances,
     investableUsdt,
-    usdtBudget,
     reserveBalance,
     targetTickLower,
     targetTickUpper,
@@ -71,11 +70,50 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
   const { data: feesSummary } = useVaultFeesSummary(address);
   const { data: tickSpacing } = useReadContract({ address: POOL, abi: uniswapV3PoolAbi, functionName: "tickSpacing" });
+  const { data: slot0 } = useReadContract({
+    address: POOL,
+    abi: uniswapV3PoolAbi,
+    functionName: "slot0",
+    query: { refetchInterval: 15_000 },
+  });
+  const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
 
   const isOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
   );
   const hasPosition = Boolean(positionTokenId && (positionTokenId as bigint) > 0n);
+
+  // Only needed to size increasePosition()'s swap — the position's OWN live
+  // range (not targetTickLower/Upper, which don't move on rebalance()).
+  const { data: positionData } = useReadContract({
+    address: POSITION_MANAGER,
+    abi: positionManagerAbi,
+    functionName: "positions",
+    args: hasPosition ? [positionTokenId as bigint] : undefined,
+    query: { enabled: hasPosition, refetchInterval: 15_000 },
+  });
+  const positionTicks = positionData
+    ? {
+        tickLower: Number((positionData as readonly unknown[])[5]),
+        tickUpper: Number((positionData as readonly unknown[])[6]),
+      }
+    : undefined;
+
+  // Idle WETH the vault might already be holding (e.g. dust stranded by a
+  // prior mis-sized swap) — increasePosition()'s own swap has to account for
+  // this too, or the contract's increaseLiquidity() (which sweeps in the
+  // vault's FULL token1 balance, not just what this call's swap produces)
+  // ends up with more WETH than the swap was sized for, leaving the
+  // mismatched USDT side over. Confirmed in production 2026-07-16 (vault
+  // 0x0Bf394B3...5dEBCE5b8: $64.92 USDT left over after "Sumar a la
+  // posición" ignored ~$190 of pre-existing idle WETH).
+  const { data: idleWeth } = useReadContract({
+    address: WETH,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [address],
+    query: { refetchInterval: 15_000 },
+  });
 
   const [depInvestable, setDepInvestable] = useState("0");
   const [depReserve, setDepReserve] = useState("0");
@@ -84,6 +122,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
   const [cfgMinPrice, setCfgMinPrice] = useState("");
   const [cfgMaxPrice, setCfgMaxPrice] = useState("");
+  const [increaseAmount, setIncreaseAmount] = useState("0");
+  const [withdrawPositionPct, setWithdrawPositionPct] = useState("0");
+  const [withdrawFundsPct, setWithdrawFundsPct] = useState("0");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,13 +144,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleDepositMore() {
-    // No uni-lab budget deposit anymore — the operator pays uni-lab.xyz
-    // directly via x402, out of its own USDC (see HACKATHON.md "Track 2 —
-    // x402"), not the vault's own usdtBudget ledger.
     const investable = parseUnits(depInvestable || "0", 6);
     const reserve = parseUnits(depReserve || "0", 6);
-    const budget = 0n;
-    const total = investable + reserve + budget;
+    const total = investable + reserve;
     if (total === 0n) return;
     await withTx("Aprobando", () =>
       writeContractAsync({ address: USDT, abi: erc20Abi, functionName: "approve", args: [address, total] }),
@@ -119,7 +156,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         address,
         abi: rangeVaultAbi,
         functionName: "deposit",
-        args: [budget, reserve, investable],
+        args: [reserve, investable],
       }),
     );
   }
@@ -171,20 +208,90 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
     // A fresh range needs its near-market tolerance set too — the vault
     // starts with maxRangeDeviationBps = 0, which makes _checkRangeNearMarket
-    // reject initPosition() almost always. Same half-width heuristic the
-    // create flow uses, so this isn't needed when just tuning cadence/caps
-    // on an already-working vault.
+    // reject initPosition() almost always. Not needed when just tuning
+    // cadence/caps on an already-working vault. Same fixed-generous value the
+    // create flow uses (see create/page.tsx for the production data behind
+    // it) — resubmitting a range here is also how an already-broken vault's
+    // on-chain tolerance gets raised, since setRiskParams is owner-only and
+    // this form is the owner-facing path to call it.
     if (settingFreshRange) {
-      const halfWidthTicks = Math.max(100, Math.round(Math.abs(hi - lo) / 2));
+      const MAX_RANGE_DEVIATION_TICKS = 5_000n;
       await withTx("Fijando límites de riesgo", () =>
         writeContractAsync({
           address,
           abi: rangeVaultAbi,
           functionName: "setRiskParams",
-          args: [500n, 0n, BigInt(halfWidthTicks)],
+          args: [500n, 0n, MAX_RANGE_DEVIATION_TICKS],
         }),
       );
     }
+  }
+
+  async function handleIncreasePosition() {
+    const usdtAmount = parseUnits(increaseAmount || "0", 6);
+    if (usdtAmount === 0n) return;
+    if (!positionTicks || currentTick === undefined) {
+      setError("Todavía no se pudo leer el rango actual de la posición — probá de nuevo en un momento.");
+      return;
+    }
+
+    // Sized client-side — no uni-lab consultation needed, this is just the
+    // position's already-known live ratio at the pool's current price, both
+    // public reads. Uses sizeRebalanceSwap (a MIXED starting balance), not
+    // sizeInitialSwap (all-token0), because the contract's increaseLiquidity()
+    // sweeps in the vault's FULL token1 balance — including any WETH already
+    // sitting idle from a prior mis-sized swap — not just what usdtAmount
+    // alone would produce. Ignoring that pre-existing WETH here is exactly
+    // what left $64.92 of USDT stranded in production 2026-07-16 (vault
+    // 0x0Bf394B3...5dEBCE5b8). token0 is still capped to usdtAmount to match
+    // increasePosition()'s own cap — old investableUsdt dust stays untouched.
+    const ethPrice = ethPriceFromTick(currentTick);
+    const swap = sizeRebalanceSwap({
+      currentTick,
+      newTickLower: positionTicks.tickLower,
+      newTickUpper: positionTicks.tickUpper,
+      availableToken0Raw: usdtAmount,
+      availableToken1Raw: (idleWeth as bigint) ?? 0n,
+      ethPriceUsd: ethPrice,
+    });
+
+    await withTx("Aprobando", () =>
+      writeContractAsync({ address: USDT, abi: erc20Abi, functionName: "approve", args: [address, usdtAmount] }),
+    );
+    await withTx("Sumando a la posición", () =>
+      writeContractAsync({
+        address,
+        abi: rangeVaultAbi,
+        functionName: "increasePosition",
+        args: [
+          { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n },
+          usdtAmount,
+          0n,
+          0n,
+        ],
+      }),
+    );
+    setIncreaseAmount("0");
+  }
+
+  async function handlePartialWithdraw() {
+    const positionShareBps = BigInt(Math.round(Number(withdrawPositionPct || "0") * 100));
+    const fundsShareBps = BigInt(Math.round(Number(withdrawFundsPct || "0") * 100));
+    if (positionShareBps === 0n && fundsShareBps === 0n) return;
+    if (positionShareBps > 10_000n || fundsShareBps > 10_000n) {
+      setError("Los porcentajes no pueden superar 100%");
+      return;
+    }
+    await withTx("Retirando", () =>
+      writeContractAsync({
+        address,
+        abi: rangeVaultAbi,
+        functionName: "withdraw",
+        args: [positionShareBps, fundsShareBps],
+      }),
+    );
+    setWithdrawPositionPct("0");
+    setWithdrawFundsPct("0");
   }
 
   return (
@@ -219,15 +326,19 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         {data && (
           <>
             {/* Stats */}
-            <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-5">
+            <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
                 label="Capital invertible"
                 value={`${formatUnits((investableUsdt as bigint) ?? 0n, 6)} USDT`}
-              />
-              <Stat
-                label="Presupuesto uni-lab"
-                value={`${formatUnits((usdtBudget as bigint) ?? 0n, 6)} USDT`}
-                hint="legado — el agente ahora paga uni-lab directo vía x402, esto ya no se gasta"
+                hint={
+                  (idleWeth as bigint | undefined) && (idleWeth as bigint) > 0n
+                    ? `+ ${Number(formatUnits(idleWeth as bigint, 18)).toFixed(6)} WETH suelto${
+                        currentTick !== undefined
+                          ? ` (~$${(Number(idleWeth as bigint) * 1e-18 * ethPriceFromTick(currentTick)).toFixed(2)})`
+                          : ""
+                      }`
+                    : undefined
+                }
               />
               <Stat
                 label="Reserva reinyección"
@@ -382,6 +493,53 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     <MiniField label="Periódico (horas)" value={cfgPeriodicHours} onChange={setCfgPeriodicHours} />
                     <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
                       Actualizar
+                    </button>
+                  </div>
+                </div>
+
+                {hasPosition && (
+                  <div className="mt-8">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                      Sumar a la posición abierta
+                    </span>
+                    <p className="mt-1 text-xs text-faint">
+                      Entra a la posición actual al instante, sin esperar al próximo rebalanceo del agente — se
+                      calcula acá mismo el swap necesario para respetar el rango vigente.
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-end gap-3">
+                      <MiniField label="Monto (USDT)" value={increaseAmount} onChange={setIncreaseAmount} />
+                      <button
+                        onClick={handleIncreasePosition}
+                        disabled={Boolean(busy)}
+                        className="btn-secondary !py-3"
+                      >
+                        Sumar a la posición
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-8">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                    Retiro parcial
+                  </span>
+                  <p className="mt-1 text-xs text-faint">
+                    Independiente entre sí — retirá un % de la posición activa, un % de los fondos idle
+                    (invertible + reserva), o ambos, sin cerrar el vault.
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <MiniField
+                      label="% de la posición"
+                      value={withdrawPositionPct}
+                      onChange={setWithdrawPositionPct}
+                    />
+                    <MiniField label="% de fondos idle" value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
+                    <button
+                      onClick={handlePartialWithdraw}
+                      disabled={Boolean(busy)}
+                      className="btn-secondary !py-3"
+                    >
+                      Retirar parcial
                     </button>
                   </div>
                 </div>

@@ -34,6 +34,33 @@ export const uniswapV3PoolAbi = [
   },
 ] as const;
 
+// Uniswap V3 SwapRouter02 — just enough to simulate exactInputSingle for a
+// real, price-impact-aware quote (see addresses.ts's note on why this is
+// used instead of Uniswap's own Quoter). Server-side only.
+export const swapRouter02Abi = [
+  {
+    type: "function",
+    name: "exactInputSingle",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "recipient", type: "address" },
+          { name: "amountIn", type: "uint256" },
+          { name: "amountOutMinimum", type: "uint256" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
+    ],
+    outputs: [{ name: "amountOut", type: "uint256" }],
+  },
+] as const;
+
 // Uniswap V3 NonfungiblePositionManager — just the two views the vault detail
 // page needs: full position data, and the on-chain-generated NFT art (tokenURI
 // returns a base64 JSON whose `image` is a base64 SVG rendered by the contract).

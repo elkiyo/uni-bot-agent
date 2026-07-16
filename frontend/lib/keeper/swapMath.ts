@@ -78,6 +78,24 @@ export function estimatePositionValueUsd(input: PositionValueInput): number {
   return amount0Raw * 1e-6 + amount1Raw * 1e-18 * input.ethPriceUsd;
 }
 
+/** Target amount1Raw/amount0Raw ratio a range needs at a given tick, for
+ * liquidity=1 (scale-invariant — valid for any total amount). Exposed so
+ * callers that need the real numeric raw-unit ratio itself, not a
+ * value-based swap size — e.g. correcting a swap against a real quote's
+ * price impact instead of the pre-swap spot price — don't have to
+ * re-derive Uniswap's own tick math themselves. 0 below the range (all
+ * token0), Infinity above it (all token1), same convention as
+ * sizeInitialSwap/sizeRebalanceSwap. */
+export function targetRawRatio(input: { currentTick: number; tickLower: number; tickUpper: number }): number {
+  const { currentTick, tickLower, tickUpper } = input;
+  if (currentTick <= tickLower) return 0;
+  if (currentTick >= tickUpper) return Infinity;
+  const sqrtP = sqrtPriceAtTick(currentTick);
+  const sqrtPa = sqrtPriceAtTick(tickLower);
+  const sqrtPb = sqrtPriceAtTick(tickUpper);
+  return ((sqrtP - sqrtPa) * sqrtP * sqrtPb) / (sqrtPb - sqrtP);
+}
+
 export function sizeInitialSwap(input: SwapSizingInput): SwapSizingResult {
   const { currentTick, tickLower, tickUpper, availableToken0Raw, ethPriceUsd } = input;
 
