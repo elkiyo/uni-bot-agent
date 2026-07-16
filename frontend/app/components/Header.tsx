@@ -107,7 +107,10 @@ function ResourcesMenu({ pathname }: { pathname: string }) {
       </button>
 
       {open && (
-        <div className="glass absolute left-0 top-full mt-2 w-44 rounded-xl p-1.5">
+        <div
+          className="absolute left-0 top-full z-10 mt-2 w-44 rounded-xl border border-hairline p-1.5 shadow-2xl shadow-black/60"
+          style={{ backgroundColor: "#0a0a0a" }}
+        >
           {resourceLinks.map(({ href, label }) => (
             <Link
               key={href}
