@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
@@ -9,6 +10,7 @@ import { FACTORY_ADDRESS, POOL, POSITION_MANAGER, WETH } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
+import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 
 export default function VaultsPage() {
   const { address, isConnected } = useAccount();
@@ -215,6 +217,27 @@ function VaultCard({
   const idleWethRaw = (idleWeth as bigint) ?? 0n;
   const idleWethUsd = ethPrice !== undefined ? Number(idleWethRaw) * 1e-18 * ethPrice : undefined;
 
+  // APR = comisiones acumuladas (convertidas a USD) sobre el total depositado
+  // históricamente, anualizado desde el primer depósito — no sobre el capital
+  // libre actual, que baja cada vez que se abre/reinyecta una posición.
+  const { data: depositSummary } = useVaultDepositSummary(vaultAddress);
+  const [nowSec] = useState(() => Math.floor(Date.now() / 1000));
+  const feesUsdEquivalent =
+    Number(formatUnits(feesSummary?.totalUsdt ?? 0n, 6)) +
+    (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)) * ethPrice : 0);
+  const totalInvestedUsd = Number(formatUnits(depositSummary?.totalDepositedUsdt ?? 0n, 6));
+  const elapsedDays =
+    depositSummary?.firstDepositTimestamp !== undefined
+      ? (nowSec - depositSummary.firstDepositTimestamp) / 86400
+      : undefined;
+  let aprLabel = "—";
+  if (totalInvestedUsd > 0 && elapsedDays !== undefined) {
+    aprLabel =
+      elapsedDays < 1
+        ? "calculando…"
+        : `${((feesUsdEquivalent / totalInvestedUsd) * (365 / elapsedDays) * 100).toFixed(1)}% APR`;
+  }
+
   return (
     <Link
       href={`/vault/${vaultAddress}`}
@@ -285,6 +308,7 @@ function VaultCard({
           <p className="mt-1 text-sm font-medium text-positive">
             {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT
           </p>
+          <p className="mt-0.5 font-mono text-xs text-accent">{aprLabel}</p>
         </div>
       </div>
     </Link>
