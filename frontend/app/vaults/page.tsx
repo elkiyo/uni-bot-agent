@@ -298,6 +298,14 @@ function VaultCard({
           <p className="mt-1 text-sm font-medium text-positive">
             {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT
           </p>
+          {(feesSummary?.totalWeth ?? 0n) > 0n && (
+            <p className="mt-0.5 font-mono text-xs text-positive/70">
+              + {Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)).toFixed(6)} WETH
+              {ethPrice !== undefined
+                ? ` (~$${(Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)) * ethPrice).toFixed(2)})`
+                : ""}
+            </p>
+          )}
           <p className="mt-0.5 font-mono text-xs text-accent">{rentLabel}</p>
         </div>
       </div>
