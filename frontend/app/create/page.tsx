@@ -125,6 +125,7 @@ export default function CreateVault() {
   const [maxRangeDeviationTicks, setMaxRangeDeviationTicks] = useState("");
   const [recenterMarginPct, setRecenterMarginPct] = useState("");
   const [exitTopCeilingMarginPct, setExitTopCeilingMarginPct] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -442,50 +443,66 @@ export default function CreateVault() {
               </div>
 
               <div className="mt-8">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  aria-expanded={showAdvanced}
+                  className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted transition-colors hover:text-white"
+                >
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 10 10"
+                    fill="none"
+                    className={`shrink-0 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
+                  >
+                    <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                   Avanzado — dejar en blanco usa los valores por defecto de la plataforma
-                </span>
-                <div className="mt-4 grid gap-6 sm:grid-cols-2">
-                  <Field
-                    label="Slippage máximo"
-                    suffix="%"
-                    value={maxSlippagePct}
-                    onChange={setMaxSlippagePct}
-                    placeholder="0.3"
-                  />
-                  <Field
-                    label="Cooldown mínimo entre rebalanceos"
-                    suffix="horas"
-                    value={minRebalanceCooldownHours}
-                    onChange={setMinRebalanceCooldownHours}
-                    placeholder="0"
-                    hint="0 = sin piso además del periódico"
-                  />
-                  <Field
-                    label="Desviación máx. de rango"
-                    suffix="ticks"
-                    value={maxRangeDeviationTicks}
-                    onChange={setMaxRangeDeviationTicks}
-                    placeholder="5000"
-                    hint="Cuánto puede alejarse el precio del rango propuesto sin que el contrato lo rechace"
-                  />
-                  <Field
-                    label="Margen de recentrado"
-                    suffix="%"
-                    value={recenterMarginPct}
-                    onChange={setRecenterMarginPct}
-                    placeholder="5"
-                    hint="Piso nuevo por debajo del precio al reconstruir el rango desde cero"
-                  />
-                  <Field
-                    label="Margen del techo (salida por arriba)"
-                    suffix="%"
-                    value={exitTopCeilingMarginPct}
-                    onChange={setExitTopCeilingMarginPct}
-                    placeholder="3"
-                    hint="Techo nuevo por encima del precio al salir de rango por arriba"
-                  />
-                </div>
+                </button>
+                {showAdvanced && (
+                  <div className="mt-4 grid gap-6 sm:grid-cols-2">
+                    <Field
+                      label="Slippage máximo"
+                      suffix="%"
+                      value={maxSlippagePct}
+                      onChange={setMaxSlippagePct}
+                      placeholder="0.3"
+                    />
+                    <Field
+                      label="Cooldown mínimo entre rebalanceos"
+                      suffix="horas"
+                      value={minRebalanceCooldownHours}
+                      onChange={setMinRebalanceCooldownHours}
+                      placeholder="0"
+                      hint="0 = sin piso además del periódico"
+                    />
+                    <Field
+                      label="Desviación máx. de rango"
+                      suffix="ticks"
+                      value={maxRangeDeviationTicks}
+                      onChange={setMaxRangeDeviationTicks}
+                      placeholder="5000"
+                      hint="Cuánto puede alejarse el precio del rango propuesto sin que el contrato lo rechace"
+                    />
+                    <Field
+                      label="Margen de recentrado"
+                      suffix="%"
+                      value={recenterMarginPct}
+                      onChange={setRecenterMarginPct}
+                      placeholder="5"
+                      hint="Piso nuevo por debajo del precio al reconstruir el rango desde cero"
+                    />
+                    <Field
+                      label="Margen del techo (salida por arriba)"
+                      suffix="%"
+                      value={exitTopCeilingMarginPct}
+                      onChange={setExitTopCeilingMarginPct}
+                      placeholder="3"
+                      hint="Techo nuevo por encima del precio al salir de rango por arriba"
+                    />
+                  </div>
+                )}
               </div>
 
               <button onClick={handleCreate} disabled={busy || !FACTORY_ADDRESS} className="btn-primary mt-8 w-full">
