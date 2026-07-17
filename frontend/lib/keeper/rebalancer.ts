@@ -398,13 +398,25 @@ async function capSwapWithinRange(
  * amount, then solve directly in raw-unit space for the swap size that
  * would actually balance the position — using the range's true target
  * ratio (targetRawRatio) against the OBSERVED execution rate
- * (quotedOut/guessIn) instead of the spot price. This is a linear
- * approximation around the first guess (the pool's marginal rate does shift
- * a little between the guess and the corrected amount), so it's not exact —
- * sweepIdleDust()/the independent monitor retry stay as the backstop for
- * whatever's left, same as before, just with much less for them to clean up.
- * Finally capped by capSwapWithinRange so it can never overshoot the target
- * range's own boundary, on top of that.
+ * (quotedOut/guessIn) instead of the spot price.
+ *
+ * Each correction re-derives targetRawRatio at the tick THIS candidate's own
+ * quote would actually land the pool at, not the pre-swap tick — confirmed
+ * on-chain 2026-07-17 (vault 0x4323F627...b71f9F, a ~3.6%-wide range): a
+ * single correction using the pre-swap tick barely moved the naive guess at
+ * all ($82.93 -> $83.12 sent), because a swap that size moves this narrow
+ * range's tick enough that the pre-swap ratio and the actual post-swap ratio
+ * differ by ~1.7x — 38% of the deposit ($34 of ~$145) was left as WETH dust,
+ * needing two extra sweepIdleDust cycles (~10 min) to fully reinvest. Each
+ * loop iteration uses the PREVIOUS candidate's own quote to estimate where
+ * its swap would land, recomputes the target ratio there, and re-solves —
+ * bounded (4 rounds) and stops once a candidate barely moves, same
+ * diminishing-returns shape as capSwapWithinRange's own loop right after it.
+ * Still an approximation (this pool's marginal rate isn't perfectly linear
+ * within a round), so sweepIdleDust()/the independent monitor retry remain
+ * the backstop for whatever's left — just with much less for them to clean
+ * up. Finally capped by capSwapWithinRange so it can never overshoot the
+ * target range's own boundary, on top of that.
  */
 async function sizeInitialSwapAccurate(
   vaultAddress: Address,
@@ -419,31 +431,39 @@ async function sizeInitialSwapAccurate(
   const guess = sizeInitialSwap(input);
   if (guess.amountIn === 0n) return guess;
 
+  const investable = Number(input.availableToken0Raw);
+  let candidate = guess.amountIn;
+
   try {
-    const realAmountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, guess.amountIn);
-    const rawRatio = targetRawRatio(input);
-    if (!Number.isFinite(rawRatio) || rawRatio <= 0) return guess;
+    for (let i = 0; i < 4; i++) {
+      if (candidate === 0n) break;
+      const realAmountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate);
+      const execRate = Number(realAmountOut) / Number(candidate); // WETH raw per USDT raw, actually observed
+      if (!Number.isFinite(execRate) || execRate <= 0) break;
 
-    const execRate = Number(realAmountOut) / Number(guess.amountIn); // WETH raw per USDT raw, actually observed
-    if (!Number.isFinite(execRate) || execRate <= 0) return guess;
+      // Where THIS candidate's own swap would actually leave the pool —
+      // same estimation capSwapWithinRange uses below — so the ratio we
+      // solve against reflects the post-swap state, not the pre-swap one.
+      const estimatedTick = tickFromEthPrice(1 / (execRate * 1e-12));
+      const rawRatio = targetRawRatio({ currentTick: estimatedTick, tickLower: input.tickLower, tickUpper: input.tickUpper });
+      if (!Number.isFinite(rawRatio) || rawRatio <= 0) break;
 
-    // Solve x*execRate / (investable - x) = rawRatio for x.
-    const investable = Number(input.availableToken0Raw);
-    const corrected = (rawRatio * investable) / (execRate + rawRatio);
-    if (!Number.isFinite(corrected) || corrected <= 0) return guess;
+      // Solve x*execRate / (investable - x) = rawRatio for x.
+      const corrected = (rawRatio * investable) / (execRate + rawRatio);
+      if (!Number.isFinite(corrected) || corrected <= 0) break;
 
-    const cappedAmountIn = await capSwapWithinRange(
-      vaultAddress,
-      BigInt(Math.floor(Math.min(corrected, investable))),
-      input.tickLower,
-      input.tickUpper,
-    );
-
-    return { token0ToToken1: true, amountIn: cappedAmountIn };
+      const next = BigInt(Math.floor(Math.min(corrected, investable)));
+      const converged = next === candidate || (candidate > 0n && (next > candidate ? next - candidate : candidate - next) * 200n < candidate);
+      candidate = next;
+      if (converged) break;
+    }
   } catch (err) {
     logEvent({ level: "warn", msg: "quote-corrected swap sizing failed, using naive estimate", err: String(err) });
-    return guess;
+    candidate = guess.amountIn;
   }
+
+  const cappedAmountIn = await capSwapWithinRange(vaultAddress, candidate, input.tickLower, input.tickUpper);
+  return { token0ToToken1: true, amountIn: cappedAmountIn };
 }
 
 export async function runInitPosition(vaultAddress: Address, store: Store): Promise<void> {
