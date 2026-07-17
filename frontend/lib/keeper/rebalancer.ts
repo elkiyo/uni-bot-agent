@@ -277,6 +277,34 @@ async function minAmountOutForSwap(
 }
 
 /**
+ * Same slippage floor as minAmountOutForSwap, but computed from the current
+ * spot price instead of a real router quote — for the rebalance-path swaps
+ * ONLY. Root cause, confirmed on-chain 2026-07-16 (vault 0xFee70486...4A4b3A,
+ * NFT #199598): a rebalance's swap sells WETH/USDT that is still locked
+ * inside the OLD position and only gets released by decreaseLiquidity()+
+ * collect(), the first steps of the real rebalance() transaction. A
+ * standalone quoteExactInputSingle simulated *before* that transaction sees
+ * the vault's current (near-zero) idle balance, not the post-close balance,
+ * so it reverts with "STF" every time — which silently killed the whole
+ * rebalance after uni-lab had already been paid, with no alert for this
+ * specific failure mode. Pure spot-price math instead of a quote sidesteps
+ * the balance problem entirely; the full rebalance() simulateAttempt/
+ * wouldSucceed gate right after this call still catches an unrealistic
+ * minimum before anything is sent.
+ */
+function minAmountOutFromSpotPrice(
+  swap: { token0ToToken1: boolean; amountIn: bigint },
+  ethPriceUsd: number,
+  maxSlippageBps: bigint,
+): bigint {
+  if (swap.amountIn === 0n) return 0n;
+  const expectedOutRaw = swap.token0ToToken1
+    ? (Number(swap.amountIn) * 1e-6 / ethPriceUsd) * 1e18 // USDT -> WETH
+    : (Number(swap.amountIn) * 1e-18 * ethPriceUsd) * 1e6; // WETH -> USDT
+  return (BigInt(Math.floor(expectedOutRaw)) * (10_000n - maxSlippageBps)) / 10_000n;
+}
+
+/**
  * Shrinks a token0->token1 (USDT->WETH) swap, if needed, so its OWN price
  * impact can't push the pool past the target range — confirmed root cause
  * of a real production case, 2026-07-17 (vault 0xFee70486...4A4b3A, a ~1.8%-
@@ -789,7 +817,7 @@ async function runRebalanceViaUniLab(
     rebalanceFee,
     ethPrice,
   );
-  const finalAmountOutMinimum = await minAmountOutForSwap(vaultAddress, finalSwap, maxSlippageBps);
+  const finalAmountOutMinimum = minAmountOutFromSpotPrice(finalSwap, ethPrice, maxSlippageBps);
   const finalArgs = [
     newTickLower,
     newTickUpper,
@@ -923,7 +951,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     ethPrice,
   );
 
-  const exitTopAmountOutMinimum = await minAmountOutForSwap(vaultAddress, swapIx, maxSlippageBps);
+  const exitTopAmountOutMinimum = minAmountOutFromSpotPrice(swapIx, ethPrice, maxSlippageBps);
   const rebalanceArgs = [
     newTickLower,
     newTickUpper,
