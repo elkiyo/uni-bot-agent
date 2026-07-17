@@ -4,11 +4,11 @@ import { publicClient, operatorAccount } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
 import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
-import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, targetRawRatio } from "./swapMath";
+import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeCoverage, targetRawRatio } from "./swapMath";
 import { POOL, WETH, USDT, SWAP_ROUTER02 } from "../addresses";
 import { Store } from "./store";
 import { logEvent, logUniLabCall } from "./logger";
-import { rangeVaultAbi, erc20Abi, swapRouter02Abi } from "../contracts";
+import { rangeVaultAbi, erc20Abi, swapRouter02Abi, platformConfigAbi } from "../contracts";
 
 async function currentTick(): Promise<number> {
   const [, tick] = (await publicClient.readContract({
@@ -25,6 +25,17 @@ async function tickSpacing(): Promise<number> {
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
   })) as number;
+}
+
+/** Live rebalanceFee (token0/USDT, 6 decimals) — read fresh, same as the
+ * contract itself reads it at call time, so this always matches what
+ * rebalance() is actually about to charge. */
+async function currentRebalanceFee(platformConfig: Address): Promise<bigint> {
+  return (await publicClient.readContract({
+    address: platformConfig,
+    abi: platformConfigAbi,
+    functionName: "rebalanceFee",
+  })) as bigint;
 }
 
 const GAS_SAFETY_MULTIPLIER_PCT = 130n; // 30% buffer over the current estimate, for gas-price drift between check and send
@@ -416,14 +427,28 @@ async function runRebalanceViaUniLab(
   }
 
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, reinjectionCap, positionManager, reserveBalance, idleInvestableUsdt, idleWeth] =
-    await Promise.all([
+  const [
+    positionTokenId,
+    reinjectionCap,
+    positionManager,
+    reserveBalance,
+    idleInvestableUsdt,
+    idleWeth,
+    recenterMarginBps,
+    platformConfig,
+  ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.reinjectionAmount() as Promise<bigint>, // owner's per-cycle ceiling — see RangeVault.sol
     vault.read.positionManager() as Promise<Address>,
     vault.read.reserveBalance() as Promise<bigint>,
     vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a PRIOR cycle — see availableToken0Raw below
     publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>, // WETH-side counterpart of idleInvestableUsdt — see availableToken1Raw below
+    // Falls back to the platform's old hardcoded 5% for vaults cloned from
+    // an implementation that predates this field — that call reverts
+    // outright (RangeVault has no fallback()), not just "returns 0", so a
+    // bare read here would break every pre-existing vault's keeper cycle.
+    (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
+    vault.read.platformConfig() as Promise<Address>, // for the live rebalanceFee — see ensureFeeCoverage below
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -459,19 +484,20 @@ async function runRebalanceViaUniLab(
   // Confirmed in production 2026-07-16, vault 0x721e1B69...C94C37: stuck for
   // 5+ hours, no tx sent, no alert.
   const stillInRangeForPeriodicPin = reason === "periodic" && tick <= floorTick;
-  const newLowerPrice = stillInRangeForPeriodicPin ? ethPriceFromTick(floorTick) : ethPrice * 0.95; // D1
-  // PROBE-ONLY estimate — feeds probeArgs below, purely to pre-flight the
-  // simulation before paying uni-lab (catches NoPosition, TooSoonToRebalance,
-  // etc.; RangeTooFarFromMarket on the probe is treated as inconclusive, see
-  // probeBlockedByRangeGuessOnly). NEVER used for the real mint: the ceiling
-  // that actually gets sent on-chain must come from uni-lab's real answer —
-  // see the no-fallback gate right after the API call below. A local
-  // zero-margin guess (ceiling == price at calculation time) reliably mints a
-  // position that's already out of range the moment price moves at all
-  // before the tx confirms — confirmed in production 2026-07-16 (vault
-  // 0x8Ed2ad9f...42737C88: x402 returned 402, fell back to this guess,
-  // minted, and the position was out of range within the same cron tick).
-  let newUpperPrice = ethPrice * 1.003;
+  // recenterMarginBps is the owner-set "how far below live price" for a
+  // from-scratch floor (RangeVault.sol) — 500 == 5%, same shape as
+  // maxSlippageBps/maxRangeDeviationBps elsewhere in this file.
+  const newLowerPrice = stillInRangeForPeriodicPin
+    ? ethPriceFromTick(floorTick)
+    : ethPrice * (1 - Number(recenterMarginBps) / 10_000); // D1
+  // Set below, from uni-lab's real answer — there is no local fallback for
+  // the real mint (explicit product decision, 2026-07-16): if uni-lab can't
+  // be reached or gives nothing usable, the cycle returns before this is
+  // ever read. A local zero-margin guess used to live here as a fallback and
+  // reliably minted a position that was already out of range the moment
+  // price moved at all before the tx confirmed — confirmed in production
+  // 2026-07-16 (vault 0x8Ed2ad9f...42737C88).
+  let newUpperPrice: number;
 
   const { amount0Raw: closedAmount0Raw, amount1Raw: closedAmount1Raw } = estimatePositionAmounts({
     liquidity,
@@ -647,7 +673,17 @@ async function runRebalanceViaUniLab(
   // the fix for the dust bug: without a real swap here, rebalance() mints
   // with whatever ratio came out of the OLD position, leaving the mismatched
   // side unused.
-  const finalSwap = buildSwapIx(newTickLower, newTickUpper);
+  //
+  // Then guarantee the platform fee is actually payable regardless of what
+  // ratio the range wants — see ensureFeeCoverage's own docstring for the
+  // production incident (vault 0x721e1B69...C94C37) this fixes.
+  const rebalanceFee = await currentRebalanceFee(platformConfig);
+  const finalSwap = ensureFeeCoverage(
+    buildSwapIx(newTickLower, newTickUpper),
+    availableToken0Raw,
+    rebalanceFee,
+    ethPrice,
+  );
   const finalArgs = [
     newTickLower,
     newTickUpper,
@@ -699,17 +735,31 @@ async function runRebalanceViaUniLab(
  * — given the calculator's zero-headroom-above design — means the position
  * is already ~100% stable. There's no split left to compute, so this skips
  * uni-lab entirely (no payment) and rebuilds locally, same shape as
- * runInitPosition(): fresh bounds 5% under / 3% above the live price. No
- * reinjection here either — same as every reason other than
- * out-of-range-bottom (see runRebalanceViaUniLab's reinjectAmount).
+ * runInitPosition(): fresh bounds `recenterMarginBps` under /
+ * `exitTopCeilingMarginBps` above the live price, both owner-set
+ * (RangeVault.sol). No reinjection here either — same as every reason other
+ * than out-of-range-bottom (see runRebalanceViaUniLab's reinjectAmount).
  */
 async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, positionManager, idleInvestableUsdt, idleWeth] = await Promise.all([
+  const [
+    positionTokenId,
+    positionManager,
+    idleInvestableUsdt,
+    idleWeth,
+    recenterMarginBps,
+    exitTopCeilingMarginBps,
+    platformConfig,
+  ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.positionManager() as Promise<Address>,
     vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a prior cycle — see runRebalanceViaUniLab
     publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>,
+    // Same fallback as runRebalanceViaUniLab, same reason: these two revert
+    // outright on a vault cloned from an implementation that predates them.
+    (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
+    (vault.read.exitTopCeilingMarginBps() as Promise<bigint>).catch(() => 300n),
+    vault.read.platformConfig() as Promise<Address>, // for the live rebalanceFee — see ensureFeeCoverage below
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -728,8 +778,8 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
   const [, , , , , posTickLower, posTickUpper, liquidity] = position;
   const ethPrice = ethPriceFromTick(tick);
 
-  const newLowerPrice = ethPrice * 0.95;
-  const newUpperPrice = ethPrice * 1.03;
+  const newLowerPrice = ethPrice * (1 - Number(recenterMarginBps) / 10_000);
+  const newUpperPrice = ethPrice * (1 + Number(exitTopCeilingMarginBps) / 10_000);
 
   // Higher USD price of ETH = lower tick in this pool, so the converted
   // bounds come out swapped — sort them, Uniswap requires tickLower < tickUpper.
@@ -747,15 +797,23 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
 
   // Same fix as runRebalanceViaUniLab: fold in any dust already idle from a
   // prior cycle, both sides, or it never enters the swap ratio and just
-  // keeps growing.
-  const swapIx = sizeRebalanceSwap({
-    currentTick: tick,
-    newTickLower,
-    newTickUpper,
-    availableToken0Raw: BigInt(Math.floor(closedAmount0Raw)) + idleInvestableUsdt,
-    availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)) + idleWeth,
-    ethPriceUsd: ethPrice,
-  });
+  // keeps growing. Then guarantee the platform fee is payable — see
+  // ensureFeeCoverage's docstring.
+  const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + idleInvestableUsdt;
+  const rebalanceFee = await currentRebalanceFee(platformConfig);
+  const swapIx = ensureFeeCoverage(
+    sizeRebalanceSwap({
+      currentTick: tick,
+      newTickLower,
+      newTickUpper,
+      availableToken0Raw,
+      availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)) + idleWeth,
+      ethPriceUsd: ethPrice,
+    }),
+    availableToken0Raw,
+    rebalanceFee,
+    ethPrice,
+  );
 
   const rebalanceArgs = [
     newTickLower,

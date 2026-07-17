@@ -1,8 +1,12 @@
 # Agente rebalanceador — fix del límite inferior de rango
 
-**Fecha:** 2026-07-16
+**Fecha:** 2026-07-16 (actualizado el mismo día, segunda tanda de cambios en la sección 7)
 **Vault de referencia usado en todo el diagnóstico:** `0x721e1B69A7187a2A2BFFD1A726f951A801C94C37` (NFT de posición #199469, pool USDT/WETH 0.3%)
-**Deploy aplicado:** `npx vercel --prod` desde la raíz del repo → `https://uni-bot-agent-gules.vercel.app` (deployment `dpl_4mnogDLcBh7VDZDE1GUxEizN3TqG`)
+**Deploys aplicados:**
+- `npx vercel --prod` (fix original) → `dpl_4mnogDLcBh7VDZDE1GUxEizN3TqG`
+- `npx vercel --prod` (fee siempre pagable + compat con vaults viejos) → `dpl_D7FQQqBZbk54DApH9ddeejHG8N5N`
+- Commits: `8651641` (fix original), `f47b365` (collectFees/márgenes/performance fee)
+- **Pendiente:** redeploy de `VaultFactory`/`PlatformConfig` vía `Deploy.s.sol` (necesita firma con Ledger — ver sección 7.5)
 
 ## 1. Síntoma original
 
@@ -97,17 +101,69 @@ Respuesta real de `POST /rc-rlp-rebalance` (pago x402 confirmado on-chain, tx `0
 
 `newTickLower = 198840`, `newTickUpper = 201480` — el par que efectivamente se le pasa a `rebalance()`.
 
-## 5. Archivos tocados
+## 5. Archivos tocados (fix original)
 
 - `frontend/lib/keeper/rebalancer.ts` — toda la lógica descrita en la sección 3
 - `frontend/lib/keeper/monitor.ts` — ya traía el chequeo de out-of-range-bottom/periodic y el sweep de dust (sin cambios en esta sesión, incluido acá como contexto porque es lo que decide qué `reason` dispara `rebalancer.ts`)
 - `frontend/app/api/vault/[address]/alert/route.ts` — **nuevo**, expone la alerta por vault
 - `frontend/app/vault/[address]/VaultDetail.tsx` — banner de alerta
 
-Snapshot completo de cada uno en [`code/`](code/) tal como quedaron desplegados a producción en la fecha de este documento.
+## 6. Confirmación en producción
 
-## 6. Pendiente / a seguir de cerca
+`rebalanceCount` del vault de referencia pasó de **16 → 45 → 71** a lo largo de la sesión, sin ningún hueco largo entre rebalanceos desde que se desplegó el fix — la periodicidad de 12 min se sostuvo sola. El vault terminó vacío (`positionTokenId=0`, balances en 0) porque el owner (`0xb0E5ADb8...D7125991b`) llamó `withdrawAll()` y recibió $77.42 USDT + 0.236 WETH — un retiro limpio, no una falla. El comentario en `rebalancer.ts` sobre "uni-lab siempre echoea C1 con 0% margen" (mencionado como desactualizado más abajo) ya se corrigió en el código junto con el resto de la sección 7.
+
+## 7. Segunda tanda de cambios — collectFees(), márgenes ajustables, performance fee
+
+Disparada por tres preguntas del owner: "¿se puede solo cobrar comisiones sin cerrar la posición?", "¿qué otros hardcodeos se pueden dejar ajustables?", y "¿cómo monetizamos el agente a futuro?".
+
+### 7.1 — `collectFees()`: reclamar comisiones sin cerrar la posición
+
+Antes no existía forma de cobrar solo las comisiones de Uniswap sin retirar también una porción de principal (`withdraw()` exige `positionShareBps > 0` para disparar `collect()`). Nueva función en `RangeVault.sol`: llama `positionManager.collect()` **sin** `decreaseLiquidity()` previo — Uniswap V3 solo devuelve lo "debido" a una posición, y sin liquidez recién liberada lo único debido son las comisiones acumuladas, así que por construcción nunca puede tocar principal. `onlyOwner`, funciona incluso pausado. Botón "Reclamar comisiones" en `VaultDetail.tsx`.
+
+### 7.2 — Márgenes de reconstrucción ajustables
+
+`recenterMarginBps` (reemplaza el 5% fijo de D1 al reconstruir desde cero) y `exitTopCeilingMarginBps` (reemplaza el +3% fijo del techo al salir de rango por arriba) pasan a ser parámetros reales de `configureTarget()`, en vez de constantes hardcodeadas en `rebalancer.ts`. También se expusieron como campos editables de verdad `maxSlippageBps`/`minRebalanceInterval`/`maxRangeDeviationBps` — ya eran ajustables on-chain vía `setRiskParams()`, pero el frontend los mandaba hardcodeados (`[500n, 0n, 5000n]`) tanto en `create/page.tsx` como en `VaultDetail.tsx`.
+
+**Compatibilidad hacia atrás — importante:** los vaults ya desplegados (clones EIP-1167 de la implementación vieja) **no tienen** estas funciones nuevas — `RangeVault.sol` no tiene `fallback()`, así que una lectura directa revierte. `rebalancer.ts` lee `recenterMarginBps`/`exitTopCeilingMarginBps` con `.catch(() => 500n / 300n)` para no romper el keeper en vaults viejos. Sin este fallback, desplegar el keeper nuevo habría roto el fix de la sección 3 para todos los vaults existentes.
+
+### 7.3 — `ensureFeeCoverage`: garantizar que el fee de plataforma siempre se pueda pagar
+
+Causa raíz real del bug de la sección 2: si la ratio ideal del rango nuevo da 100% WETH, el swap se llevaba todo el USDT disponible y no quedaba nada para pagar el fee. Nuevo helper en `swapMath.ts` que ajusta el swap final para reservar siempre al menos `rebalanceFee` (leído en vivo de `PlatformConfig`) en token0, convirtiendo desde WETH si hace falta. Aplicado en los dos flujos que llaman `rebalance()` (`runRebalanceViaUniLab` y `runRebalanceExitTop`).
+
+### 7.4 — Performance fee: nueva fuente de ingreso de la plataforma
+
+`PlatformConfig.performanceFeeBps` (default 10%, ajustable en vivo con `setPerformanceFeeBps()`, sin redeploy). Corta ese % de **toda** comisión LP que sale del vault — no solo en `rebalance()`, también en `collectFees()`, `withdraw()` parcial y `withdrawAll()`/`emergencyWithdrawPosition()`, para que no haya forma de esquivarlo retirándose en vez de esperar/reclamar. Nunca toca principal — se calcula sobre `collected - removed` (lo que `decreaseLiquidity()` ya liberó no cuenta). Verificado con un swap real contra el pool forkeado (no mockeado): el split coincide exacto con la fórmula del contrato.
+
+Decisiones tomadas en el camino:
+- `collectFees()` SÍ paga performance fee (decisión revertida respecto a la 7.1 original, para no dejar un loophole).
+- `withdraw()`/`withdrawAll()`/`emergencyWithdrawPosition()` también, mismo motivo.
+- Default 10%, límite duro 100% (`require(newFeeBps <= 10_000)`).
+
+### 7.5 — Qué falta para que esto tome efecto
+
+Los vaults son clones EIP-1167 de una implementación fija (`VaultFactory.implementation`, `immutable`) — agregar funciones al contrato no llega a los vaults ya creados, ni cambiando `PlatformConfig` (mismo problema: `performanceFeeBps` es un state var nuevo, el `PlatformConfig` ya desplegado en `0x29380E64...` no lo tiene). Hace falta correr `contracts/script/Deploy.s.sol` de nuevo — deploya un `PlatformConfig` Y un `VaultFactory` nuevos — firmado con Ledger (`--ledger --sender $PLATFORM_OWNER`), no con una private key en texto. Env vars nuevas: `PERFORMANCE_FEE_BPS` (default 1000 = 10% si no se pasa). Después: actualizar `FACTORY_ADDRESS`/`PLATFORM_CONFIG_ADDRESS` en Vercel y `agent/.env`, y un último `vercel --prod`.
+
+Los cambios de `rebalancer.ts`/`swapMath.ts` (7.3 y el fallback de 7.2) **ya están en producción** — no dependen del redeploy, mejoran vaults existentes sin romper nada.
+
+## 8. Archivos tocados (segunda tanda)
+
+- `contracts/src/RangeVault.sol` — `collectFees()`, `recenterMarginBps`/`exitTopCeilingMarginBps`, `_splitPerformanceFee()` en los 4 puntos de salida de fees
+- `contracts/src/PlatformConfig.sol` — `performanceFeeBps` + setter
+- `contracts/src/interfaces/IPlatformConfig.sol` — `performanceFeeBps()`
+- `contracts/script/Deploy.s.sol` — env var `PERFORMANCE_FEE_BPS`
+- `contracts/test/RangeVault.t.sol` — 47 tests (6 nuevos de performance fee, con comisiones reales generadas por un swap contra el fork)
+- `frontend/lib/keeper/rebalancer.ts` — lee márgenes con fallback, `ensureFeeCoverage`
+- `frontend/lib/keeper/swapMath.ts` — `ensureFeeCoverage`
+- `frontend/app/create/page.tsx` — sección "Avanzado" con los 5 campos ajustables
+- `frontend/app/vault/[address]/VaultDetail.tsx` — botón "Reclamar comisiones", formulario de límites de riesgo independiente
+- `frontend/app/vault/[address]/ActivityFeed.tsx` — eventos `FeesCollected`/`PerformanceFeeCollected`
+- `frontend/app/admin/page.tsx` — stat y control de `performanceFeeBps`, desglose de revenue
+- `frontend/lib/useVaultFeesSummary.ts` — suma `FeesCollected` además de `LpFeesPaidToOwner`
+
+Snapshot completo de cada archivo relevante en [`code/`](code/), actualizado a la fecha de este documento.
+
+## 9. Pendiente / a seguir de cerca
 
 - El escaneo de eventos de `getCumulativeInvestmentUsd` recorre el historial completo del vault (desde `createdAtBlock`) en cada ciclo que llega a llamar a uni-lab. Para un vault viejo con muchos rebalanceos esto crece linealmente — si se vuelve lento/costoso, cachear el resultado (o el delta desde el último escaneo) en Supabase.
-- El comentario en `rebalancer.ts` sobre "uni-lab siempre echoea C1 con 0% margen" quedó desactualizado tras la prueba real de la sección 4 — actualizarlo la próxima vez que se toque ese bloque.
-- Confirmar en el próximo tick real (cron cada 5 min vía cron-job.org) que el vault de referencia mintea efectivamente `[198840, 201480]` y que el banner de alerta nunca se prendió en el proceso.
+- Redeploy de `VaultFactory`/`PlatformConfig` con Ledger (sección 7.5) — bloquea `collectFees()`, márgenes ajustables y performance fee para vaults nuevos.
+- Después del redeploy: decidir si vale la pena ofrecer alguna vía para que vaults viejos "migren" (ej. `withdrawAll()` + recrear desde el factory nuevo) ya que no hay upgrade posible de un clon EIP-1167 existente.

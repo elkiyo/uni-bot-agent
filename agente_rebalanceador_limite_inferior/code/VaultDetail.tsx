@@ -14,6 +14,7 @@ import { USDT, WETH, POOL, POSITION_MANAGER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
+import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 
 const reads = (address: `0x${string}`) =>
   [
@@ -35,6 +36,8 @@ const reads = (address: `0x${string}`) =>
     "lastRebalanceTimestamp",
     "maxSlippageBps",
     "maxRangeDeviationBps",
+    "recenterMarginBps",
+    "exitTopCeilingMarginBps",
   ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName }) as const);
 
 export function VaultDetail({ address }: { address: `0x${string}` }) {
@@ -82,9 +85,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     lastRebalanceTimestamp,
     maxSlippageBps,
     maxRangeDeviationBps,
+    recenterMarginBps,
+    exitTopCeilingMarginBps,
   ] = data?.map((d) => d.result) ?? [];
 
   const { data: feesSummary } = useVaultFeesSummary(address);
+  const { data: depositSummary } = useVaultDepositSummary(address);
   const { data: tickSpacing } = useReadContract({ address: POOL, abi: uniswapV3PoolAbi, functionName: "tickSpacing" });
   const { data: slot0 } = useReadContract({
     address: POOL,
@@ -93,6 +99,22 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
+
+  const feesUsdtStr = formatUnits(feesSummary?.totalUsdt ?? 0n, 6);
+  const feesWethRaw = feesSummary?.totalWeth ?? 0n;
+  const feesWethStr = Number(formatUnits(feesWethRaw, 18)).toFixed(6);
+  const feesUsdTotal =
+    currentTick !== undefined
+      ? Number(feesUsdtStr) + Number(formatUnits(feesWethRaw, 18)) * ethPriceFromTick(currentTick)
+      : undefined;
+
+  // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
+  // vault — mismo cálculo simple que la tarjeta en /vaults, no anualizado.
+  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, 6));
+  const rentLabel =
+    feesUsdTotal !== undefined && initialInvestmentUsd > 0
+      ? `${((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2)}% rent.`
+      : undefined;
 
   const isOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
@@ -138,6 +160,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
   const [cfgMinPrice, setCfgMinPrice] = useState("");
   const [cfgMaxPrice, setCfgMaxPrice] = useState("");
+  const [cfgRecenterMarginPct, setCfgRecenterMarginPct] = useState("");
+  const [cfgExitTopCeilingMarginPct, setCfgExitTopCeilingMarginPct] = useState("");
+  const [riskMaxSlippagePct, setRiskMaxSlippagePct] = useState("");
+  const [riskMinCooldownHours, setRiskMinCooldownHours] = useState("");
+  const [riskMaxRangeDeviationTicks, setRiskMaxRangeDeviationTicks] = useState("");
   const [increaseAmount, setIncreaseAmount] = useState("0");
   const [withdrawPositionPct, setWithdrawPositionPct] = useState("0");
   const [withdrawFundsPct, setWithdrawFundsPct] = useState("0");
@@ -218,6 +245,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           BigInt(cfgMaxRebalances || String(maxRebalances ?? 0)),
           parseUnits(cfgReinjection || "0", 6),
           BigInt(Math.round(Number(cfgPeriodicHours || "24") * 3600)),
+          cfgRecenterMarginPct
+            ? BigInt(Math.round(Number(cfgRecenterMarginPct) * 100))
+            : ((recenterMarginBps as bigint) ?? 500n),
+          cfgExitTopCeilingMarginPct
+            ? BigInt(Math.round(Number(cfgExitTopCeilingMarginPct) * 100))
+            : ((exitTopCeilingMarginBps as bigint) ?? 300n),
         ],
       }),
     );
@@ -225,22 +258,36 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // A fresh range needs its near-market tolerance set too — the vault
     // starts with maxRangeDeviationBps = 0, which makes _checkRangeNearMarket
     // reject initPosition() almost always. Not needed when just tuning
-    // cadence/caps on an already-working vault. Same fixed-generous value the
-    // create flow uses (see create/page.tsx for the production data behind
-    // it) — resubmitting a range here is also how an already-broken vault's
-    // on-chain tolerance gets raised, since setRiskParams is owner-only and
-    // this form is the owner-facing path to call it.
+    // cadence/caps on an already-working vault. Uses whatever's in the risk
+    // params form below (blank = keep the vault's current value, or the
+    // create flow's generous default if it never had one) — resubmitting a
+    // range here is also how an already-broken vault's on-chain tolerance
+    // gets raised, since setRiskParams is owner-only and this form is the
+    // owner-facing path to call it.
     if (settingFreshRange) {
-      const MAX_RANGE_DEVIATION_TICKS = 5_000n;
-      await withTx("Fijando límites de riesgo", () =>
-        writeContractAsync({
-          address,
-          abi: rangeVaultAbi,
-          functionName: "setRiskParams",
-          args: [500n, 0n, MAX_RANGE_DEVIATION_TICKS],
-        }),
-      );
+      await handleUpdateRiskParams();
     }
+  }
+
+  async function handleUpdateRiskParams() {
+    const newMaxSlippageBps = riskMaxSlippagePct
+      ? BigInt(Math.round(Number(riskMaxSlippagePct) * 100))
+      : ((maxSlippageBps as bigint) ?? 500n);
+    const newMinRebalanceInterval = riskMinCooldownHours
+      ? BigInt(Math.round(Number(riskMinCooldownHours) * 3600))
+      : ((minRebalanceInterval as bigint) ?? 0n);
+    const newMaxRangeDeviationBps = riskMaxRangeDeviationTicks
+      ? BigInt(riskMaxRangeDeviationTicks)
+      : ((maxRangeDeviationBps as bigint) || 5_000n);
+
+    await withTx("Fijando límites de riesgo", () =>
+      writeContractAsync({
+        address,
+        abi: rangeVaultAbi,
+        functionName: "setRiskParams",
+        args: [newMaxSlippageBps, newMinRebalanceInterval, newMaxRangeDeviationBps],
+      }),
+    );
   }
 
   async function handleIncreasePosition() {
@@ -380,12 +427,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
               <Stat
                 label="Comisiones generadas"
-                value={`${formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT`}
-                hint={
-                  feesSummary && feesSummary.totalWeth > 0n
-                    ? `+ ${Number(formatUnits(feesSummary.totalWeth, 18)).toFixed(6)} WETH`
-                    : `${feesSummary?.payoutCount ?? 0} pagos recibidos`
+                value={
+                  feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} USDT`
                 }
+                hint={feesWethRaw > 0n ? `${feesUsdtStr} USDT + ${feesWethStr} WETH` : `${feesUsdtStr} USDT`}
+                hint2={rentLabel}
                 accent
               />
             </div>
@@ -472,6 +518,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 />
                 <ConfigRow k="Slippage máx." v={`${Number(maxSlippageBps ?? 0n) / 100}%`} />
                 <ConfigRow k="Desviación máx. de rango" v={`${maxRangeDeviationBps ?? 0} ticks`} />
+                <ConfigRow k="Margen de recentrado" v={`${Number(recenterMarginBps ?? 0n) / 100}%`} />
+                <ConfigRow k="Margen techo (salida arriba)" v={`${Number(exitTopCeilingMarginBps ?? 0n) / 100}%`} />
                 <ConfigRow k="Tope de rebalanceos" v={`${maxRebalances ?? 0}`} />
               </dl>
             </div>
@@ -519,7 +567,47 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     />
                     <MiniField label="Reinyección (USDT)" value={cfgReinjection} onChange={setCfgReinjection} />
                     <MiniField label="Periódico (horas)" value={cfgPeriodicHours} onChange={setCfgPeriodicHours} />
+                    <MiniField
+                      label={`Margen recentrado % (hoy: ${Number(recenterMarginBps ?? 500n) / 100})`}
+                      value={cfgRecenterMarginPct}
+                      onChange={setCfgRecenterMarginPct}
+                    />
+                    <MiniField
+                      label={`Margen techo salida arriba % (hoy: ${Number(exitTopCeilingMarginBps ?? 300n) / 100})`}
+                      value={cfgExitTopCeilingMarginPct}
+                      onChange={setCfgExitTopCeilingMarginPct}
+                    />
                     <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
+                      Actualizar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                    Límites de riesgo
+                  </span>
+                  <p className="mt-1 text-xs text-faint">
+                    Dejá cualquiera en blanco para mantener su valor actual. Se aplican solos al fijar un rango
+                    nuevo arriba, o podés actualizarlos acá sin tocar el rango.
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <MiniField
+                      label={`Slippage máx. % (hoy: ${Number(maxSlippageBps ?? 500n) / 100})`}
+                      value={riskMaxSlippagePct}
+                      onChange={setRiskMaxSlippagePct}
+                    />
+                    <MiniField
+                      label={`Cooldown mín. horas (hoy: ${Number(minRebalanceInterval ?? 0n) / 3600})`}
+                      value={riskMinCooldownHours}
+                      onChange={setRiskMinCooldownHours}
+                    />
+                    <MiniField
+                      label={`Desviación máx. ticks (hoy: ${maxRangeDeviationBps ?? 5_000n})`}
+                      value={riskMaxRangeDeviationTicks}
+                      onChange={setRiskMaxRangeDeviationTicks}
+                    />
+                    <button onClick={handleUpdateRiskParams} disabled={Boolean(busy)} className="btn-secondary !py-3">
                       Actualizar
                     </button>
                   </div>
@@ -573,6 +661,22 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
+                  <button
+                    onClick={() =>
+                      withTx("Reclamando comisiones", () =>
+                        writeContractAsync({ address, abi: rangeVaultAbi, functionName: "collectFees", args: [] }),
+                      )
+                    }
+                    disabled={Boolean(busy) || !hasPosition}
+                    className="btn-secondary"
+                    title={
+                      hasPosition
+                        ? "Cobra solo las comisiones de trading acumuladas — la posición sigue abierta, sin tocar el principal"
+                        : "No hay posición abierta todavía"
+                    }
+                  >
+                    Reclamar comisiones
+                  </button>
                   <button
                     onClick={() =>
                       withTx("Retirando", () =>
@@ -706,11 +810,13 @@ function Stat({
   label,
   value,
   hint,
+  hint2,
   accent,
 }: {
   label: string;
   value: string;
   hint?: string;
+  hint2?: string;
   accent?: boolean;
 }) {
   return (
@@ -729,6 +835,7 @@ function Stat({
         {value}
       </p>
       {hint && <p className="mt-1 text-xs text-faint">{hint}</p>}
+      {hint2 && <p className="mt-0.5 font-mono text-xs text-accent">{hint2}</p>}
     </div>
   );
 }
