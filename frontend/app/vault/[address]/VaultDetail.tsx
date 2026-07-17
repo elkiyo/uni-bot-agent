@@ -14,6 +14,7 @@ import { USDT, WETH, POOL, POSITION_MANAGER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
+import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 
 const reads = (address: `0x${string}`) =>
   [
@@ -85,6 +86,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   ] = data?.map((d) => d.result) ?? [];
 
   const { data: feesSummary } = useVaultFeesSummary(address);
+  const { data: depositSummary } = useVaultDepositSummary(address);
   const { data: tickSpacing } = useReadContract({ address: POOL, abi: uniswapV3PoolAbi, functionName: "tickSpacing" });
   const { data: slot0 } = useReadContract({
     address: POOL,
@@ -100,6 +102,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const feesUsdTotal =
     currentTick !== undefined
       ? Number(feesUsdtStr) + Number(formatUnits(feesWethRaw, 18)) * ethPriceFromTick(currentTick)
+      : undefined;
+
+  // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
+  // vault — mismo cálculo simple que la tarjeta en /vaults, no anualizado.
+  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, 6));
+  const rentLabel =
+    feesUsdTotal !== undefined && initialInvestmentUsd > 0
+      ? `${((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2)}% rent.`
       : undefined;
 
   const isOwner = Boolean(
@@ -392,6 +402,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} USDT`
                 }
                 hint={feesWethRaw > 0n ? `${feesUsdtStr} USDT + ${feesWethStr} WETH` : `${feesUsdtStr} USDT`}
+                hint2={rentLabel}
                 accent
               />
             </div>
@@ -712,11 +723,13 @@ function Stat({
   label,
   value,
   hint,
+  hint2,
   accent,
 }: {
   label: string;
   value: string;
   hint?: string;
+  hint2?: string;
   accent?: boolean;
 }) {
   return (
@@ -735,6 +748,7 @@ function Stat({
         {value}
       </p>
       {hint && <p className="mt-1 text-xs text-faint">{hint}</p>}
+      {hint2 && <p className="mt-0.5 font-mono text-xs text-accent">{hint2}</p>}
     </div>
   );
 }
