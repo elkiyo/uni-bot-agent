@@ -5,10 +5,10 @@ import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } fro
 import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeCoverage, targetRawRatio } from "./swapMath";
-import { POOL, WETH, USDT, SWAP_ROUTER02 } from "../addresses";
+import { POOL, WETH, USDT, SWAP_ROUTER02, UNISWAP_V3_FACTORY, CANDIDATE_SWAP_FEE_TIERS, FEE_TIER } from "../addresses";
 import { Store } from "./store";
 import { logEvent, logUniLabCall } from "./logger";
-import { rangeVaultAbi, erc20Abi, swapRouter02Abi } from "../contracts";
+import { rangeVaultAbi, erc20Abi, swapRouter02Abi, uniswapV3FactoryAbi } from "../contracts";
 
 async function currentTick(): Promise<number> {
   const [, tick] = (await publicClient.readContract({
@@ -25,6 +25,50 @@ async function tickSpacing(): Promise<number> {
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
   })) as number;
+}
+
+/**
+ * Picks whichever fee-tier pool for this pair has the most live liquidity,
+ * to route a swap through — independent of FEE_TIER (the pool every vault's
+ * LP position actually lives in). Confirmed in production 2026-07-17 (vault
+ * 0xaeFE8a2b...891017F): a $389 swap cost 1.26% (~$4.86) routed through
+ * POOL (0.3%), vs. an estimated 0.03% through this same pair's 0.01% pool —
+ * 8.5x more liquidity on Celo mainnet that day, ~$5.53 cheaper for that
+ * exact trade. Falls back to FEE_TIER if the factory lookup fails or every
+ * candidate pool is empty/nonexistent — same behavior as before this existed.
+ */
+async function pickDeepestSwapFee(): Promise<number> {
+  try {
+    const pools = await Promise.all(
+      CANDIDATE_SWAP_FEE_TIERS.map((fee) =>
+        publicClient
+          .readContract({ address: UNISWAP_V3_FACTORY, abi: uniswapV3FactoryAbi, functionName: "getPool", args: [USDT, WETH, fee] })
+          .then((pool) => ({ fee, pool: pool as Address })),
+      ),
+    );
+    const liquidities = await Promise.all(
+      pools.map(({ pool }) =>
+        pool === "0x0000000000000000000000000000000000000000"
+          ? Promise.resolve(0n)
+          : publicClient
+              .readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "liquidity" })
+              .then((l) => l as bigint)
+              .catch(() => 0n),
+      ),
+    );
+    let bestFee = FEE_TIER;
+    let bestLiquidity = -1n;
+    for (let i = 0; i < pools.length; i++) {
+      if (liquidities[i] > bestLiquidity) {
+        bestLiquidity = liquidities[i];
+        bestFee = pools[i].fee;
+      }
+    }
+    return bestLiquidity > 0n ? bestFee : FEE_TIER;
+  } catch (err) {
+    logEvent({ level: "warn", msg: "pickDeepestSwapFee failed, falling back to the vault's own pool", err: String(err) });
+    return FEE_TIER;
+  }
 }
 
 // Deliberately NOT the regenerated platformConfigAbi — that ABI matches the
@@ -199,8 +243,9 @@ export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
     });
     if (swap.amountIn === 0n) return;
 
-    const amountOutMinimum = await minAmountOutForSwap(vaultAddress, swap, maxSlippageBps);
-    const swapIx = { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum };
+    const swapFee = await pickDeepestSwapFee();
+    const amountOutMinimum = await minAmountOutForSwap(vaultAddress, swap, maxSlippageBps, swapFee);
+    const swapIx = { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum, fee: swapFee };
     const args = [swapIx, 0n, 0n] as const;
 
     const check = await simulateAttempt(vaultAddress, "sweepIdleDust", args);
@@ -242,12 +287,13 @@ async function quoteExactInputSingle(
   tokenIn: Address,
   tokenOut: Address,
   amountIn: bigint,
+  fee: number,
 ): Promise<bigint> {
   const { result } = await publicClient.simulateContract({
     address: SWAP_ROUTER02,
     abi: swapRouter02Abi,
     functionName: "exactInputSingle",
-    args: [{ tokenIn, tokenOut, fee: 3000, recipient: vaultAddress, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }],
+    args: [{ tokenIn, tokenOut, fee, recipient: vaultAddress, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }],
     account: vaultAddress,
   });
   return result;
@@ -269,10 +315,11 @@ async function minAmountOutForSwap(
   vaultAddress: Address,
   swap: { token0ToToken1: boolean; amountIn: bigint },
   maxSlippageBps: bigint,
+  fee: number,
 ): Promise<bigint> {
   if (swap.amountIn === 0n) return 0n;
   const [tokenIn, tokenOut] = swap.token0ToToken1 ? [USDT, WETH] : [WETH, USDT];
-  const quotedOut = await quoteExactInputSingle(vaultAddress, tokenIn, tokenOut, swap.amountIn);
+  const quotedOut = await quoteExactInputSingle(vaultAddress, tokenIn, tokenOut, swap.amountIn, fee);
   return (quotedOut * (10_000n - maxSlippageBps)) / 10_000n;
 }
 
@@ -356,13 +403,17 @@ async function capSwapWithinRange(
   amountIn: bigint,
   tickLower: number,
   tickUpper: number,
+  fee: number,
 ): Promise<bigint> {
   if (amountIn === 0n) return amountIn;
   const lo = Math.min(tickLower, tickUpper);
   const hi = Math.max(tickLower, tickUpper);
   // Keep the estimated post-swap price at least this many ticks inside the
   // range — plain safety margin so ordinary price drift before the tx
-  // confirms doesn't immediately push it back out.
+  // confirms doesn't immediately push it back out. Still meaningful even
+  // when fee routes through a different pool than the position's own
+  // (arbitrage keeps this pair's price in sync across fee tiers for the
+  // same underlying pair, so a violent move in any of them is still signal).
   const SAFETY_MARGIN_TICKS = 10;
 
   let candidate = amountIn;
@@ -370,7 +421,7 @@ async function capSwapWithinRange(
     if (candidate === 0n) return 0n;
     let amountOut: bigint;
     try {
-      amountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate);
+      amountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate, fee);
     } catch {
       return candidate; // can't quote a smaller size either — use what we have
     }
@@ -427,9 +478,17 @@ async function sizeInitialSwapAccurate(
     availableToken0Raw: bigint;
     ethPriceUsd: number;
   },
+  fee: number,
 ): Promise<{ token0ToToken1: true; amountIn: bigint }> {
   const guess = sizeInitialSwap(input);
   if (guess.amountIn === 0n) return guess;
+
+  // Only the position's OWN pool (FEE_TIER) is affected by this swap when it
+  // routes there too — a swap through a different, deeper pool never touches
+  // FEE_TIER's reserves, so that pool's tick simply stays at input.currentTick
+  // regardless of swap size. Re-estimating a "post-swap tick" from the OTHER
+  // pool's execution rate would describe a pool the mint never happens in.
+  const sameFeeAsPosition = fee === FEE_TIER;
 
   const investable = Number(input.availableToken0Raw);
   let candidate = guess.amountIn;
@@ -437,15 +496,16 @@ async function sizeInitialSwapAccurate(
   try {
     for (let i = 0; i < 4; i++) {
       if (candidate === 0n) break;
-      const realAmountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate);
+      const realAmountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate, fee);
       const execRate = Number(realAmountOut) / Number(candidate); // WETH raw per USDT raw, actually observed
       if (!Number.isFinite(execRate) || execRate <= 0) break;
 
-      // Where THIS candidate's own swap would actually leave the pool —
+      // Where THIS candidate's own swap would actually leave the MINT pool —
       // same estimation capSwapWithinRange uses below — so the ratio we
       // solve against reflects the post-swap state, not the pre-swap one.
-      const estimatedTick = tickFromEthPrice(1 / (execRate * 1e-12));
-      const rawRatio = targetRawRatio({ currentTick: estimatedTick, tickLower: input.tickLower, tickUpper: input.tickUpper });
+      // Skipped when swapping through a different pool (see above).
+      const ratioTick = sameFeeAsPosition ? tickFromEthPrice(1 / (execRate * 1e-12)) : input.currentTick;
+      const rawRatio = targetRawRatio({ currentTick: ratioTick, tickLower: input.tickLower, tickUpper: input.tickUpper });
       if (!Number.isFinite(rawRatio) || rawRatio <= 0) break;
 
       // Solve x*execRate / (investable - x) = rawRatio for x.
@@ -462,7 +522,7 @@ async function sizeInitialSwapAccurate(
     candidate = guess.amountIn;
   }
 
-  const cappedAmountIn = await capSwapWithinRange(vaultAddress, candidate, input.tickLower, input.tickUpper);
+  const cappedAmountIn = await capSwapWithinRange(vaultAddress, candidate, input.tickLower, input.tickUpper, fee);
   return { token0ToToken1: true, amountIn: cappedAmountIn };
 }
 
@@ -499,17 +559,22 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   // owner for zero benefit, so initPosition no longer calls uni-lab at all;
   // only rebalance() does, where the API's answer (the new upper bound)
   // genuinely drives the outcome. See PLAN.md.
-  const swapIx = await sizeInitialSwapAccurate(vaultAddress, {
-    currentTick: tick,
-    tickLower: targetTickLower,
-    tickUpper: targetTickUpper,
-    availableToken0Raw: investableUsdt,
-    ethPriceUsd: ethPrice,
-  });
+  const swapFee = await pickDeepestSwapFee();
+  const swapIx = await sizeInitialSwapAccurate(
+    vaultAddress,
+    {
+      currentTick: tick,
+      tickLower: targetTickLower,
+      tickUpper: targetTickUpper,
+      availableToken0Raw: investableUsdt,
+      ethPriceUsd: ethPrice,
+    },
+    swapFee,
+  );
 
-  const initAmountOutMinimum = await minAmountOutForSwap(vaultAddress, swapIx, maxSlippageBps);
+  const initAmountOutMinimum = await minAmountOutForSwap(vaultAddress, swapIx, maxSlippageBps, swapFee);
   const initArgs = [
-    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: initAmountOutMinimum },
+    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: initAmountOutMinimum, fee: swapFee },
     0n,
     0n,
   ] as const;
@@ -866,11 +931,17 @@ async function runRebalanceViaUniLab(
     rebalanceFee,
     ethPrice,
   );
+  // Safe to route through a different pool than the position's own here: by
+  // the time _executeSwap runs inside rebalance(), decreaseLiquidity()+
+  // collect() have already moved the old position's tokens into the vault's
+  // real balance, same-tx — unlike the standalone pre-tx quote this whole
+  // rebalance-swap path exists to avoid (see minAmountOutForRebalanceSwap).
+  const swapFee = await pickDeepestSwapFee();
   const buildFinalArgs = (amountOutMinimum: bigint) =>
     [
       newTickLower,
       newTickUpper,
-      { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum },
+      { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum, fee: swapFee },
       reinjectAmount,
       0n,
       0n,
@@ -1006,11 +1077,14 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     ethPrice,
   );
 
+  // Safe here for the same reason as runRebalanceViaUniLab: decreaseLiquidity+
+  // collect already ran by the time _executeSwap does, inside the same tx.
+  const swapFee = await pickDeepestSwapFee();
   const buildRebalanceArgs = (amountOutMinimum: bigint) =>
     [
       newTickLower,
       newTickUpper,
-      { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum },
+      { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum, fee: swapFee },
       0n, // no reinjection — from-scratch rebuild, like initPosition()
       0n,
       0n,

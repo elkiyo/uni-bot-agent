@@ -14,6 +14,16 @@ export const POOL = "0x6F42B9D2085a0dEb711C00A460a98B9863ae4897" as const; // US
 export const FEE_TIER = 3000;
 export const POSITION_MANAGER = "0x3d79EdAaBC0EaB6F08ED885C05Fc0B014290D95A" as const; // Uniswap V3 NonfungiblePositionManager
 export const SWAP_ROUTER02 = "0x5615CDAb10dc425a742d643d949a7F474C01abc4" as const; // Uniswap V3 SwapRouter02
+// Uniswap V3 Factory — read from POOL.factory() and confirmed live 2026-07-17.
+// Used to find every fee-tier pool for a pair when picking the deepest one to
+// route a swap through (see rebalancer.ts's pickDeepestSwapFee).
+export const UNISWAP_V3_FACTORY = "0xAfE208a311B21f13EF87E33A90049fC17A7acDEc" as const;
+// Every USDT/WETH fee tier confirmed to exist on Celo mainnet (checked via
+// factory.getPool 2026-07-17): 0.01%, 0.05% (deployed but empty — 0
+// liquidity, never picked in practice since pickDeepestSwapFee compares real
+// liquidity), 0.3% (POOL itself, where every vault's LP position lives). No
+// 1% pool exists for this pair (getPool returns the zero address).
+export const CANDIDATE_SWAP_FEE_TIERS = [100, 500, 3000] as const;
 // Deliberately NOT using Uniswap's own Quoter (0x82825d05...) here — its
 // CREATE2 pool-address computation (PoolAddress.computeAddress, hardcoded
 // POOL_INIT_CODE_HASH from @uniswap/v3-periphery 1.0.0) doesn't match Celo's

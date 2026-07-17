@@ -177,6 +177,11 @@
             "name": "amountOutMinimum",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
           }
         ]
       },
@@ -222,6 +227,11 @@
             "name": "amountOutMinimum",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
           }
         ]
       },
@@ -549,6 +559,11 @@
             "name": "amountOutMinimum",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
           }
         ]
       },
@@ -626,6 +641,11 @@
             "name": "amountOutMinimum",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
           }
         ]
       },
@@ -746,6 +766,11 @@
             "name": "amountOutMinimum",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
           }
         ]
       },

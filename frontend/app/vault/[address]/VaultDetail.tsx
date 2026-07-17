@@ -11,7 +11,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
 import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
-import { USDT, WETH, POOL, POSITION_MANAGER, PLATFORM_CONFIG_ADDRESS } from "@/lib/addresses";
+import { USDT, WETH, POOL, POSITION_MANAGER, PLATFORM_CONFIG_ADDRESS, FEE_TIER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
@@ -377,7 +377,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         abi: rangeVaultAbi,
         functionName: "increasePosition",
         args: [
-          { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n },
+          { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n, fee: FEE_TIER },
           usdtAmount,
           0n,
           0n,

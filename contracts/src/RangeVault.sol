@@ -147,6 +147,18 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         bool token0ToToken1;
         uint256 amountIn;
         uint256 amountOutMinimum;
+        // Which fee-tier pool to route THIS swap through — independent of
+        // feeTier (the pool the LP position itself lives in). The keeper
+        // picks whichever pool for this token pair has the deepest live
+        // liquidity, since price impact on a large sizing/rebalance swap can
+        // dwarf the flat pool fee: confirmed in production 2026-07-17 (vault
+        // 0xaeFE8a2b...891017F), a $389 swap cost 1.26% (~$4.86) routed
+        // through the 0.3% pool it was minting into, vs. an estimated 0.03%
+        // through this same pair's far deeper 0.01% pool — 8.5x more
+        // liquidity, ~$5.53 cheaper for that exact trade. The position
+        // itself still only ever mints/lives in feeTier; this only changes
+        // where the CONVERSION swap executes before that mint.
+        uint24 fee;
     }
 
     // ---------------------------------------------------------------------
@@ -939,13 +951,14 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     function _executeSwap(SwapInstruction calldata swapIx) internal {
         if (swapIx.amountIn == 0) return;
+        if (swapIx.fee == 0) revert InvalidSwapInstruction();
         address tokenIn = swapIx.token0ToToken1 ? token0 : token1;
         address tokenOut = swapIx.token0ToToken1 ? token1 : token0;
         swapRouter.exactInputSingle(
             ISwapRouter02.ExactInputSingleParams({
                 tokenIn: tokenIn,
                 tokenOut: tokenOut,
-                fee: feeTier,
+                fee: swapIx.fee,
                 recipient: address(this),
                 amountIn: swapIx.amountIn,
                 amountOutMinimum: swapIx.amountOutMinimum,

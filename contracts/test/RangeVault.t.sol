@@ -135,7 +135,7 @@ contract RangeVaultTest is Test {
         // sizes this from uni-lab.xyz's /pool-setup-initial response (see PLAN.md); a
         // rough half-swap is enough to exercise the mechanism end-to-end here.
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
 
         vm.prank(defaultOperator);
         uint256 tokenId = vault.initPosition(initSwap, 0, 0);
@@ -149,7 +149,7 @@ contract RangeVaultTest is Test {
         vm.warp(block.timestamp + 1 days + 1);
         (int24 lower2, int24 upper2) = _alignedRangeAroundMarket(2000);
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
 
         uint256 operatorBalBefore = IERC20(USDT).balanceOf(defaultOperator);
         vm.prank(defaultOperator);
@@ -170,6 +170,69 @@ contract RangeVaultTest is Test {
         assertGt(IERC20(USDT).balanceOf(lp), lpUsdtBefore, "LP should receive USDT back");
         assertGe(IERC20(WETH).balanceOf(lp), lpWethBefore, "LP should receive any WETH back");
         assertEq(vault.positionTokenId(), 0);
+    }
+
+    // ---------------------------------------------------------------------
+    // SwapInstruction.fee — routing a swap through a different pool than the
+    // one the position itself lives in (see the struct's own docstring)
+    // ---------------------------------------------------------------------
+
+    function test_initPosition_routesSwapThroughDifferentFeeTier() public {
+        // The 0.01% USDT/WETH pool — same pair, different (deeper) pool than
+        // POOL (0.3%), confirmed live on Celo mainnet 2026-07-17.
+        address cheaperPool = 0xF55791AfBB35aD42984f18D6Fe3e1fF73D81900c;
+        assertGt(IUniswapV3Pool(cheaperPool).liquidity(), 0, "cheaper pool should have real liquidity on the fork");
+
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+        vault.configureTarget({
+            investmentAmountUsd: 4_800_000_000,
+            _targetTickLower: lower,
+            _targetTickUpper: upper,
+            _maxRebalances: 5,
+            _reinjectionAmount: 50_000_000,
+            _periodicRebalanceInterval: 1 days,
+            _recenterMarginBps: 500,
+            _exitTopCeilingMarginBps: 300
+        });
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        // fee: 100 (0.01%) here, while the position itself still mints into
+        // POOL (fee 3000 / 0.3%, set at createVault in setUp) — the whole
+        // point of the split.
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 100});
+
+        vm.prank(defaultOperator);
+        uint256 tokenId = vault.initPosition(initSwap, 0, 0);
+        assertGt(tokenId, 0, "position should be minted even though the swap routed through a different pool");
+    }
+
+    function test_initPosition_revertsOnZeroFeeSwapInstruction() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+        vault.configureTarget({
+            investmentAmountUsd: 4_800_000_000,
+            _targetTickLower: lower,
+            _targetTickUpper: upper,
+            _maxRebalances: 5,
+            _reinjectionAmount: 50_000_000,
+            _periodicRebalanceInterval: 1 days,
+            _recenterMarginBps: 500,
+            _exitTopCeilingMarginBps: 300
+        });
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory badSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 0});
+
+        vm.prank(defaultOperator);
+        vm.expectRevert(RangeVault.InvalidSwapInstruction.selector);
+        vault.initPosition(badSwap, 0, 0);
     }
 
     // ---------------------------------------------------------------------
@@ -256,7 +319,7 @@ contract RangeVaultTest is Test {
 
     function test_strangerCannotCallOperatorFunctions() public {
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(stranger);
         vm.expectRevert(RangeVault.NotOperator.selector);
         vault.initPosition(noSwap, 0, 0);
@@ -267,7 +330,7 @@ contract RangeVaultTest is Test {
         vault.setOperator(address(0));
 
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.NotOperator.selector);
         vault.initPosition(noSwap, 0, 0);
@@ -295,7 +358,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -305,7 +368,7 @@ contract RangeVaultTest is Test {
         int24 wildUpper = wildLower + tickSpacing * 10;
 
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.RangeTooFarFromMarket.selector);
         vault.rebalance(wildLower, wildUpper, noSwap, 0, 0, 0);
@@ -322,14 +385,14 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
         // Only 1 hour passed — well under both the 12h cooldown and the 1-day periodic trigger.
         vm.warp(block.timestamp + 1 hours);
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.TooSoonToRebalance.selector);
         vault.rebalance(lower, upper, noSwap, 0, 0, 0);
@@ -345,12 +408,12 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
 
         vm.warp(block.timestamp + 1 hours + 1);
         (int24 l2, int24 u2) = _alignedRangeAroundMarket(2000);
@@ -374,7 +437,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -385,7 +448,7 @@ contract RangeVaultTest is Test {
 
         (int24 l2, int24 u2) = _alignedRangeAroundMarket(4000);
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
 
         uint256 lpBefore = IERC20(USDT).balanceOf(lp);
         uint256 operatorBefore = IERC20(USDT).balanceOf(defaultOperator);
@@ -427,14 +490,14 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
         vm.warp(block.timestamp + 1 hours + 1);
         (int24 l2, int24 u2) = _alignedRangeAroundMarket(2000);
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
 
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.ReinjectionExceedsCap.selector);
@@ -453,14 +516,14 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_495_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_495_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
         vm.warp(block.timestamp + 1 hours + 1);
         (int24 l2, int24 u2) = _alignedRangeAroundMarket(2000);
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
 
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.InsufficientReserve.selector);
@@ -477,14 +540,14 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
         vm.warp(block.timestamp + 1 hours + 1);
         (int24 l2, int24 u2) = _alignedRangeAroundMarket(2000);
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
 
         vm.prank(defaultOperator);
         vault.rebalance(l2, u2, noSwap, 0, 0, 0); // keeper chooses not to reinject this cycle
@@ -514,7 +577,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -541,7 +604,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.VaultClosed.selector);
         vault.initPosition(noSwap, 0, 0);
@@ -575,7 +638,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         uint256 tokenId = vault.initPosition(initSwap, 0, 0);
 
@@ -597,7 +660,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         uint256 tokenId = vault.initPosition(initSwap, 0, 0);
         (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
@@ -633,7 +696,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -668,7 +731,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         uint256 tokenId = vault.initPosition(initSwap, 0, 0);
         (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
@@ -690,7 +753,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -727,7 +790,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -771,7 +834,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -800,7 +863,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -826,7 +889,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -835,7 +898,7 @@ contract RangeVaultTest is Test {
         vm.warp(block.timestamp + 1 hours + 1);
         (int24 lower2, int24 upper2) = _alignedRangeAroundMarket(4000);
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 3000});
 
         uint256 operatorUsdtBefore = IERC20(USDT).balanceOf(defaultOperator);
         vm.prank(defaultOperator);
@@ -871,7 +934,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         uint256 tokenId = vault.initPosition(initSwap, 0, 0);
 
@@ -881,7 +944,7 @@ contract RangeVaultTest is Test {
         // mint — an in-range position needs both tokens in its live ratio,
         // not just token0 (see increasePosition()'s natspec).
         RangeVault.SwapInstruction memory topUpSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 100_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 100_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(lp);
         vault.increasePosition(topUpSwap, 200_000_000, 0, 0); // top up with 200 more USDT
 
@@ -891,7 +954,7 @@ contract RangeVaultTest is Test {
 
     function test_increasePosition_revertsWithNoPosition() public {
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
         vm.expectRevert(RangeVault.NoPosition.selector);
@@ -901,7 +964,7 @@ contract RangeVaultTest is Test {
 
     function test_strangerCannotIncreasePosition() public {
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(stranger);
         vm.expectRevert(RangeVault.NotOwner.selector);
         vault.increasePosition(noSwap, 100_000_000, 0, 0);
@@ -916,14 +979,14 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         uint256 tokenId = vault.initPosition(initSwap, 0, 0);
 
         (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
 
         RangeVault.SwapInstruction memory topUpSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 50_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 50_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.reinjectIntoPosition(topUpSwap, 100_000_000, 0, 0);
 
@@ -942,12 +1005,12 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.ReinjectionExceedsCap.selector);
         vault.reinjectIntoPosition(noSwap, 100_000_000, 0, 0); // asking for 100, cap is 50
@@ -962,12 +1025,12 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.InsufficientReserve.selector);
         vault.reinjectIntoPosition(noSwap, 50_000_000, 0, 0); // asking for more than the 10 USDT in reserve
@@ -975,7 +1038,7 @@ contract RangeVaultTest is Test {
 
     function test_reinjectIntoPosition_revertsWithNoPosition() public {
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 0});
         vault.configureTarget(0, 0, 100, 5, 200_000_000, 1 days, 500, 300);
@@ -988,7 +1051,7 @@ contract RangeVaultTest is Test {
 
     function test_strangerCannotReinjectIntoPosition() public {
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(stranger);
         vm.expectRevert(RangeVault.NotOperator.selector);
         vault.reinjectIntoPosition(noSwap, 100_000_000, 0, 0);
@@ -1003,7 +1066,7 @@ contract RangeVaultTest is Test {
         vm.stopPrank();
 
         RangeVault.SwapInstruction memory initSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         uint256 tokenId = vault.initPosition(initSwap, 0, 0);
 
@@ -1017,7 +1080,7 @@ contract RangeVaultTest is Test {
         uint256 wethBefore = IERC20(WETH).balanceOf(address(vault));
 
         RangeVault.SwapInstruction memory correctiveSwap =
-            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0.015 ether, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0.015 ether, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vault.sweepIdleDust(correctiveSwap, 0, 0);
 
@@ -1030,7 +1093,7 @@ contract RangeVaultTest is Test {
 
     function test_sweepIdleDust_revertsWithNoPosition() public {
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(defaultOperator);
         vm.expectRevert(RangeVault.NoPosition.selector);
         vault.sweepIdleDust(noSwap, 0, 0);
@@ -1038,7 +1101,7 @@ contract RangeVaultTest is Test {
 
     function test_strangerCannotSweepIdleDust() public {
         RangeVault.SwapInstruction memory noSwap =
-            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0, fee: 3000});
         vm.prank(stranger);
         vm.expectRevert(RangeVault.NotOperator.selector);
         vault.sweepIdleDust(noSwap, 0, 0);

@@ -32,6 +32,31 @@ export const uniswapV3PoolAbi = [
     inputs: [],
     outputs: [{ name: "", type: "int24" }],
   },
+  {
+    type: "function",
+    name: "liquidity",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint128" }],
+  },
+] as const;
+
+// Just enough of the Uniswap V3 Factory to look up every fee-tier pool for a
+// pair — used to pick the deepest one for a swap's own route, independent of
+// whichever pool a vault's LP position lives in. See SwapInstruction.fee's
+// docstring in RangeVault.sol for why this exists.
+export const uniswapV3FactoryAbi = [
+  {
+    type: "function",
+    name: "getPool",
+    stateMutability: "view",
+    inputs: [
+      { name: "tokenA", type: "address" },
+      { name: "tokenB", type: "address" },
+      { name: "fee", type: "uint24" },
+    ],
+    outputs: [{ name: "pool", type: "address" }],
+  },
 ] as const;
 
 // Uniswap V3 SwapRouter02 — just enough to simulate exactInputSingle for a
