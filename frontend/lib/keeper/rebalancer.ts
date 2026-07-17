@@ -158,10 +158,11 @@ const DUST_SWEEP_MIN_USD = 1; // not worth the gas below this
 export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
   try {
     const vault = vaultContract(vaultAddress);
-    const [positionTokenId, idleUsdt, positionManager] = await Promise.all([
+    const [positionTokenId, idleUsdt, positionManager, maxSlippageBps] = await Promise.all([
       vault.read.positionTokenId() as Promise<bigint>,
       vault.read.investableUsdt() as Promise<bigint>,
       vault.read.positionManager() as Promise<Address>,
+      vault.read.maxSlippageBps() as Promise<bigint>,
     ]);
     if (positionTokenId === 0n) return;
 
@@ -198,7 +199,8 @@ export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
     });
     if (swap.amountIn === 0n) return;
 
-    const swapIx = { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n };
+    const amountOutMinimum = await minAmountOutForSwap(vaultAddress, swap, maxSlippageBps);
+    const swapIx = { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum };
     const args = [swapIx, 0n, 0n] as const;
 
     const check = await simulateAttempt(vaultAddress, "sweepIdleDust", args);
@@ -252,6 +254,82 @@ async function quoteExactInputSingle(
 }
 
 /**
+ * Real slippage floor for a swap the keeper is about to send, honoring the
+ * vault owner's own maxSlippageBps risk setting — every keeper-initiated
+ * swap in this file passed amountOutMinimum: 0n until now, meaning Uniswap
+ * would accept ANY execution price, no matter how bad (a manipulated block,
+ * a thin/illiquid moment, MEV) with zero protection. Quotes the exact swap
+ * about to be sent (same quoteExactInputSingle used for sizing) and applies
+ * the owner's tolerance on top — if the pool can't deliver at least this
+ * much, Uniswap itself reverts the swap rather than executing it at a worse
+ * price, and the keeper's own simulateAttempt gate catches that before
+ * spending gas on a doomed send.
+ */
+async function minAmountOutForSwap(
+  vaultAddress: Address,
+  swap: { token0ToToken1: boolean; amountIn: bigint },
+  maxSlippageBps: bigint,
+): Promise<bigint> {
+  if (swap.amountIn === 0n) return 0n;
+  const [tokenIn, tokenOut] = swap.token0ToToken1 ? [USDT, WETH] : [WETH, USDT];
+  const quotedOut = await quoteExactInputSingle(vaultAddress, tokenIn, tokenOut, swap.amountIn);
+  return (quotedOut * (10_000n - maxSlippageBps)) / 10_000n;
+}
+
+/**
+ * Shrinks a token0->token1 (USDT->WETH) swap, if needed, so its OWN price
+ * impact can't push the pool past the target range — confirmed root cause
+ * of a real production case, 2026-07-17 (vault 0xFee70486...4A4b3A, a ~1.8%-
+ * wide range): a swap sized purely for the PRE-swap target ratio moved price
+ * enough to exit the range within the same transaction, minting 100%
+ * one-sided and leaving the rest as dust. Recovery needed a SECOND
+ * corrective swap ~24 minutes later (once price drifted back on its own),
+ * which cost real fee+slippage on both trades for no reason a same-tx fix
+ * couldn't have avoided.
+ *
+ * Uses real on-chain quotes rather than replicating Uniswap's tick-crossing
+ * math analytically — a few rounds of "quote the candidate, check where it
+ * lands, shrink if it's outside" converges well enough for a sizing
+ * heuristic (see this file's own precision philosophy). Only handles the
+ * token0->token1 direction because that's the only one sizeInitialSwap ever
+ * produces.
+ */
+async function capSwapWithinRange(
+  vaultAddress: Address,
+  amountIn: bigint,
+  tickLower: number,
+  tickUpper: number,
+): Promise<bigint> {
+  if (amountIn === 0n) return amountIn;
+  const lo = Math.min(tickLower, tickUpper);
+  const hi = Math.max(tickLower, tickUpper);
+  // Keep the estimated post-swap price at least this many ticks inside the
+  // range — plain safety margin so ordinary price drift before the tx
+  // confirms doesn't immediately push it back out.
+  const SAFETY_MARGIN_TICKS = 10;
+
+  let candidate = amountIn;
+  for (let i = 0; i < 6; i++) {
+    if (candidate === 0n) return 0n;
+    let amountOut: bigint;
+    try {
+      amountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate);
+    } catch {
+      return candidate; // can't quote a smaller size either — use what we have
+    }
+    const execRate = Number(amountOut) / Number(candidate); // this trade's own realized WETH-raw-per-USDT-raw rate
+    if (!Number.isFinite(execRate) || execRate <= 0) return candidate;
+    const estimatedTick = tickFromEthPrice(1 / (execRate * 1e-12));
+
+    if (estimatedTick >= lo + SAFETY_MARGIN_TICKS && estimatedTick <= hi - SAFETY_MARGIN_TICKS) {
+      return candidate; // safely inside the range, done
+    }
+    candidate = candidate / 2n; // overshot the range — halve and re-check
+  }
+  return candidate;
+}
+
+/**
  * Same target as sizeInitialSwap, corrected for the swap's own price impact
  * using a real quote instead of assuming the pre-swap spot price holds all
  * the way through. sizeInitialSwap alone reliably leaves a large one-sided
@@ -268,6 +346,8 @@ async function quoteExactInputSingle(
  * a little between the guess and the corrected amount), so it's not exact —
  * sweepIdleDust()/the independent monitor retry stay as the backstop for
  * whatever's left, same as before, just with much less for them to clean up.
+ * Finally capped by capSwapWithinRange so it can never overshoot the target
+ * range's own boundary, on top of that.
  */
 async function sizeInitialSwapAccurate(
   vaultAddress: Address,
@@ -295,7 +375,14 @@ async function sizeInitialSwapAccurate(
     const corrected = (rawRatio * investable) / (execRate + rawRatio);
     if (!Number.isFinite(corrected) || corrected <= 0) return guess;
 
-    return { token0ToToken1: true, amountIn: BigInt(Math.floor(Math.min(corrected, investable))) };
+    const cappedAmountIn = await capSwapWithinRange(
+      vaultAddress,
+      BigInt(Math.floor(Math.min(corrected, investable))),
+      input.tickLower,
+      input.tickUpper,
+    );
+
+    return { token0ToToken1: true, amountIn: cappedAmountIn };
   } catch (err) {
     logEvent({ level: "warn", msg: "quote-corrected swap sizing failed, using naive estimate", err: String(err) });
     return guess;
@@ -313,10 +400,11 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   }
 
   const vault = vaultContract(vaultAddress);
-  const [targetTickLower, targetTickUpper, investableUsdt] = await Promise.all([
+  const [targetTickLower, targetTickUpper, investableUsdt, maxSlippageBps] = await Promise.all([
     vault.read.targetTickLower() as Promise<number>,
     vault.read.targetTickUpper() as Promise<number>,
     vault.read.investableUsdt() as Promise<bigint>,
+    vault.read.maxSlippageBps() as Promise<bigint>,
   ]);
 
   const tick = await currentTick();
@@ -342,8 +430,9 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     ethPriceUsd: ethPrice,
   });
 
+  const initAmountOutMinimum = await minAmountOutForSwap(vaultAddress, swapIx, maxSlippageBps);
   const initArgs = [
-    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: 0n },
+    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: initAmountOutMinimum },
     0n,
     0n,
   ] as const;
@@ -451,6 +540,7 @@ async function runRebalanceViaUniLab(
     idleWeth,
     recenterMarginBps,
     platformConfig,
+    maxSlippageBps,
   ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.reinjectionAmount() as Promise<bigint>, // owner's per-cycle ceiling — see RangeVault.sol
@@ -464,6 +554,7 @@ async function runRebalanceViaUniLab(
     // bare read here would break every pre-existing vault's keeper cycle.
     (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
     vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
+    vault.read.maxSlippageBps() as Promise<bigint>,
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -698,10 +789,11 @@ async function runRebalanceViaUniLab(
     rebalanceFee,
     ethPrice,
   );
+  const finalAmountOutMinimum = await minAmountOutForSwap(vaultAddress, finalSwap, maxSlippageBps);
   const finalArgs = [
     newTickLower,
     newTickUpper,
-    { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum: 0n },
+    { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum: finalAmountOutMinimum },
     reinjectAmount,
     0n,
     0n,
@@ -764,6 +856,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     recenterMarginBps,
     exitTopCeilingMarginBps,
     platformConfig,
+    maxSlippageBps,
   ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.positionManager() as Promise<Address>,
@@ -774,6 +867,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
     (vault.read.exitTopCeilingMarginBps() as Promise<bigint>).catch(() => 300n),
     vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
+    vault.read.maxSlippageBps() as Promise<bigint>,
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -829,10 +923,11 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     ethPrice,
   );
 
+  const exitTopAmountOutMinimum = await minAmountOutForSwap(vaultAddress, swapIx, maxSlippageBps);
   const rebalanceArgs = [
     newTickLower,
     newTickUpper,
-    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: 0n },
+    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: exitTopAmountOutMinimum },
     0n, // no reinjection — from-scratch rebuild, like initPosition()
     0n,
     0n,
