@@ -98,7 +98,7 @@ export default function Docs() {
                   title="Plataforma"
                   subtitle="PlatformConfig.sol · dueño del equipo"
                   points={[
-                    "Fija el precio por rebalanceo (rebalanceFee)",
+                    "Fija el performance fee (% de las comisiones LP generadas)",
                     "Fija el operador por defecto de vaults nuevos",
                     "Fija el tope de depósito por vault, mientras no esté auditado",
                   ]}
@@ -120,7 +120,7 @@ export default function Docs() {
                   points={[
                     "Arma la posición inicial y cada rebalanceo",
                     "Nunca puede ser destino de un retiro de principal",
-                    "Cobra el rebalanceFee, fijado por la plataforma, tope de uso fijado por el owner",
+                    "Cobra el performance fee, fijado por la plataforma, solo sobre comisiones LP realmente generadas",
                   ]}
                 />
               </div>
@@ -200,10 +200,13 @@ export default function Docs() {
 
               <ContractBlock
                 name="PlatformConfig.sol"
-                desc="Configuración central que todos los vaults leen en vivo, no al crearse — un cambio de fee aplica al instante a todos."
+                desc="Configuración central que todos los vaults leen en vivo, no al crearse. Su dueño es un TimelockController, no una wallet directamente — todo cambio se programa y recién se aplica 24h después, dando tiempo real para reaccionar antes de que un cambio tome efecto."
                 rows={[
-                  ["rebalanceFee", "Precio (USDT) que cobra el operador por cada rebalanceo exitoso."],
-                  ["feeToken", "USDT — el token en que se paga rebalanceFee y se mide maxDepositUsd."],
+                  [
+                    "performanceFeeBps",
+                    "% de las comisiones de Uniswap que la plataforma corta antes de que lleguen al owner — nunca toca principal.",
+                  ],
+                  ["feeToken", "USDT — el token en que se mide maxDepositUsd."],
                   ["defaultOperator", "Operador que se asigna a cada vault nuevo por defecto."],
                   ["maxDepositUsd", "Tope global de depósito por vault, mientras el contrato no esté auditado."],
                 ]}
@@ -509,7 +512,7 @@ function ArchitectureDiagram() {
         <DiagramBox
           label="Plataforma"
           name="PlatformConfig.sol"
-          detail="rebalanceFee · defaultOperator · maxDepositUsd"
+          detail="performanceFeeBps · defaultOperator · maxDepositUsd"
         />
         <Connector label="configura, en vivo, a" />
         <DiagramBox
@@ -579,8 +582,8 @@ function FundFlowDiagram() {
         {/* Row 3: operator fee, off to the side */}
         <div />
         <div />
-        <FlowNode label="Operador" detail="cobra solo rebalanceFee" small />
-        <Arrow text="fee fijo" small />
+        <FlowNode label="Operador" detail="cobra % de las comisiones LP" small />
+        <Arrow text="performance fee" small />
         <FlowNode label="RangeVault" detail="nunca el principal" highlight small />
       </div>
     </div>

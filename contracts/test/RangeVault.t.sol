@@ -22,6 +22,7 @@ contract RangeVaultTest is Test {
     address constant SWAP_ROUTER02 = 0x5615CDAb10dc425a742d643d949a7F474C01abc4;
     address platformOwner = makeAddr("platformOwner");
     address defaultOperator = makeAddr("defaultOperator");
+    address treasury = makeAddr("treasury");
     address lp = makeAddr("lp");
     address stranger = makeAddr("stranger");
 
@@ -31,16 +32,17 @@ contract RangeVaultTest is Test {
     IUniswapV3Pool pool = IUniswapV3Pool(POOL);
     int24 tickSpacing;
 
-    uint256 constant REBALANCE_FEE = 1_000_000; // 1 USDT
     uint256 constant MAX_DEPOSIT_USD = 20_000_000_000; // 20,000 USDT cap while unaudited
     uint256 constant PERFORMANCE_FEE_BPS = 1_000; // 10%
+    uint256 constant CREATION_FEE_USDT = 0; // disabled by default — see the dedicated tests below for a nonzero fee
 
     function setUp() public {
         vm.createSelectFork(vm.envString("CELO_RPC_URL"));
         tickSpacing = pool.tickSpacing();
 
-        config =
-            new PlatformConfig(platformOwner, USDT, defaultOperator, REBALANCE_FEE, MAX_DEPOSIT_USD, PERFORMANCE_FEE_BPS);
+        config = new PlatformConfig(
+            platformOwner, USDT, defaultOperator, MAX_DEPOSIT_USD, PERFORMANCE_FEE_BPS, CREATION_FEE_USDT, treasury
+        );
         factory = new VaultFactory(address(config), POSITION_MANAGER, SWAP_ROUTER02);
 
         vm.prank(lp);
@@ -155,11 +157,10 @@ contract RangeVaultTest is Test {
         assertGt(newTokenId, 0);
         assertEq(vault.rebalanceCount(), 1);
         assertEq(vault.reserveBalance(), 150_000_000, "reserve should drop by the reinjectAmount the keeper chose");
-        assertEq(
-            IERC20(USDT).balanceOf(defaultOperator) - operatorBalBefore,
-            REBALANCE_FEE,
-            "operator should be paid exactly the platform fee"
-        );
+        // No flat per-rebalance fee anymore (removed in favor of performanceFeeBps —
+        // see PlatformConfig.sol) — with no real Uniswap trading fees accrued in this
+        // synthetic fork (no time/volume passed), the operator gets nothing here.
+        assertEq(IERC20(USDT).balanceOf(defaultOperator), operatorBalBefore, "no flat fee, no accrued LP fees to split");
 
         // --- withdraw: everything comes back to the LP, nobody else ---
         uint256 lpUsdtBefore = IERC20(USDT).balanceOf(lp);
@@ -169,6 +170,72 @@ contract RangeVaultTest is Test {
         assertGt(IERC20(USDT).balanceOf(lp), lpUsdtBefore, "LP should receive USDT back");
         assertGe(IERC20(WETH).balanceOf(lp), lpWethBefore, "LP should receive any WETH back");
         assertEq(vault.positionTokenId(), 0);
+    }
+
+    // ---------------------------------------------------------------------
+    // Creation fee — one-time charge on a vault's first deposit()
+    // ---------------------------------------------------------------------
+
+    function test_creationFee_chargedOnceToTreasury() public {
+        PlatformConfig feeConfig = new PlatformConfig(
+            platformOwner, USDT, defaultOperator, MAX_DEPOSIT_USD, PERFORMANCE_FEE_BPS, 5_000_000, treasury
+        ); // 5 USDT creation fee
+        VaultFactory feeFactory = new VaultFactory(address(feeConfig), POSITION_MANAGER, SWAP_ROUTER02);
+
+        vm.prank(lp);
+        RangeVault feeVault = RangeVault(feeFactory.createVault(POOL, USDT, WETH, 3000));
+
+        vm.prank(lp);
+        IERC20(USDT).approve(address(feeVault), type(uint256).max);
+
+        uint256 treasuryBefore = IERC20(USDT).balanceOf(treasury);
+        vm.prank(lp);
+        feeVault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+
+        assertEq(
+            IERC20(USDT).balanceOf(treasury) - treasuryBefore, 5_000_000, "treasury should receive exactly the creation fee"
+        );
+        assertEq(feeVault.reserveBalance(), 200_000_000, "creation fee must not be carved out of the deposit");
+        assertEq(feeVault.investableUsdt(), 4_800_000_000, "creation fee must not be carved out of the deposit");
+        assertTrue(feeVault.creationFeeCharged());
+    }
+
+    function test_creationFee_notChargedAgainOnSecondDeposit() public {
+        PlatformConfig feeConfig = new PlatformConfig(
+            platformOwner, USDT, defaultOperator, MAX_DEPOSIT_USD, PERFORMANCE_FEE_BPS, 5_000_000, treasury
+        );
+        VaultFactory feeFactory = new VaultFactory(address(feeConfig), POSITION_MANAGER, SWAP_ROUTER02);
+
+        vm.prank(lp);
+        RangeVault feeVault = RangeVault(feeFactory.createVault(POOL, USDT, WETH, 3000));
+
+        vm.startPrank(lp);
+        IERC20(USDT).approve(address(feeVault), type(uint256).max);
+        feeVault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
+
+        uint256 treasuryAfterFirst = IERC20(USDT).balanceOf(treasury);
+        feeVault.deposit({reserveAmount: 100_000_000, investableAmount: 0});
+        vm.stopPrank();
+
+        assertEq(IERC20(USDT).balanceOf(treasury), treasuryAfterFirst, "no second creation fee on a later top-up deposit");
+    }
+
+    function test_setCreationFeeUsdt_onlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        config.setCreationFeeUsdt(1);
+    }
+
+    function test_setTreasury_onlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        config.setTreasury(stranger);
+    }
+
+    function test_setTreasury_revertsOnZeroAddress() public {
+        vm.prank(platformOwner);
+        vm.expectRevert();
+        config.setTreasury(address(0));
     }
 
     // ---------------------------------------------------------------------
@@ -297,8 +364,8 @@ contract RangeVaultTest is Test {
         vault.rebalance(l3, u3, noSwap, 0, 0, 0);
     }
 
-    function test_platformFeeChangeAppliesLiveToExistingVault() public {
-        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+    function test_performanceFeeChangeAppliesLiveToExistingVault() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(4000);
 
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
@@ -312,17 +379,25 @@ contract RangeVaultTest is Test {
         vault.initPosition(initSwap, 0, 0);
 
         vm.prank(platformOwner);
-        config.setRebalanceFee(9_000_000); // platform doubles its price after the vault existed
+        config.setPerformanceFeeBps(2_000); // platform doubles its cut after the vault existed
 
-        vm.warp(block.timestamp + 1 hours + 1);
-        (int24 l2, int24 u2) = _alignedRangeAroundMarket(2000);
+        _generateTradingFees();
+
+        (int24 l2, int24 u2) = _alignedRangeAroundMarket(4000);
         RangeVault.SwapInstruction memory noSwap =
             RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
 
-        uint256 before = IERC20(USDT).balanceOf(defaultOperator);
+        uint256 lpBefore = IERC20(USDT).balanceOf(lp);
+        uint256 operatorBefore = IERC20(USDT).balanceOf(defaultOperator);
+        vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(defaultOperator);
         vault.rebalance(l2, u2, noSwap, 0, 0, 0);
-        assertEq(IERC20(USDT).balanceOf(defaultOperator) - before, 9_000_000, "new live fee should apply immediately");
+
+        uint256 lpGain = IERC20(USDT).balanceOf(lp) - lpBefore;
+        uint256 operatorGain = IERC20(USDT).balanceOf(defaultOperator) - operatorBefore;
+        uint256 gross = lpGain + operatorGain;
+        assertGt(gross, 0, "some real fee should have accrued from the trade");
+        assertEq(operatorGain, (gross * 2_000) / 10_000, "the NEW live 20% rate should apply immediately, not the 10% at vault creation");
     }
 
     function test_depositRevertsAbovePlatformCap() public {
@@ -334,7 +409,7 @@ contract RangeVaultTest is Test {
     function test_onlyPlatformOwnerCanChangeConfig() public {
         vm.prank(stranger);
         vm.expectRevert();
-        config.setRebalanceFee(1);
+        config.setPerformanceFeeBps(1);
     }
 
     // ---------------------------------------------------------------------
@@ -766,13 +841,13 @@ contract RangeVaultTest is Test {
         vm.prank(defaultOperator);
         vault.rebalance(lower2, upper2, noSwap, 0, 0, 0);
 
-        // Operator gets the flat REBALANCE_FEE plus (if any token0-side LP
-        // fees accrued) a performance cut on top — the exact split ratio is
-        // already asserted precisely in test_performanceFee_splitsFeesOnCollectFees
-        // via the same _splitPerformanceFee code path; this just confirms
-        // the combined payout is at least the flat fee and the call didn't
-        // revert with the new logic in place.
-        assertGe(IERC20(USDT).balanceOf(defaultOperator) - operatorUsdtBefore, REBALANCE_FEE);
+        // Operator's cut here is purely the performanceFeeBps split of the
+        // real LP fees accrued (no more flat per-rebalance fee) — the exact
+        // split ratio is already asserted precisely in
+        // test_performanceFee_splitsFeesOnCollectFees via the same
+        // _splitPerformanceFee code path; this just confirms the operator
+        // actually received something and the call didn't revert.
+        assertGt(IERC20(USDT).balanceOf(defaultOperator), operatorUsdtBefore, "operator should receive a performance-fee cut");
     }
 
     function test_setPerformanceFeeBps_revertsAboveMax() public {

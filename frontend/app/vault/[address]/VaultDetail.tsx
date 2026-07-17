@@ -9,8 +9,8 @@ import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
-import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, positionManagerAbi } from "@/lib/contracts";
-import { USDT, WETH, POOL, POSITION_MANAGER } from "@/lib/addresses";
+import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
+import { USDT, WETH, POOL, POSITION_MANAGER, PLATFORM_CONFIG_ADDRESS } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
@@ -38,6 +38,7 @@ const reads = (address: `0x${string}`) =>
     "maxRangeDeviationBps",
     "recenterMarginBps",
     "exitTopCeilingMarginBps",
+    "creationFeeCharged",
   ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName }) as const);
 
 export function VaultDetail({ address }: { address: `0x${string}` }) {
@@ -87,7 +88,18 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     maxRangeDeviationBps,
     recenterMarginBps,
     exitTopCeilingMarginBps,
+    creationFeeCharged,
   ] = data?.map((d) => d.result) ?? [];
+
+  const { data: creationFeeUsdtRaw } = useReadContract({
+    address: PLATFORM_CONFIG_ADDRESS,
+    abi: platformConfigAbi,
+    functionName: "creationFeeUsdt",
+  });
+  // Only actually owed if this vault never had a successful deposit() yet —
+  // see RangeVault.sol's creationFeeCharged, set permanently true the first
+  // time deposit() succeeds.
+  const pendingCreationFee = creationFeeCharged === false ? ((creationFeeUsdtRaw as bigint) ?? 0n) : 0n;
 
   const { data: feesSummary } = useVaultFeesSummary(address);
   const { data: depositSummary } = useVaultDepositSummary(address);
@@ -191,8 +203,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     const reserve = parseUnits(depReserve || "0", 6);
     const total = investable + reserve;
     if (total === 0n) return;
+    // If this vault never had a successful deposit() yet, this call IS the
+    // first one — deposit() pulls PlatformConfig's one-time creationFeeUsdt
+    // on top, so the approval has to cover it too (see RangeVault.sol).
     await withTx("Aprobando", () =>
-      writeContractAsync({ address: USDT, abi: erc20Abi, functionName: "approve", args: [address, total] }),
+      writeContractAsync({
+        address: USDT,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [address, total + pendingCreationFee],
+      }),
     );
     await withTx("Depositando", () =>
       writeContractAsync({
@@ -539,6 +559,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
                     Depositar USDT (repartido entre capital invertible y reserva de reinyección)
                   </span>
+                  {pendingCreationFee > 0n && (
+                    <p className="mt-1 text-xs text-faint">
+                      Este vault todavía no pagó el fee de creación — se suma {formatUnits(pendingCreationFee, 6)}{" "}
+                      USDT arriba de lo que pongas acá, una sola vez.
+                    </p>
+                  )}
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField label="Invertible" value={depInvestable} onChange={setDepInvestable} />
                     <MiniField label="Reserva" value={depReserve} onChange={setDepReserve} />

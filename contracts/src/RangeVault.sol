@@ -40,7 +40,6 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     error TooSoonToRebalance();
     error RebalanceLimitReached();
     error InsufficientReserve();
-    error InsufficientInvestableBalance();
     error InvalidSwapInstruction();
     error DepositExceedsPlatformCap();
     error ZeroAddress();
@@ -82,6 +81,11 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     uint256 public investableUsdt; // capital not yet deployed into a position
     uint256 public reserveBalance; // capital available for the keeper to reinject into a position, over time
+
+    // Set on the vault's first successful deposit() — gates PlatformConfig's
+    // one-time creationFeeUsdt so it's charged exactly once per vault, ever,
+    // regardless of how many times the owner tops up later.
+    bool public creationFeeCharged;
 
     // ---------------------------------------------------------------------
     // Target config — owner-set, what the agent should build/maintain
@@ -150,6 +154,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     // ---------------------------------------------------------------------
 
     event Deposited(uint256 investableAmount, uint256 reserveAmount);
+    event CreationFeeCharged(uint256 amount);
     event TargetConfigured(
         uint256 investmentAmountUsd,
         int24 targetTickLower,
@@ -161,9 +166,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         uint256 exitTopCeilingMarginBps
     );
     event PositionInitialized(uint256 tokenId, uint256 amount0, uint256 amount1);
-    event Rebalanced(
-        uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, uint256 reinjectedAmount, uint256 feePaid
-    );
+    event Rebalanced(uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, uint256 reinjectedAmount);
     event LpFeesPaidToOwner(uint256 amount0, uint256 amount1);
     event FeesCollected(uint256 amount0, uint256 amount1);
     event PerformanceFeeCollected(uint256 amount0, uint256 amount1);
@@ -247,13 +250,27 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     // ---------------------------------------------------------------------
 
     /// @notice Deposit USDT only (token0). Split across the two ledgers by the owner.
+    /// On the vault's FIRST deposit only, also pulls PlatformConfig's
+    /// creationFeeUsdt on top (never carved out of reserveAmount/investableAmount)
+    /// and forwards it straight to the platform's treasury.
     function deposit(uint256 reserveAmount, uint256 investableAmount) external onlyOwner notClosed nonReentrant {
         uint256 total = reserveAmount + investableAmount;
         uint256 cap = IPlatformConfig(platformConfig).maxDepositUsd();
         uint256 currentTotal = reserveBalance + investableUsdt;
         if (cap != 0 && currentTotal + total > cap) revert DepositExceedsPlatformCap();
 
-        IERC20(token0).safeTransferFrom(msg.sender, address(this), total);
+        uint256 creationFee;
+        if (!creationFeeCharged) {
+            creationFeeCharged = true;
+            creationFee = IPlatformConfig(platformConfig).creationFeeUsdt();
+        }
+
+        IERC20(token0).safeTransferFrom(msg.sender, address(this), total + creationFee);
+
+        if (creationFee > 0) {
+            IERC20(token0).safeTransfer(IPlatformConfig(platformConfig).treasury(), creationFee);
+            emit CreationFeeCharged(creationFee);
+        }
 
         reserveBalance += reserveAmount;
         investableUsdt += investableAmount;
@@ -520,15 +537,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
             reserveBalance -= reinjectAmount;
         }
 
-        // 4) Platform fee, paid to whoever is currently operator, priced live by PlatformConfig.
-        uint256 fee = IPlatformConfig(platformConfig).rebalanceFee();
-        if (fee > 0) {
-            uint256 freeToken0 = IERC20(token0).balanceOf(address(this)) - reserveBalance;
-            if (freeToken0 < fee) revert InsufficientInvestableBalance();
-            IERC20(token0).safeTransfer(operator, fee);
-        }
-
-        // 5) Mint the new position with whatever's left over (investable pool only —
+        // 4) Mint the new position with whatever's left over (investable pool only —
         // reserveBalance is excluded and untouched).
         uint256 amount0 = IERC20(token0).balanceOf(address(this)) - reserveBalance;
         uint256 amount1 = IERC20(token1).balanceOf(address(this));
@@ -561,7 +570,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         rebalanceCount += 1;
         lastRebalanceTimestamp = block.timestamp;
 
-        emit Rebalanced(newTokenId, newTickLower, newTickUpper, reinjectAmount, fee);
+        emit Rebalanced(newTokenId, newTickLower, newTickUpper, reinjectAmount);
     }
 
     /// @notice Tops up the CURRENTLY OPEN position from reserveBalance
@@ -892,8 +901,8 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     /// (rebalance(), collectFees(), withdraw(), withdrawAll(),
     /// emergencyWithdrawPosition()) with ONLY the fee portion, never
     /// principal — principal is the owner's own capital, the platform never
-    /// takes a cut of it. Read live, same as rebalanceFee, so the platform
-    /// owner can adjust it without touching any vault.
+    /// takes a cut of it. Read live, so the platform owner can adjust it
+    /// without touching any vault.
     function _splitPerformanceFee(uint256 fee0, uint256 fee1) internal returns (uint256 net0, uint256 net1) {
         uint256 bps = IPlatformConfig(platformConfig).performanceFeeBps();
         uint256 platform0 = (fee0 * bps) / 10_000;

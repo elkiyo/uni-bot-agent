@@ -92,6 +92,19 @@
   },
   {
     "type": "function",
+    "name": "creationFeeCharged",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "deposit",
     "inputs": [
       {
@@ -855,6 +868,19 @@
   },
   {
     "type": "event",
+    "name": "CreationFeeCharged",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Deposited",
     "inputs": [
       {
@@ -1083,12 +1109,6 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "feePaid",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1225,11 +1245,6 @@
   {
     "type": "error",
     "name": "DepositExceedsPlatformCap",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InsufficientInvestableBalance",
     "inputs": []
   },
   {

@@ -34,7 +34,7 @@ type PositionTuple = readonly [
  * "Volumen movido por el agente" — the USD value of every position the
  * agent built, one entry per initPosition()/rebalance() (each mints a fresh
  * position). Rebalanced doesn't carry amount0/amount1 directly (only
- * reinjectedAmount/feePaid), so this reads the resulting position's
+ * reinjectedAmount), so this reads the resulting position's
  * liquidity AND the pool's tick AS OF THAT EVENT'S OWN BLOCK (not now — a
  * position rebalanced again since would read back as empty otherwise) to
  * reconstruct its value at mint time. Needs an RPC that still has that

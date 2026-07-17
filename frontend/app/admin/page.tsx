@@ -31,16 +31,17 @@ export default function Admin() {
   const { data, refetch } = useReadContracts({
     contracts: [
       { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "owner" },
-      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "rebalanceFee" },
       { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "defaultOperator" },
       { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "maxDepositUsd" },
       { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "performanceFeeBps" },
+      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "creationFeeUsdt" },
+      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "treasury" },
       { address: FACTORY_ADDRESS, abi: vaultFactoryAbi, functionName: "vaultCount" },
     ],
     query: { enabled: Boolean(PLATFORM_CONFIG_ADDRESS && FACTORY_ADDRESS) },
   });
 
-  const [owner, rebalanceFee, defaultOperator, maxDepositUsd, performanceFeeBps, vaultCount] =
+  const [owner, defaultOperator, maxDepositUsd, performanceFeeBps, creationFeeUsdt, treasury, vaultCount] =
     data?.map((d) => d.result) ?? [];
   const isPlatformOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
@@ -60,7 +61,6 @@ export default function Admin() {
 
   const [platformStats, setPlatformStats] = useState<{
     totalRebalances: number;
-    totalFeesUsd: number;
     totalLpFees0Usd: number;
     totalLpFees1Weth: number;
     totalPerformanceFee0Usd: number;
@@ -75,7 +75,6 @@ export default function Admin() {
       const latest = await publicClient!.getBlockNumber();
       const MAX_RANGE = 5_000n;
       let totalRebalances = 0;
-      let totalFeesRaw = 0n;
       let totalLpFees0Raw = 0n;
       let totalLpFees1Raw = 0n;
       let totalPerformanceFee0Raw = 0n;
@@ -108,10 +107,7 @@ export default function Admin() {
               toBlock,
             }),
           ]);
-          for (const log of rebalancedLogs as unknown as Array<{ args: { feePaid: bigint } }>) {
-            totalRebalances += 1;
-            totalFeesRaw += log.args.feePaid;
-          }
+          totalRebalances += rebalancedLogs.length;
           for (const log of lpFeeLogs as unknown as Array<{ args: { amount0: bigint; amount1: bigint } }>) {
             totalLpFees0Raw += log.args.amount0;
             totalLpFees1Raw += log.args.amount1;
@@ -127,7 +123,6 @@ export default function Admin() {
       if (!cancelled) {
         setPlatformStats({
           totalRebalances,
-          totalFeesUsd: Number(formatUnits(totalFeesRaw, 6)),
           totalLpFees0Usd: Number(formatUnits(totalLpFees0Raw, 6)),
           totalLpFees1Weth: Number(formatUnits(totalLpFees1Raw, 18)),
           totalPerformanceFee0Usd: Number(formatUnits(totalPerformanceFee0Raw, 6)),
@@ -247,10 +242,11 @@ export default function Admin() {
   const x402Ok = uniLabCalls?.filter((c) => c.ok).length ?? 0;
   const x402Failed = uniLabCalls ? uniLabCalls.length - x402Ok : 0;
 
-  const [newFee, setNewFee] = useState("");
   const [newOperator, setNewOperator] = useState("");
   const [newCap, setNewCap] = useState("");
   const [newPerformanceFeePct, setNewPerformanceFeePct] = useState("");
+  const [newCreationFee, setNewCreationFee] = useState("");
+  const [newTreasury, setNewTreasury] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -365,7 +361,6 @@ export default function Admin() {
                 value={
                   platformStats
                     ? `$${(
-                        platformStats.totalFeesUsd +
                         platformStats.totalPerformanceFee0Usd +
                         platformStats.totalPerformanceFee1Weth * (ethPrice ?? 0)
                       ).toFixed(2)}`
@@ -373,33 +368,28 @@ export default function Admin() {
                 }
                 accent
               />
-              <Stat
-                label="De eso, performance fee"
-                value={
-                  platformStats
-                    ? `${platformStats.totalPerformanceFee0Usd.toFixed(2)} USDT${
-                        platformStats.totalPerformanceFee1Weth > 0
-                          ? ` + ${platformStats.totalPerformanceFee1Weth.toFixed(6)} WETH`
-                          : ""
-                      }`
-                    : "…"
-                }
-              />
             </div>
 
             <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Configuración</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <Stat label="Fee por rebalanceo" value={`${formatUnits((rebalanceFee as bigint) ?? 0n, 6)} USDT`} />
               <Stat label="Tope por vault" value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} USDT`} />
               <Stat
                 label="Performance fee"
                 value={`${Number((performanceFeeBps as bigint) ?? 0n) / 100}% de las comisiones LP`}
+              />
+              <Stat
+                label="Fee de creación"
+                value={`${formatUnits((creationFeeUsdt as bigint) ?? 0n, 6)} USDT · una vez por vault`}
               />
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                   Operador por defecto
                 </span>
                 <p className="mt-2 break-all font-mono text-xs text-white/90">{String(defaultOperator)}</p>
+              </div>
+              <div className="glass rounded-2xl p-5">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">Tesorería</span>
+                <p className="mt-2 break-all font-mono text-xs text-white/90">{String(treasury)}</p>
               </div>
               <Stat label="Precio ETH" value={ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"} />
             </div>
@@ -428,23 +418,6 @@ export default function Admin() {
             </h2>
 
             <div className="mt-6 flex flex-col gap-6">
-              <AdminField
-                label="Nuevo fee por rebalanceo (USDT)"
-                value={newFee}
-                onChange={setNewFee}
-                action="Actualizar"
-                disabled={Boolean(busy)}
-                onSubmit={() =>
-                  withTx("fee", () =>
-                    writeContractAsync({
-                      address: PLATFORM_CONFIG_ADDRESS,
-                      abi: platformConfigAbi,
-                      functionName: "setRebalanceFee",
-                      args: [parseUnits(newFee || "0", 6)],
-                    }),
-                  )
-                }
-              />
               <AdminField
                 label="Nuevo operador por defecto (address)"
                 value={newOperator}
@@ -492,6 +465,40 @@ export default function Admin() {
                       abi: platformConfigAbi,
                       functionName: "setPerformanceFeeBps",
                       args: [BigInt(Math.round(Number(newPerformanceFeePct || "0") * 100))],
+                    }),
+                  )
+                }
+              />
+              <AdminField
+                label="Nuevo fee de creación (USDT, una vez por vault)"
+                value={newCreationFee}
+                onChange={setNewCreationFee}
+                action="Actualizar"
+                disabled={Boolean(busy)}
+                onSubmit={() =>
+                  withTx("creationFee", () =>
+                    writeContractAsync({
+                      address: PLATFORM_CONFIG_ADDRESS,
+                      abi: platformConfigAbi,
+                      functionName: "setCreationFeeUsdt",
+                      args: [parseUnits(newCreationFee || "0", 6)],
+                    }),
+                  )
+                }
+              />
+              <AdminField
+                label="Nueva tesorería (address)"
+                value={newTreasury}
+                onChange={setNewTreasury}
+                action="Actualizar"
+                disabled={Boolean(busy)}
+                onSubmit={() =>
+                  withTx("treasury", () =>
+                    writeContractAsync({
+                      address: PLATFORM_CONFIG_ADDRESS,
+                      abi: platformConfigAbi,
+                      functionName: "setTreasury",
+                      args: [newTreasury as `0x${string}`],
                     }),
                   )
                 }

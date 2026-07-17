@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
-import { decodeEventLog, parseUnits } from "viem";
+import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import { Header } from "../components/Header";
-import { vaultFactoryAbi, rangeVaultAbi, erc20Abi, uniswapV3PoolAbi } from "@/lib/contracts";
-import { FACTORY_ADDRESS, USDT, WETH, POOL, FEE_TIER } from "@/lib/addresses";
+import { vaultFactoryAbi, rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
+import { FACTORY_ADDRESS, PLATFORM_CONFIG_ADDRESS, USDT, WETH, POOL, FEE_TIER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 
 type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
@@ -70,6 +70,12 @@ export default function CreateVault() {
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
   });
+  const { data: creationFeeUsdtRaw } = useReadContract({
+    address: PLATFORM_CONFIG_ADDRESS,
+    abi: platformConfigAbi,
+    functionName: "creationFeeUsdt",
+  });
+  const creationFeeUsdt = (creationFeeUsdtRaw as bigint) ?? 0n;
 
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
@@ -105,7 +111,8 @@ export default function CreateVault() {
   const minPricePlaceholder = currentPrice !== undefined ? (currentPrice * 0.9).toFixed(2) : "1604.18";
   const maxPricePlaceholder = currentPrice !== undefined ? (currentPrice * 1.1).toFixed(2) : "1960.66";
 
-  const totalUsdt = (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0);
+  const totalUsdt =
+    (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0) + Number(formatUnits(creationFeeUsdt, 6));
   const lowerPreview = parseFloat(minPrice) || undefined;
   const upperPreview = parseFloat(maxPrice) || undefined;
 
@@ -165,11 +172,14 @@ export default function CreateVault() {
 
       currentPhase = "approving";
       setStep(currentPhase);
+      // Approve total + creationFeeUsdt — deposit() pulls the one-time creation
+      // fee on top of investable+reserve on a vault's first deposit (see
+      // RangeVault.sol), so the approval has to cover it too or that call reverts.
       const approveHash = await writeContractAsync({
         address: USDT,
         abi: erc20Abi,
         functionName: "approve",
-        args: [vaultAddress, total],
+        args: [vaultAddress, total + creationFeeUsdt],
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
@@ -412,6 +422,9 @@ export default function CreateVault() {
                   <div className="my-1 border-t border-hairline" />
                   <SummaryRow k="Capital invertible" v={`${investAmount || "0"} USDT`} />
                   <SummaryRow k="Reserva de reinyección" v={`${reinjectionAmount || "0"} USDT`} />
+                  {creationFeeUsdt > 0n && (
+                    <SummaryRow k="Fee de creación (una vez)" v={`${formatUnits(creationFeeUsdt, 6)} USDT`} />
+                  )}
                   <div className="my-1 border-t border-hairline" />
                   <SummaryRow k="Total a depositar" v={`${totalUsdt.toFixed(2)} USDT`} strong />
                 </dl>

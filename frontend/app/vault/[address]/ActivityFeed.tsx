@@ -137,6 +137,12 @@ function describe(
         title: "Depósito del owner",
         detail: `Invertible ${usdt(args.investableAmount)} · reserva ${usdt(args.reserveAmount)}`,
       };
+    case "CreationFeeCharged":
+      return {
+        kind: "money",
+        title: "Fee de creación cobrado",
+        detail: `${usdt(args.amount)} a la tesorería de la plataforma — pago único, no se vuelve a cobrar en este vault`,
+      };
     case "TargetConfigured":
       return {
         kind: "config",
@@ -160,7 +166,7 @@ function describe(
       return {
         kind: "agent",
         title: `Rebalanceo — nueva posición #${args.newTokenId}`,
-        detail: `Nuevo rango [${args.tickLower}, ${args.tickUpper}] · ${reinjectedAmount > 0n ? `reinyectó ${usdt(reinjectedAmount)}` : "sin reinyección"} · fee al operador ${usdt(args.feePaid)}`,
+        detail: `Nuevo rango [${args.tickLower}, ${args.tickUpper}] · ${reinjectedAmount > 0n ? `reinyectó ${usdt(reinjectedAmount)}` : "sin reinyección"}`,
       };
     }
     case "LpFeesPaidToOwner": {
