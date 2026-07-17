@@ -277,31 +277,60 @@ async function minAmountOutForSwap(
 }
 
 /**
- * Same slippage floor as minAmountOutForSwap, but computed from the current
- * spot price instead of a real router quote — for the rebalance-path swaps
- * ONLY. Root cause, confirmed on-chain 2026-07-16 (vault 0xFee70486...4A4b3A,
- * NFT #199598): a rebalance's swap sells WETH/USDT that is still locked
- * inside the OLD position and only gets released by decreaseLiquidity()+
- * collect(), the first steps of the real rebalance() transaction. A
- * standalone quoteExactInputSingle simulated *before* that transaction sees
- * the vault's current (near-zero) idle balance, not the post-close balance,
- * so it reverts with "STF" every time — which silently killed the whole
- * rebalance after uni-lab had already been paid, with no alert for this
- * specific failure mode. Pure spot-price math instead of a quote sidesteps
- * the balance problem entirely; the full rebalance() simulateAttempt/
- * wouldSucceed gate right after this call still catches an unrealistic
- * minimum before anything is sent.
+ * Real slippage floor for a rebalance-path swap — for the rebalance-path
+ * swaps ONLY (runRebalanceViaUniLab / runRebalanceExitTop), where
+ * minAmountOutForSwap's standalone router quote can't be used. Root cause,
+ * confirmed on-chain 2026-07-16 (vault 0xFee70486...4A4b3A, NFT #199598): a
+ * rebalance's swap sells WETH/USDT that is still locked inside the OLD
+ * position and only gets released by decreaseLiquidity()+collect(), the
+ * first steps of the real rebalance() transaction — a standalone quote
+ * simulated *before* that transaction sees the vault's current (near-zero)
+ * idle balance, not the post-close balance, so it reverts with "STF" every
+ * time. Tried replacing it with a spot-price-derived estimate (2026-07-17)
+ * instead — also wrong, confirmed on-chain: it ignores real price impact
+ * (only the pool's flat fee is predictable in advance; a ~$150 trade here
+ * measured ~0.85% total cost against a ~0.3% fee), so the computed floor
+ * was tighter than any real execution could satisfy and every rebalance
+ * reverted with Uniswap's own "Too little received".
+ *
+ * Instead, binary-searches the REAL rebalance() call itself via `buildArgs`
+ * (which plugs a candidate amountOutMinimum into the same args the caller
+ * is about to send) — since decreaseLiquidity+collect+swap+mint all run
+ * atomically inside that one simulated call, the tokens being sold DO exist
+ * by the time the swap step runs, sidestepping the balance problem, while
+ * still reflecting the pool's real depth/price impact/fee exactly like a
+ * genuine quote would. Converges to the real achievable output within the
+ * search precision, then applies the owner's maxSlippageBps tolerance on
+ * top of that discovered real price. Returns null if the swap can't
+ * execute at all regardless of price (a structural revert, e.g. an already
+ * stale range) — the caller should skip the cycle without sending.
  */
-function minAmountOutFromSpotPrice(
+async function minAmountOutForRebalanceSwap(
+  vaultAddress: Address,
+  buildArgs: (amountOutMinimum: bigint) => readonly unknown[],
   swap: { token0ToToken1: boolean; amountIn: bigint },
   ethPriceUsd: number,
   maxSlippageBps: bigint,
-): bigint {
+): Promise<bigint | null> {
   if (swap.amountIn === 0n) return 0n;
-  const expectedOutRaw = swap.token0ToToken1
-    ? (Number(swap.amountIn) * 1e-6 / ethPriceUsd) * 1e18 // USDT -> WETH
-    : (Number(swap.amountIn) * 1e-18 * ethPriceUsd) * 1e6; // WETH -> USDT
-  return (BigInt(Math.floor(expectedOutRaw)) * (10_000n - maxSlippageBps)) / 10_000n;
+  if (!(await wouldSucceed(vaultAddress, "rebalance", buildArgs(0n)))) return null;
+
+  // Generous upper bound for the search range — pre-fee, pre-impact spot
+  // conversion, always >= the real achievable output.
+  const spotEstimate = swap.token0ToToken1
+    ? BigInt(Math.ceil(((Number(swap.amountIn) * 1e-6) / ethPriceUsd) * 1e18))
+    : BigInt(Math.ceil(Number(swap.amountIn) * 1e-18 * ethPriceUsd * 1e6));
+
+  let lo = 0n;
+  let hi = spotEstimate;
+  const precision = spotEstimate / 2000n || 1n; // ~0.05% of the estimate
+  for (let i = 0; i < 12 && hi - lo > precision; i++) {
+    const mid = (lo + hi + 1n) / 2n;
+    // eslint-disable-next-line no-await-in-loop -- sequential probes of the same contract, deliberately not parallelized
+    if (await wouldSucceed(vaultAddress, "rebalance", buildArgs(mid))) lo = mid;
+    else hi = mid - 1n;
+  }
+  return (lo * (10_000n - maxSlippageBps)) / 10_000n;
 }
 
 /**
@@ -817,32 +846,38 @@ async function runRebalanceViaUniLab(
     rebalanceFee,
     ethPrice,
   );
-  const finalAmountOutMinimum = minAmountOutFromSpotPrice(finalSwap, ethPrice, maxSlippageBps);
-  const finalArgs = [
-    newTickLower,
-    newTickUpper,
-    { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum: finalAmountOutMinimum },
-    reinjectAmount,
-    0n,
-    0n,
-  ] as const;
+  const buildFinalArgs = (amountOutMinimum: bigint) =>
+    [
+      newTickLower,
+      newTickUpper,
+      { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum },
+      reinjectAmount,
+      0n,
+      0n,
+    ] as const;
 
   // Real gate, using uni-lab's actual computed range instead of the earlier
   // local guess — the probe above only ever checked our own estimate, and
   // never validated what actually gets sent. uni-lab is already paid at this
   // point either way; this only prevents burning gas on a doomed send.
-  const finalCheck = await simulateAttempt(vaultAddress, "rebalance", finalArgs);
-  if (!finalCheck.ok) {
+  const finalAmountOutMinimum = await minAmountOutForRebalanceSwap(
+    vaultAddress,
+    buildFinalArgs,
+    finalSwap,
+    ethPrice,
+    maxSlippageBps,
+  );
+  if (finalAmountOutMinimum === null) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
       msg: "rebalance reverts on uni-lab's real range — skipping send (uni-lab already paid this cycle)",
-      errorName: finalCheck.errorName,
       newTickLower,
       newTickUpper,
     });
     return;
   }
+  const finalArgs = buildFinalArgs(finalAmountOutMinimum);
   if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: finalArgs }))) {
     return;
   }
@@ -951,17 +986,24 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     ethPrice,
   );
 
-  const exitTopAmountOutMinimum = minAmountOutFromSpotPrice(swapIx, ethPrice, maxSlippageBps);
-  const rebalanceArgs = [
-    newTickLower,
-    newTickUpper,
-    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: exitTopAmountOutMinimum },
-    0n, // no reinjection — from-scratch rebuild, like initPosition()
-    0n,
-    0n,
-  ] as const;
+  const buildRebalanceArgs = (amountOutMinimum: bigint) =>
+    [
+      newTickLower,
+      newTickUpper,
+      { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum },
+      0n, // no reinjection — from-scratch rebuild, like initPosition()
+      0n,
+      0n,
+    ] as const;
 
-  if (!(await wouldSucceed(vaultAddress, "rebalance", rebalanceArgs))) {
+  const exitTopAmountOutMinimum = await minAmountOutForRebalanceSwap(
+    vaultAddress,
+    buildRebalanceArgs,
+    swapIx,
+    ethPrice,
+    maxSlippageBps,
+  );
+  if (exitTopAmountOutMinimum === null) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
@@ -969,6 +1011,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     });
     return;
   }
+  const rebalanceArgs = buildRebalanceArgs(exitTopAmountOutMinimum);
 
   if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: rebalanceArgs }))) {
     return;
