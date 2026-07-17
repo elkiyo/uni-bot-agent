@@ -3,7 +3,6 @@ import type { Address } from "viem";
 import type { ChainRuntime } from "./wallet";
 import { Store } from "./store";
 import { registerAgent } from "./unilab";
-import { vaultFactoryAbi } from "../contracts";
 
 const MAX_BLOCK_RANGE = 5_000n; // conservative chunk size for public RPC log queries
 
@@ -31,7 +30,7 @@ export async function discoverAndRegisterVaults(chain: ChainRuntime, factoryAddr
 
     const logs = await chain.publicClient.getContractEvents({
       address: factoryAddress,
-      abi: vaultFactoryAbi,
+      abi: chain.factoryAbi,
       eventName: "VaultCreated",
       fromBlock,
       toBlock,

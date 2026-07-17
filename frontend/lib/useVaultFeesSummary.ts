@@ -3,13 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { parseEventLogs, type Log } from "viem";
-import { rangeVaultAbi } from "./contracts";
 import { getLogsChunked } from "./getLogsChunked";
 import type { ChainDef } from "./chains";
 
 export interface VaultFeesSummary {
-  totalUsdt: bigint; // token0 fees paid to owner (LpFeesPaidToOwner.amount0 + FeesCollected.amount0)
-  totalWeth: bigint; // token1 fees paid to owner (LpFeesPaidToOwner.amount1 + FeesCollected.amount1)
+  totalUsdt: bigint; // stable-leg fees paid to owner (LpFeesPaidToOwner + FeesCollected)
+  totalWeth: bigint; // volatile-leg fees paid to owner
   payoutCount: number;
 }
 
@@ -39,7 +38,7 @@ export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: C
         fromBlock: chain.factoryDeployBlock,
         toBlock: "latest",
       });
-      const logs = parseEventLogs({ abi: rangeVaultAbi, logs: rawLogs as Log[] }).filter(
+      const logs = parseEventLogs({ abi: chain.vaultAbi, logs: rawLogs as Log[] }).filter(
         (l) => l.eventName === "LpFeesPaidToOwner" || l.eventName === "FeesCollected",
       );
 
@@ -47,8 +46,10 @@ export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: C
       let totalWeth = 0n;
       for (const log of logs) {
         const args = log.args as { amount0?: bigint; amount1?: bigint };
-        totalUsdt += args.amount0 ?? 0n;
-        totalWeth += args.amount1 ?? 0n;
+        // amount0/amount1 are Uniswap's real token0/token1 — route to
+        // stable/volatile based on this chain's actual order.
+        totalUsdt += (chain.stableIsToken0 ? args.amount0 : args.amount1) ?? 0n;
+        totalWeth += (chain.stableIsToken0 ? args.amount1 : args.amount0) ?? 0n;
       }
       return { totalUsdt, totalWeth, payoutCount: logs.length };
     },

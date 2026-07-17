@@ -1,5 +1,6 @@
 import { celo, arbitrum } from "viem/chains";
-import type { Chain } from "viem";
+import type { Abi, Chain } from "viem";
+import { rangeVaultAbi, vaultFactoryAbi, rangeVaultArbAbi, vaultFactoryArbAbi } from "./contracts";
 
 // Per-chain config — the single source of truth every page/hook/keeper file
 // should read from instead of hardcoding an address. Each chain's own
@@ -7,6 +8,10 @@ import type { Chain } from "viem";
 // token0 as "the pool's stablecoin leg" generically, never assuming USDT
 // specifically, so different chains can pair the volatile leg (WETH on both,
 // so far) against whatever stablecoin actually has the deepest pool there.
+function computeStableIsToken0(stableToken: `0x${string}`, volatileToken: `0x${string}`): boolean {
+  return BigInt(stableToken) < BigInt(volatileToken);
+}
+
 export interface ChainDef {
   id: number;
   viemChain: Chain;
@@ -26,6 +31,18 @@ export interface ChainDef {
   factoryAddress: `0x${string}` | "";
   platformConfigAddress: `0x${string}` | "";
   explorerBaseUrl: string;
+  // Uniswap V3 decides token0/token1 by raw address sort order, not by which
+  // one is the stablecoin — true on Celo (USDT < WETH) but false on Arbitrum
+  // (WETH < USDC). Every tick<->price conversion and every swap-direction
+  // calculation needs this to know which side of a pool's token0/token1 is
+  // actually the dollar leg. Computed below from the two addresses instead
+  // of hand-typed, so it can never silently drift out of sync with them.
+  // Confirmed in production 2026-07-17: code that assumed Celo's order
+  // everywhere produced a target range on the opposite side of the real
+  // price on Arbitrum, and passed token0/token1 out of order to
+  // VaultFactory.createVault(), which made positionManager.mint() resolve to
+  // the wrong pool address entirely — see RangeVault.sol's class docstring.
+  stableIsToken0: boolean;
   // Below this many native tokens, the admin panel warns the operator is low
   // on gas — chain-relative, not a universal constant: 1 CELO (~$0.5-1) is a
   // sane buffer on Celo, but 1 ETH (~$3000+) on Arbitrum would never
@@ -34,19 +51,30 @@ export interface ChainDef {
   // operator's real 0.0043 ETH on Arbitrum is plenty for many rebalance
   // cycles, but a flat "< 1" threshold flagged it as critically low.
   lowGasThreshold: number;
+  // Celo reads/writes against rangeVaultAbi/vaultFactoryAbi (RangeVault.sol/
+  // VaultFactory.sol, unmodified); Arbitrum reads/writes against
+  // rangeVaultArbAbi/vaultFactoryArbAbi (RangeVaultArb.sol/VaultFactoryArb.sol —
+  // a deliberately separate contract, never merged into the Celo original —
+  // see that file's class docstring). Every component should read the ABI off
+  // the chain it's actually targeting instead of importing rangeVaultAbi directly.
+  vaultAbi: Abi;
+  factoryAbi: Abi;
 }
 
 // Verified in PLAN.md — cross-checked against Celopedia, CoinGecko, DefiLlama, and
 // direct RPC calls before being trusted here. Keep in sync with agent/src/addresses.ts
 // and contracts/script/Deploy.s.sol.
+const CELO_STABLE = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e" as const;
+const CELO_VOLATILE = "0xD221812de1BD094f35587EE8E174B07B6167D9Af" as const;
+
 const CELO: ChainDef = {
   id: celo.id,
   viemChain: celo,
   name: "Celo",
   rpcUrl: process.env.CELO_RPC_URL ?? "https://forno.celo.org",
-  stableToken: "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+  stableToken: CELO_STABLE,
   stableSymbol: "USDT",
-  volatileToken: "0xD221812de1BD094f35587EE8E174B07B6167D9Af",
+  volatileToken: CELO_VOLATILE,
   volatileSymbol: "WETH",
   pool: "0x6F42B9D2085a0dEb711C00A460a98B9863ae4897", // USDT/WETH 0.3%
   feeTier: 3000,
@@ -65,20 +93,26 @@ const CELO: ChainDef = {
   platformConfigAddress: (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS_CELO || "") as `0x${string}` | "",
   explorerBaseUrl: "https://celoscan.io",
   lowGasThreshold: 1,
+  stableIsToken0: computeStableIsToken0(CELO_STABLE, CELO_VOLATILE),
+  vaultAbi: rangeVaultAbi,
+  factoryAbi: vaultFactoryAbi,
 };
 
 // Verified 2026-07-17: bytecode-checked directly on-chain (not doc-scraped),
 // and USDC/WETH's 0.05% pool confirmed as the pair's deepest liquidity on
 // Arbitrum (~2.70e18, ~5x the next-deepest tier, ~190x Celo's own USDT/WETH
 // 0.3% pool) — USDT is a secondary pair here, unlike on Celo.
+const ARBITRUM_STABLE = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" as const;
+const ARBITRUM_VOLATILE = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1" as const;
+
 const ARBITRUM: ChainDef = {
   id: arbitrum.id,
   viemChain: arbitrum,
   name: "Arbitrum",
   rpcUrl: process.env.ARBITRUM_RPC_URL ?? "https://arb1.arbitrum.io/rpc",
-  stableToken: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+  stableToken: ARBITRUM_STABLE,
   stableSymbol: "USDC",
-  volatileToken: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  volatileToken: ARBITRUM_VOLATILE,
   volatileSymbol: "WETH",
   pool: "0xC6962004f452bE9203591991D15f6b388e09E8D0", // USDC/WETH 0.05%
   feeTier: 500,
@@ -98,6 +132,9 @@ const ARBITRUM: ChainDef = {
   // cycles at Arbitrum's real gas prices (~0.04 gwei observed 2026-07-17),
   // while still catching a genuinely empty wallet.
   lowGasThreshold: 0.005,
+  stableIsToken0: computeStableIsToken0(ARBITRUM_STABLE, ARBITRUM_VOLATILE),
+  vaultAbi: rangeVaultArbAbi,
+  factoryAbi: vaultFactoryArbAbi,
 };
 
 export const CHAINS: Record<number, ChainDef> = {

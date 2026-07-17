@@ -13,7 +13,7 @@ import {
 import { formatUnits, parseUnits, type Address } from "viem";
 import { Header } from "../components/Header";
 import { VolumeChart } from "./VolumeChart";
-import { platformConfigAbi, vaultFactoryAbi, rangeVaultAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
+import { platformConfigAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
 import { USDC } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
@@ -67,7 +67,7 @@ export default function Admin() {
         chainId: chain.id,
       },
       { address: chain.platformConfigAddress || undefined, abi: platformConfigAbi, functionName: "treasury", chainId: chain.id },
-      { address: chain.factoryAddress || undefined, abi: vaultFactoryAbi, functionName: "vaultCount", chainId: chain.id },
+      { address: chain.factoryAddress || undefined, abi: chain.factoryAbi, functionName: "vaultCount", chainId: chain.id },
     ],
     query: { enabled: Boolean(chain.platformConfigAddress && chain.factoryAddress) },
   });
@@ -82,7 +82,7 @@ export default function Admin() {
   const { data: allVaultsData } = useReadContracts({
     contracts: Array.from({ length: Number(vaultCount ?? 0n) }, (_, i) => ({
       address: chain.factoryAddress || undefined,
-      abi: vaultFactoryAbi,
+      abi: chain.factoryAbi,
       functionName: "allVaults",
       args: [BigInt(i)],
       chainId: chain.id,
@@ -119,34 +119,37 @@ export default function Admin() {
           const [rebalancedLogs, lpFeeLogs, performanceFeeLogs] = await Promise.all([
             publicClient!.getContractEvents({
               address: vault,
-              abi: rangeVaultAbi,
+              abi: chain.vaultAbi,
               eventName: "Rebalanced",
               fromBlock,
               toBlock,
             }),
             publicClient!.getContractEvents({
               address: vault,
-              abi: rangeVaultAbi,
+              abi: chain.vaultAbi,
               eventName: "LpFeesPaidToOwner",
               fromBlock,
               toBlock,
             }),
             publicClient!.getContractEvents({
               address: vault,
-              abi: rangeVaultAbi,
+              abi: chain.vaultAbi,
               eventName: "PerformanceFeeCollected",
               fromBlock,
               toBlock,
             }),
           ]);
           totalRebalances += rebalancedLogs.length;
+          // amount0/amount1 are Uniswap's real token0/token1 — route into the
+          // stable/volatile accumulators based on this chain's actual order
+          // (USDT<WETH on Celo, but WETH<USDC on Arbitrum).
           for (const log of lpFeeLogs as unknown as Array<{ args: { amount0: bigint; amount1: bigint } }>) {
-            totalLpFees0Raw += log.args.amount0;
-            totalLpFees1Raw += log.args.amount1;
+            totalLpFees0Raw += chain.stableIsToken0 ? log.args.amount0 : log.args.amount1;
+            totalLpFees1Raw += chain.stableIsToken0 ? log.args.amount1 : log.args.amount0;
           }
           for (const log of performanceFeeLogs as unknown as Array<{ args: { amount0: bigint; amount1: bigint } }>) {
-            totalPerformanceFee0Raw += log.args.amount0;
-            totalPerformanceFee1Raw += log.args.amount1;
+            totalPerformanceFee0Raw += chain.stableIsToken0 ? log.args.amount0 : log.args.amount1;
+            totalPerformanceFee1Raw += chain.stableIsToken0 ? log.args.amount1 : log.args.amount0;
           }
           fromBlock = toBlock + 1n;
         }
@@ -179,16 +182,16 @@ export default function Admin() {
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
-  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
+  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
 
   const { data: vaultLedgers } = useReadContracts({
     contracts: vaultAddresses.flatMap(
       (v) =>
         [
-          { address: v, abi: rangeVaultAbi, functionName: "closed", chainId: chain.id },
-          { address: v, abi: rangeVaultAbi, functionName: "positionTokenId", chainId: chain.id },
-          { address: v, abi: rangeVaultAbi, functionName: "investableUsdt", chainId: chain.id },
-          { address: v, abi: rangeVaultAbi, functionName: "reserveBalance", chainId: chain.id },
+          { address: v, abi: chain.vaultAbi, functionName: "closed", chainId: chain.id },
+          { address: v, abi: chain.vaultAbi, functionName: "positionTokenId", chainId: chain.id },
+          { address: v, abi: chain.vaultAbi, functionName: "investableUsdt", chainId: chain.id },
+          { address: v, abi: chain.vaultAbi, functionName: "reserveBalance", chainId: chain.id },
         ] as const,
     ),
     query: { enabled: vaultAddresses.length > 0, refetchInterval: 30_000 },
@@ -239,7 +242,9 @@ export default function Admin() {
       if (!pos) return;
       const [, , , , , tickLower, tickUpper, liquidity] = pos;
       const { amount0Raw, amount1Raw } = estimatePositionAmounts({ liquidity, currentTick, tickLower, tickUpper });
-      totalPositionValueUsd += amount0Raw * 1e-6 + amount1Raw * 1e-18 * ethPrice;
+      const stableRaw = chain.stableIsToken0 ? amount0Raw : amount1Raw;
+      const volatileRaw = chain.stableIsToken0 ? amount1Raw : amount0Raw;
+      totalPositionValueUsd += stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
       if (currentTick < tickLower || currentTick > tickUpper) vaultsOutOfRange += 1;
     });
   }

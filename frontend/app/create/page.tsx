@@ -6,10 +6,10 @@ import { useAccount, usePublicClient, useReadContract, useWriteContract, useSwit
 import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import { Header } from "../components/Header";
 import { AlertModal } from "../components/AlertModal";
-import { vaultFactoryAbi, rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
+import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { usePoolMetrics } from "@/lib/usePoolMetrics";
-import { useSelectedChain } from "@/lib/useSelectedChain";
+import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
 
 type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
 
@@ -64,7 +64,8 @@ function signatureStepsFor(
 export default function CreateVault() {
   const router = useRouter();
   const { address, isConnected, chainId: walletChainId } = useAccount();
-  const { selectedChain: chain } = useSelectedChain();
+  const { selectedChain: chain, setSelectedChainId } = useSelectedChain();
+  const availableChains = useAvailableChains();
   const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { switchChainAsync } = useSwitchChain();
@@ -114,7 +115,7 @@ export default function CreateVault() {
   const [capAlert, setCapAlert] = useState<string | null>(null);
 
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
-  const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
+  const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
 
   // All fields start empty — nothing is submitted until the user actually
   // types a value. The numbers shown below (as `placeholder`, not `value`)
@@ -180,9 +181,9 @@ export default function CreateVault() {
     }
 
     // The viewing chain (chain, from useSelectedChain) and the wallet's
-    // actual connected chain are independent — see Header.tsx's
-    // NetworkSelector. Every write in this flow targets `chain`, so the
-    // wallet has to actually be on it before the first signature.
+    // actual connected chain are independent — see the network picker above.
+    // Every write in this flow targets `chain`, so the wallet has to
+    // actually be on it before the first signature.
     if (walletChainId !== chain.id) {
       try {
         await switchChainAsync({ chainId: chain.id });
@@ -198,7 +199,7 @@ export default function CreateVault() {
       setStep(currentPhase);
       const createHash = await writeContractAsync({
         address: chain.factoryAddress || "0x0000000000000000000000000000000000000000",
-        abi: vaultFactoryAbi,
+        abi: chain.factoryAbi,
         functionName: "createVault",
         args: [selectedPool, chain.stableToken, chain.volatileToken, selectedFee],
         chainId: chain.id,
@@ -208,7 +209,7 @@ export default function CreateVault() {
       let vaultAddress: `0x${string}` | undefined;
       for (const log of createReceipt.logs) {
         try {
-          const decoded = decodeEventLog({ abi: vaultFactoryAbi, data: log.data, topics: log.topics });
+          const decoded = decodeEventLog({ abi: chain.factoryAbi, data: log.data, topics: log.topics });
           if (decoded.eventName === "VaultCreated") {
             vaultAddress = (decoded.args as unknown as { vault: `0x${string}` }).vault;
             break;
@@ -224,11 +225,12 @@ export default function CreateVault() {
       if (!(lowerPrice > 0) || !(upperPrice > lowerPrice)) {
         throw new Error("El precio máximo debe ser mayor al mínimo, ambos positivos");
       }
-      // In this pool a HIGHER USD price of ETH maps to a LOWER tick (token1/token0
-      // inversion), so converting the price bounds yields swapped ticks — sort them,
-      // Uniswap requires tickLower < tickUpper or every mint reverts.
-      const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice), Number(tickSpacing));
-      const tickB = alignToTickSpacing(tickFromEthPrice(upperPrice), Number(tickSpacing));
+      // Whether a HIGHER USD price of ETH maps to a lower or higher tick depends
+      // on chain.stableIsToken0 (Celo vs Arbitrum sort WETH/stable oppositely),
+      // so converting the two price bounds can yield ticks in either order —
+      // sort them, Uniswap requires tickLower < tickUpper or every mint reverts.
+      const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice, chain.stableIsToken0), Number(tickSpacing));
+      const tickB = alignToTickSpacing(tickFromEthPrice(upperPrice, chain.stableIsToken0), Number(tickSpacing));
       const targetTickLower = Math.min(tickA, tickB);
       const targetTickUpper = Math.max(tickA, tickB);
 
@@ -261,7 +263,7 @@ export default function CreateVault() {
       setStep(currentPhase);
       const configureHash = await writeContractAsync({
         address: vaultAddress,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "configureTarget",
         args: [
           parseUnits(investAmount, 6),
@@ -303,7 +305,7 @@ export default function CreateVault() {
       const maxRangeDeviationBps = maxRangeDeviationTicks ? BigInt(maxRangeDeviationTicks) : 5_000n;
       const riskHash = await writeContractAsync({
         address: vaultAddress,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "setRiskParams",
         args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
         chainId: chain.id,
@@ -314,7 +316,7 @@ export default function CreateVault() {
       setStep(currentPhase);
       const depositHash = await writeContractAsync({
         address: vaultAddress,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "deposit",
         args: [reserve, investable],
         chainId: chain.id,
@@ -342,9 +344,6 @@ export default function CreateVault() {
       <main className="section flex-1 pb-24 pt-32">
         <div className="flex flex-wrap items-center gap-3">
           <span className="eyebrow">Nuevo vault</span>
-          <span className="eyebrow !border-accent/40 !text-accent">
-            Se va a crear en {chain.name}
-          </span>
         </div>
         <h1
           className="mt-5 text-balance text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
@@ -356,9 +355,26 @@ export default function CreateVault() {
           Par {chain.stableSymbol}/{chain.volatileSymbol} en {chain.name}. El agente arma la posición inicial con
           estos parámetros y la rebalancea automáticamente — vos mantenés el control y la custodia.
         </p>
-        <p className="mt-1 text-xs text-faint">
-          ¿Chain equivocada? Cambiala arriba, en el selector de red del header, antes de continuar.
-        </p>
+
+        {availableChains.length > 1 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Red:</span>
+            {availableChains.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setSelectedChainId(c.id)}
+                className={
+                  c.id === chain.id
+                    ? "rounded-full border border-accent bg-accent/[0.08] px-3 py-1.5 text-sm font-medium text-accent"
+                    : "rounded-full border border-hairline px-3 py-1.5 text-sm text-white/70 transition-colors hover:border-accent/50 hover:text-white"
+                }
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {isConnected && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">

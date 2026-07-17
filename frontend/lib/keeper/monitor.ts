@@ -77,17 +77,24 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
     functionName: "slot0",
   })) as readonly [bigint, number, number, number, number, number, boolean];
 
-  // In this pool a HIGHER tick means a LOWER USD price (token1/token0
-  // inversion — see rebalancer.ts's own note on this), so `tickLower` (the
-  // numerically smaller tick) is actually the USD-price CEILING and
-  // `tickUpper` is the USD-price FLOOR. The two out-of-range directions need
-  // different rebuild rules (rebalancer.ts's Case 2 vs Case 3), so they're
-  // reported separately instead of collapsed into one "out-of-range" reason.
-  if (currentTick < tickLower) {
-    return { kind: "rebalance", reason: "out-of-range-top" }; // price broke above the ceiling
+  // Whether a HIGHER tick means a LOWER or HIGHER USD price depends on which
+  // real token0/token1 slot the stablecoin landed in (stableIsToken0 — see
+  // rebalancer.ts's own note on this), so comparing raw ticks directly would
+  // need a direction branch. Comparing real USD prices instead sidesteps
+  // that entirely — self-consistent regardless of chain. The two
+  // out-of-range directions need different rebuild rules (rebalancer.ts's
+  // Case 2 vs Case 3), so they're reported separately instead of collapsed
+  // into one "out-of-range" reason.
+  const ethPriceNow = ethPriceFromTick(currentTick, chain.stableIsToken0);
+  const priceAtTickLower = ethPriceFromTick(tickLower, chain.stableIsToken0);
+  const priceAtTickUpper = ethPriceFromTick(tickUpper, chain.stableIsToken0);
+  const priceFloor = Math.min(priceAtTickLower, priceAtTickUpper);
+  const priceCeiling = Math.max(priceAtTickLower, priceAtTickUpper);
+  if (ethPriceNow > priceCeiling) {
+    return { kind: "rebalance", reason: "out-of-range-top" };
   }
-  if (currentTick > tickUpper) {
-    return { kind: "rebalance", reason: "out-of-range-bottom" }; // price broke below the floor
+  if (ethPriceNow < priceFloor) {
+    return { kind: "rebalance", reason: "out-of-range-bottom" };
   }
 
   // In range and nothing else to do this cycle — but check for stranded
@@ -109,8 +116,7 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
       args: [vaultAddress],
     }) as Promise<bigint>,
   ]);
-  const ethPrice = ethPriceFromTick(currentTick);
-  const idleUsdValue = Number(idleUsdt) * 1e-6 + Number(idleWeth) * 1e-18 * ethPrice;
+  const idleUsdValue = Number(idleUsdt) * 1e-6 + Number(idleWeth) * 1e-18 * ethPriceNow;
   if (idleUsdValue >= DUST_SWEEP_MIN_USD) return { kind: "sweep" };
 
   return { kind: "none" };

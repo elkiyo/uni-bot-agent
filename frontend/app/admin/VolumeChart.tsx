@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient } from "wagmi";
-import { rangeVaultAbi, positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
+import { positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import type { ChainDef } from "@/lib/chains";
@@ -63,14 +63,14 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
           const [initLogs, rebalLogs] = await Promise.all([
             publicClient!.getContractEvents({
               address: vault,
-              abi: rangeVaultAbi,
+              abi: chain.vaultAbi,
               eventName: "PositionInitialized",
               fromBlock,
               toBlock,
             }),
             publicClient!.getContractEvents({
               address: vault,
-              abi: rangeVaultAbi,
+              abi: chain.vaultAbi,
               eventName: "Rebalanced",
               fromBlock,
               toBlock,
@@ -107,14 +107,16 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
             ]);
             const [, , , , , tickLower, tickUpper, liquidity] = position;
             const currentTick = Number(slot0[1]);
-            const ethPrice = ethPriceFromTick(currentTick);
+            const ethPrice = ethPriceFromTick(currentTick, chain.stableIsToken0);
             const { amount0Raw, amount1Raw } = estimatePositionAmounts({
               liquidity,
               currentTick,
               tickLower,
               tickUpper,
             });
-            const usd = amount0Raw * 1e-6 + amount1Raw * 1e-18 * ethPrice;
+            const stableRaw = chain.stableIsToken0 ? amount0Raw : amount1Raw;
+            const volatileRaw = chain.stableIsToken0 ? amount1Raw : amount0Raw;
+            const usd = stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
             return { timestamp: Number(block.timestamp), usd };
           } catch {
             return null; // RPC couldn't serve this historical block — skip, don't fail the chart

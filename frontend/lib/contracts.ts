@@ -1,12 +1,23 @@
 import type { Abi } from "viem";
 import RangeVaultAbi from "./abi/RangeVault.json";
 import VaultFactoryAbi from "./abi/VaultFactory.json";
+import RangeVaultArbAbi from "./abi/RangeVaultArb.json";
+import VaultFactoryArbAbi from "./abi/VaultFactoryArb.json";
 import PlatformConfigAbi from "./abi/PlatformConfig.json";
 
 // Cast through Abi (rather than leaving the plain JSON-inferred type) so wagmi's
 // contract config types — which expect the real viem Abi shape — accept these.
+//
+// rangeVaultAbi/vaultFactoryAbi are Celo's contracts — RangeVault.sol/VaultFactory.sol,
+// completely unmodified by the Arbitrum work below. rangeVaultArbAbi/vaultFactoryArbAbi
+// are Arbitrum's own fork (RangeVaultArb.sol/VaultFactoryArb.sol — see that file's class
+// docstring for why it's a separate contract). Deliberately two distinct ABI pairs, not
+// one shared "superset" — every chain-specific component reads the right one off
+// `chain.vaultAbi`/`chain.factoryAbi` (see chains.ts) instead of importing these directly.
 export const rangeVaultAbi = RangeVaultAbi as Abi;
 export const vaultFactoryAbi = VaultFactoryAbi as Abi;
+export const rangeVaultArbAbi = RangeVaultArbAbi as Abi;
+export const vaultFactoryArbAbi = VaultFactoryArbAbi as Abi;
 export const platformConfigAbi = PlatformConfigAbi as Abi;
 
 export const uniswapV3PoolAbi = [

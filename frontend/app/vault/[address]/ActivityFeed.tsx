@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { formatUnits, parseEventLogs, type Log } from "viem";
-import { rangeVaultAbi } from "@/lib/contracts";
 import { getLogsChunked } from "@/lib/getLogsChunked";
 import type { ChainDef } from "@/lib/chains";
 
@@ -36,7 +35,7 @@ export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain
         fromBlock: chain.factoryDeployBlock,
         toBlock: "latest",
       });
-      const parsed = parseEventLogs({ abi: rangeVaultAbi, logs: logs as Log[] });
+      const parsed = parseEventLogs({ abi: chain.vaultAbi, logs: logs as Log[] });
 
       const feed: FeedItem[] = [];
       for (const log of parsed) {

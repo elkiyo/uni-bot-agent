@@ -5,9 +5,19 @@ import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } fro
 import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeCoverage, targetRawRatio } from "./swapMath";
+
+/** Converts the business-level "sell stable / sell volatile" direction into
+ * the on-chain SwapInstruction.token0ToToken1 the contract actually needs —
+ * the only place this file talks about real token0/token1 at all. Every
+ * sizing function above this line works in stable/volatile terms; only the
+ * final SwapInstruction literal, right before a tx is sent, needs the real
+ * slot. See RangeVault.sol's class docstring and swapMath.ts's own docstring. */
+function toToken0ToToken1(sellStable: boolean, chain: ChainRuntime): boolean {
+  return sellStable === chain.stableIsToken0;
+}
 import { Store } from "./store";
 import { logEvent, logUniLabCall } from "./logger";
-import { rangeVaultAbi, erc20Abi, swapRouter02Abi, uniswapV3FactoryAbi } from "../contracts";
+import { erc20Abi, swapRouter02Abi, uniswapV3FactoryAbi } from "../contracts";
 
 async function currentTick(chain: ChainRuntime): Promise<number> {
   const [, tick] = (await chain.publicClient.readContract({
@@ -128,7 +138,7 @@ async function hasEnoughOperatorGas(
     chain.publicClient.getBalance({ address: operatorAccount.address }),
     chain.publicClient.estimateContractGas({
       address: vaultAddress,
-      abi: rangeVaultAbi as Abi,
+      abi: chain.vaultAbi as Abi,
       functionName: mainCall.functionName,
       args: mainCall.args as unknown[],
       account: operatorAccount.address,
@@ -181,7 +191,7 @@ async function simulateAttempt(
   try {
     await chain.publicClient.simulateContract({
       address: vaultAddress,
-      abi: rangeVaultAbi as Abi,
+      abi: chain.vaultAbi as Abi,
       functionName,
       args: args as unknown[],
       account: operatorAccount?.address,
@@ -237,7 +247,7 @@ export async function maybeSweepIdleDust(chain: ChainRuntime, vaultAddress: Addr
       >,
     ]);
     const [, , , , , tickLower, tickUpper] = position;
-    const ethPrice = ethPriceFromTick(tick);
+    const ethPrice = ethPriceFromTick(tick, chain.stableIsToken0);
 
     const idleUsdValue = Number(idleUsdt) * 1e-6 + Number(idleWeth) * 1e-18 * ethPrice;
     if (idleUsdValue < DUST_SWEEP_MIN_USD) return;
@@ -246,15 +256,16 @@ export async function maybeSweepIdleDust(chain: ChainRuntime, vaultAddress: Addr
       currentTick: tick,
       newTickLower: tickLower,
       newTickUpper: tickUpper,
-      availableToken0Raw: idleUsdt,
-      availableToken1Raw: idleWeth,
+      availableStableRaw: idleUsdt,
+      availableVolatileRaw: idleWeth,
       ethPriceUsd: ethPrice,
+      stableIsToken0: chain.stableIsToken0,
     });
     if (swap.amountIn === 0n) return;
 
     const swapFee = await pickDeepestSwapFee(chain);
     const amountOutMinimum = await minAmountOutForSwap(chain, vaultAddress, swap, maxSlippageBps, swapFee);
-    const swapIx = { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum, fee: swapFee };
+    const swapIx = { token0ToToken1: toToken0ToToken1(swap.sellStable, chain), amountIn: swap.amountIn, amountOutMinimum, fee: swapFee };
     const args = [swapIx, 0n, 0n] as const;
 
     const check = await simulateAttempt(chain, vaultAddress, "sweepIdleDust", args);
@@ -272,7 +283,7 @@ export async function maybeSweepIdleDust(chain: ChainRuntime, vaultAddress: Addr
       return;
     }
 
-    const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "sweepIdleDust", args);
+    const hash = await sendTaggedTx(chain, vaultAddress, chain.vaultAbi as Abi, "sweepIdleDust", args);
     await chain.publicClient.waitForTransactionReceipt({ hash });
     logEvent({ level: "info", vault: vaultAddress, msg: "swept idle dust", idleUsdValue, txHash: hash });
   } catch (err) {
@@ -324,12 +335,12 @@ async function quoteExactInputSingle(
 async function minAmountOutForSwap(
   chain: ChainRuntime,
   vaultAddress: Address,
-  swap: { token0ToToken1: boolean; amountIn: bigint },
+  swap: { sellStable: boolean; amountIn: bigint },
   maxSlippageBps: bigint,
   fee: number,
 ): Promise<bigint> {
   if (swap.amountIn === 0n) return 0n;
-  const [tokenIn, tokenOut] = swap.token0ToToken1 ? [chain.stableToken, chain.volatileToken] : [chain.volatileToken, chain.stableToken];
+  const [tokenIn, tokenOut] = swap.sellStable ? [chain.stableToken, chain.volatileToken] : [chain.volatileToken, chain.stableToken];
   const quotedOut = await quoteExactInputSingle(chain, vaultAddress, tokenIn, tokenOut, swap.amountIn, fee);
   return (quotedOut * (10_000n - maxSlippageBps)) / 10_000n;
 }
@@ -367,7 +378,7 @@ async function minAmountOutForRebalanceSwap(
   chain: ChainRuntime,
   vaultAddress: Address,
   buildArgs: (amountOutMinimum: bigint) => readonly unknown[],
-  swap: { token0ToToken1: boolean; amountIn: bigint },
+  swap: { sellStable: boolean; amountIn: bigint },
   ethPriceUsd: number,
   maxSlippageBps: bigint,
 ): Promise<bigint | null> {
@@ -376,7 +387,7 @@ async function minAmountOutForRebalanceSwap(
 
   // Generous upper bound for the search range — pre-fee, pre-impact spot
   // conversion, always >= the real achievable output.
-  const spotEstimate = swap.token0ToToken1
+  const spotEstimate = swap.sellStable
     ? BigInt(Math.ceil(((Number(swap.amountIn) * 1e-6) / ethPriceUsd) * 1e18))
     : BigInt(Math.ceil(Number(swap.amountIn) * 1e-18 * ethPriceUsd * 1e6));
 
@@ -440,7 +451,7 @@ async function capSwapWithinRange(
     }
     const execRate = Number(amountOut) / Number(candidate); // this trade's own realized volatile-raw-per-stable-raw rate
     if (!Number.isFinite(execRate) || execRate <= 0) return candidate;
-    const estimatedTick = tickFromEthPrice(1 / (execRate * 1e-12));
+    const estimatedTick = tickFromEthPrice(1 / (execRate * 1e-12), chain.stableIsToken0);
 
     if (estimatedTick >= lo + SAFETY_MARGIN_TICKS && estimatedTick <= hi - SAFETY_MARGIN_TICKS) {
       return candidate; // safely inside the range, done
@@ -489,12 +500,12 @@ async function sizeInitialSwapAccurate(
     currentTick: number;
     tickLower: number;
     tickUpper: number;
-    availableToken0Raw: bigint;
+    availableStableRaw: bigint;
     ethPriceUsd: number;
   },
   fee: number,
-): Promise<{ token0ToToken1: true; amountIn: bigint }> {
-  const guess = sizeInitialSwap(input);
+): Promise<{ sellStable: true; amountIn: bigint }> {
+  const guess = sizeInitialSwap({ ...input, stableIsToken0: chain.stableIsToken0 });
   if (guess.amountIn === 0n) return guess;
 
   // Only the position's OWN pool (chain.feeTier) is affected by this swap
@@ -505,7 +516,7 @@ async function sizeInitialSwapAccurate(
   // mint never happens in.
   const sameFeeAsPosition = fee === chain.feeTier;
 
-  const investable = Number(input.availableToken0Raw);
+  const investable = Number(input.availableStableRaw);
   let candidate = guess.amountIn;
 
   try {
@@ -519,7 +530,7 @@ async function sizeInitialSwapAccurate(
       // same estimation capSwapWithinRange uses below — so the ratio we
       // solve against reflects the post-swap state, not the pre-swap one.
       // Skipped when swapping through a different pool (see above).
-      const ratioTick = sameFeeAsPosition ? tickFromEthPrice(1 / (execRate * 1e-12)) : input.currentTick;
+      const ratioTick = sameFeeAsPosition ? tickFromEthPrice(1 / (execRate * 1e-12), chain.stableIsToken0) : input.currentTick;
       const rawRatio = targetRawRatio({ currentTick: ratioTick, tickLower: input.tickLower, tickUpper: input.tickUpper });
       if (!Number.isFinite(rawRatio) || rawRatio <= 0) break;
 
@@ -538,7 +549,7 @@ async function sizeInitialSwapAccurate(
   }
 
   const cappedAmountIn = await capSwapWithinRange(chain, vaultAddress, candidate, input.tickLower, input.tickUpper, fee);
-  return { token0ToToken1: true, amountIn: cappedAmountIn };
+  return { sellStable: true, amountIn: cappedAmountIn };
 }
 
 export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address, store: Store): Promise<void> {
@@ -560,7 +571,7 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
   ]);
 
   const tick = await currentTick(chain);
-  const ethPrice = ethPriceFromTick(tick);
+  const ethPrice = ethPriceFromTick(tick, chain.stableIsToken0);
 
   // Sized locally, corrected against a real Uniswap Quoter call for the
   // swap's own price impact (see sizeInitialSwapAccurate) — the standard
@@ -582,7 +593,7 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
       currentTick: tick,
       tickLower: targetTickLower,
       tickUpper: targetTickUpper,
-      availableToken0Raw: investableUsdt,
+      availableStableRaw: investableUsdt,
       ethPriceUsd: ethPrice,
     },
     swapFee,
@@ -590,7 +601,7 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
 
   const initAmountOutMinimum = await minAmountOutForSwap(chain, vaultAddress, swapIx, maxSlippageBps, swapFee);
   const initArgs = [
-    { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: initAmountOutMinimum, fee: swapFee },
+    { token0ToToken1: toToken0ToToken1(swapIx.sellStable, chain), amountIn: swapIx.amountIn, amountOutMinimum: initAmountOutMinimum, fee: swapFee },
     0n,
     0n,
   ] as const;
@@ -608,7 +619,7 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
     return;
   }
 
-  const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "initPosition", initArgs);
+  const hash = await sendTaggedTx(chain, vaultAddress, chain.vaultAbi as Abi, "initPosition", initArgs);
   await chain.publicClient.waitForTransactionReceipt({ hash });
 
   await store.upsertVault({ ...record, positionInitialized: true });
@@ -641,7 +652,7 @@ async function getCumulativeInvestmentUsd(chain: ChainRuntime, vaultAddress: Add
     logs.push(...(await chain.publicClient.getLogs({ address: vaultAddress, fromBlock: from, toBlock: to })));
     from = to + 1n;
   }
-  const events = parseEventLogs({ abi: rangeVaultAbi, logs });
+  const events = parseEventLogs({ abi: chain.vaultAbi, logs });
 
   let originalInvestmentRaw: bigint | undefined;
   let totalReinjectedRaw = 0n;
@@ -730,13 +741,17 @@ async function runRebalanceViaUniLab(
   ]);
 
   const [, , , , , posTickLower, posTickUpper, liquidity] = position;
-  const ethPrice = ethPriceFromTick(tick);
+  const ethPrice = ethPriceFromTick(tick, chain.stableIsToken0);
 
-  // IMPORTANT: in this pool a HIGHER tick means a LOWER USD price (token1/
-  // token0 inversion) — so the position's numerically-lower tick
-  // (posTickLower) is actually the USD-price CEILING, and posTickUpper is
-  // the USD-price FLOOR.
-  const floorTick = Math.max(posTickLower, posTickUpper); // higher tick = lower USD price
+  // IMPORTANT: whether a HIGHER tick means a LOWER or HIGHER USD price
+  // depends on which real token0/token1 slot the stablecoin landed in —
+  // true stableIsToken0 (Celo, USDT<WETH) means higher tick = lower price;
+  // false (Arbitrum, WETH<USDC) means the opposite. Uniswap always stores
+  // posTickLower < posTickUpper numerically, so the USD-price floor is
+  // posTickUpper on Celo but posTickLower on Arbitrum. Confirmed in
+  // production 2026-07-17: code that assumed Celo's direction unconditionally
+  // would have pinned D1 to the wrong edge of an Arbitrum position entirely.
+  const floorTick = chain.stableIsToken0 ? Math.max(posTickLower, posTickUpper) : Math.min(posTickLower, posTickUpper);
 
   // Pin D1 to the existing floor only when the position is still genuinely
   // in range — a periodic cycle firing at the same moment the position has
@@ -753,7 +768,7 @@ async function runRebalanceViaUniLab(
   // from-scratch floor (RangeVault.sol) — 500 == 5%, same shape as
   // maxSlippageBps/maxRangeDeviationBps elsewhere in this file.
   const newLowerPrice = stillInRangeForPeriodicPin
-    ? ethPriceFromTick(floorTick)
+    ? ethPriceFromTick(floorTick, chain.stableIsToken0)
     : ethPrice * (1 - Number(recenterMarginBps) / 10_000); // D1
   // Set below, from uni-lab's real answer — there is no local fallback for
   // the real mint (explicit product decision, 2026-07-16): if uni-lab can't
@@ -769,7 +784,11 @@ async function runRebalanceViaUniLab(
     tickLower: posTickLower,
     tickUpper: posTickUpper,
   });
-  const positionValueUsd = closedAmount0Raw * 1e-6 + closedAmount1Raw * 1e-18 * ethPrice;
+  // amount0Raw/amount1Raw are Uniswap's real token0/token1 — route to
+  // stable/volatile based on this chain's actual order.
+  const closedStableRaw = chain.stableIsToken0 ? closedAmount0Raw : closedAmount1Raw;
+  const closedVolatileRaw = chain.stableIsToken0 ? closedAmount1Raw : closedAmount0Raw;
+  const positionValueUsd = closedStableRaw * 1e-6 + closedVolatileRaw * 1e-18 * ethPrice;
 
   // Reinjection this cycle: only when recovering from a genuine
   // out-of-range-bottom break — a periodic cycle (whether still in range, or
@@ -799,8 +818,8 @@ async function runRebalanceViaUniLab(
   // skip modeling here — the swap only needs to get the token0/token1 RATIO
   // right, not the exact wei amount, since Uniswap's mint() only uses what
   // the range needs.
-  const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + reinjectAmount + idleInvestableUsdt;
-  const availableToken1Raw = BigInt(Math.floor(closedAmount1Raw)) + idleWeth;
+  const availableStableRaw = BigInt(Math.floor(closedStableRaw)) + reinjectAmount + idleInvestableUsdt;
+  const availableVolatileRaw = BigInt(Math.floor(closedVolatileRaw)) + idleWeth;
 
   // Real swap sizing helper, reused for the actual mint below once uni-lab's
   // range is known — no probe/guessed range fed through this anymore (see
@@ -810,9 +829,10 @@ async function runRebalanceViaUniLab(
       currentTick: tick,
       newTickLower: tickLower,
       newTickUpper: tickUpper,
-      availableToken0Raw,
-      availableToken1Raw,
+      availableStableRaw,
+      availableVolatileRaw,
       ethPriceUsd: ethPrice,
+      stableIsToken0: chain.stableIsToken0,
     });
 
   // Free, real-data re-check of the gates that DON'T depend on the new range
@@ -930,8 +950,8 @@ async function runRebalanceViaUniLab(
 
   // Higher USD price of ETH = lower tick in this pool, so the converted bounds
   // come out swapped — sort them, Uniswap requires tickLower < tickUpper.
-  const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
-  const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
+  const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice, chain.stableIsToken0), spacing);
+  const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice, chain.stableIsToken0), spacing);
   const newTickLower = Math.min(tickA, tickB);
   const newTickUpper = Math.max(tickA, tickB);
 
@@ -945,7 +965,7 @@ async function runRebalanceViaUniLab(
   const rebalanceFee = await currentRebalanceFee(chain, platformConfig);
   const finalSwap = ensureFeeCoverage(
     buildSwapIx(newTickLower, newTickUpper),
-    availableToken0Raw,
+    availableStableRaw,
     rebalanceFee,
     ethPrice,
   );
@@ -959,7 +979,7 @@ async function runRebalanceViaUniLab(
     [
       newTickLower,
       newTickUpper,
-      { token0ToToken1: finalSwap.token0ToToken1, amountIn: finalSwap.amountIn, amountOutMinimum, fee: swapFee },
+      { token0ToToken1: toToken0ToToken1(finalSwap.sellStable, chain), amountIn: finalSwap.amountIn, amountOutMinimum, fee: swapFee },
       reinjectAmount,
       0n,
       0n,
@@ -992,7 +1012,7 @@ async function runRebalanceViaUniLab(
     return;
   }
 
-  const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "rebalance", finalArgs);
+  const hash = await sendTaggedTx(chain, vaultAddress, chain.vaultAbi as Abi, "rebalance", finalArgs);
   await chain.publicClient.waitForTransactionReceipt({ hash });
 
   logEvent({
@@ -1057,15 +1077,15 @@ async function runRebalanceExitTop(chain: ChainRuntime, vaultAddress: Address): 
   ]);
 
   const [, , , , , posTickLower, posTickUpper, liquidity] = position;
-  const ethPrice = ethPriceFromTick(tick);
+  const ethPrice = ethPriceFromTick(tick, chain.stableIsToken0);
 
   const newLowerPrice = ethPrice * (1 - Number(recenterMarginBps) / 10_000);
   const newUpperPrice = ethPrice * (1 + Number(exitTopCeilingMarginBps) / 10_000);
 
-  // Higher USD price of ETH = lower tick in this pool, so the converted
-  // bounds come out swapped — sort them, Uniswap requires tickLower < tickUpper.
-  const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice), spacing);
-  const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice), spacing);
+  // Price bounds -> ticks can land in either numeric order depending on
+  // stableIsToken0 — sort them, Uniswap requires tickLower < tickUpper.
+  const tickA = alignToTickSpacing(tickFromEthPrice(newLowerPrice, chain.stableIsToken0), spacing);
+  const tickB = alignToTickSpacing(tickFromEthPrice(newUpperPrice, chain.stableIsToken0), spacing);
   const newTickLower = Math.min(tickA, tickB);
   const newTickUpper = Math.max(tickA, tickB);
 
@@ -1075,23 +1095,28 @@ async function runRebalanceExitTop(chain: ChainRuntime, vaultAddress: Address): 
     tickLower: posTickLower,
     tickUpper: posTickUpper,
   });
+  // amount0Raw/amount1Raw are Uniswap's real token0/token1 — route to
+  // stable/volatile based on this chain's actual order.
+  const closedStableRaw = chain.stableIsToken0 ? closedAmount0Raw : closedAmount1Raw;
+  const closedVolatileRaw = chain.stableIsToken0 ? closedAmount1Raw : closedAmount0Raw;
 
   // Same fix as runRebalanceViaUniLab: fold in any dust already idle from a
   // prior cycle, both sides, or it never enters the swap ratio and just
   // keeps growing. Then guarantee the (possibly zero) flat fee is payable —
   // see ensureFeeCoverage's own docstring.
-  const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + idleInvestableUsdt;
+  const availableStableRaw = BigInt(Math.floor(closedStableRaw)) + idleInvestableUsdt;
   const rebalanceFee = await currentRebalanceFee(chain, platformConfig);
   const swapIx = ensureFeeCoverage(
     sizeRebalanceSwap({
       currentTick: tick,
       newTickLower,
       newTickUpper,
-      availableToken0Raw,
-      availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)) + idleWeth,
+      availableStableRaw,
+      availableVolatileRaw: BigInt(Math.floor(closedVolatileRaw)) + idleWeth,
       ethPriceUsd: ethPrice,
+      stableIsToken0: chain.stableIsToken0,
     }),
-    availableToken0Raw,
+    availableStableRaw,
     rebalanceFee,
     ethPrice,
   );
@@ -1103,7 +1128,7 @@ async function runRebalanceExitTop(chain: ChainRuntime, vaultAddress: Address): 
     [
       newTickLower,
       newTickUpper,
-      { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum, fee: swapFee },
+      { token0ToToken1: toToken0ToToken1(swapIx.sellStable, chain), amountIn: swapIx.amountIn, amountOutMinimum, fee: swapFee },
       0n, // no reinjection — from-scratch rebuild, like initPosition()
       0n,
       0n,
@@ -1131,7 +1156,7 @@ async function runRebalanceExitTop(chain: ChainRuntime, vaultAddress: Address): 
     return;
   }
 
-  const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "rebalance", rebalanceArgs);
+  const hash = await sendTaggedTx(chain, vaultAddress, chain.vaultAbi as Abi, "rebalance", rebalanceArgs);
   await chain.publicClient.waitForTransactionReceipt({ hash });
 
   logEvent({

@@ -2,7 +2,7 @@ import "server-only";
 import { encodeFunctionData, getContract, type Abi, type Address, type Hex } from "viem";
 import type { ChainRuntime } from "./wallet";
 import { withAttribution } from "./attribution";
-import { rangeVaultAbi, vaultFactoryAbi, uniswapV3PoolAbi, positionManagerAbi } from "../contracts";
+import { uniswapV3PoolAbi, positionManagerAbi } from "../contracts";
 
 export { uniswapV3PoolAbi, positionManagerAbi };
 
@@ -14,7 +14,7 @@ function client(chain: ChainRuntime) {
 export function vaultContract(chain: ChainRuntime, address: Address) {
   return getContract({
     address,
-    abi: rangeVaultAbi,
+    abi: chain.vaultAbi,
     client: { public: chain.publicClient, wallet: client(chain) },
   });
 }
@@ -22,7 +22,7 @@ export function vaultContract(chain: ChainRuntime, address: Address) {
 export function factoryContract(chain: ChainRuntime, address: Address) {
   return getContract({
     address,
-    abi: vaultFactoryAbi,
+    abi: chain.factoryAbi,
     client: { public: chain.publicClient, wallet: client(chain) },
   });
 }

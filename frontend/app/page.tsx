@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useReadContract } from "wagmi";
 import { Header } from "./components/Header";
-import { uniswapV3PoolAbi, vaultFactoryAbi } from "@/lib/contracts";
+import { uniswapV3PoolAbi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { useSelectedChain } from "@/lib/useSelectedChain";
 
@@ -18,11 +18,11 @@ export default function Home() {
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
-  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
+  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
 
   const { data: vaultCount } = useReadContract({
     address: chain.factoryAddress || undefined,
-    abi: vaultFactoryAbi,
+    abi: chain.factoryAbi,
     functionName: "vaultCount",
     chainId: chain.id,
     query: { enabled: Boolean(chain.factoryAddress), refetchInterval: 30_000 },

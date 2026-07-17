@@ -4,49 +4,27 @@ import Link from "next/link";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
 import { Header } from "../components/Header";
-import { vaultFactoryAbi, rangeVaultAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
+import { uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
-import { useSelectedChain } from "@/lib/useSelectedChain";
+import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
 import type { ChainDef } from "@/lib/chains";
 
+/**
+ * Shows every vault across every deployed chain at once — not just whichever
+ * one the app's selected-chain state (useSelectedChain) happens to be on.
+ * Confirmed in production 2026-07-17: a user's real Celo vaults appeared to
+ * vanish simply because that selection was left on Arbitrum from testing —
+ * a single-chain-filtered "Mis vaults" is the wrong default for a page whose
+ * whole point is "show me everything I own". The selected-chain concept
+ * still exists for /create's network picker and the vault detail page's
+ * write flows, just not for this list.
+ */
 export default function VaultsPage() {
   const { address, isConnected } = useAccount();
-  const { selectedChain: chain } = useSelectedChain();
-
-  // Fetched once here and passed down — every card needs the live price, no
-  // reason for each of N cards to poll the same pool independently.
-  const { data: slot0 } = useReadContract({
-    address: chain.pool,
-    abi: uniswapV3PoolAbi,
-    functionName: "slot0",
-    chainId: chain.id,
-    query: { refetchInterval: 15_000 },
-  });
-  const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
-
-  const { data: vaults, isLoading } = useReadContract({
-    address: chain.factoryAddress || undefined,
-    abi: vaultFactoryAbi,
-    functionName: "getVaultsByOwner",
-    args: address ? [address] : undefined,
-    chainId: chain.id,
-    query: { enabled: Boolean(address && chain.factoryAddress) },
-  });
-  const vaultList = (vaults as string[] | undefined) ?? [];
-
-  // closeVault() is permanent — split those out below instead of mixing them
-  // in with vaults that can still operate.
-  const { data: closedFlags } = useReadContracts({
-    contracts: vaultList.map(
-      (v) => ({ address: v as `0x${string}`, abi: rangeVaultAbi, functionName: "closed", chainId: chain.id }) as const,
-    ),
-    query: { enabled: vaultList.length > 0, refetchInterval: 15_000 },
-  });
-  const activeVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result !== true);
-  const closedVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result === true);
+  const chains = useAvailableChains();
 
   return (
     <>
@@ -67,76 +45,128 @@ export default function VaultsPage() {
           </Link>
         </div>
 
-        <div className="mt-10">
-          {!chain.factoryAddress && (
-            <div className="glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
-              Los contratos todavía no están configurados en {chain.name}.
-            </div>
-          )}
-
-          {chain.factoryAddress && !isConnected && (
-            <div className="glass rounded-2xl p-10 text-center">
-              <p className="text-muted">Conectá tu wallet para ver tus vaults.</p>
-            </div>
-          )}
-
-          {chain.factoryAddress && isConnected && isLoading && (
-            <div className="glass rounded-2xl p-10 text-center">
-              <p className="text-muted">Cargando…</p>
-            </div>
-          )}
-
-          {chain.factoryAddress && isConnected && !isLoading && vaultList.length === 0 && (
-            <div className="glass rounded-2xl p-10 text-center">
-              <p className="text-muted">Todavía no tenés ningún vault.</p>
-              <Link href="/create" className="btn-primary mt-6 !px-5 !py-2.5">
-                Crear mi primer vault
-              </Link>
-            </div>
-          )}
-
-          {activeVaults.length > 0 && (
-            <ul className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {activeVaults.map((vaultAddress) => (
-                <li key={vaultAddress}>
-                  <VaultCard vaultAddress={vaultAddress as `0x${string}`} currentTick={currentTick} chain={chain} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {closedVaults.length > 0 && (
-          <div className="mt-12">
-            <h2
-              className="text-lg font-semibold tracking-tight text-faint"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              Vaults cerrados
-            </h2>
-            <p className="mt-1 text-sm text-muted">
-              Cerrados permanentemente — no pueden recibir depósitos ni operar de nuevo.
-            </p>
-            <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {closedVaults.map((vaultAddress) => (
-                <li key={vaultAddress}>
-                  <VaultCard
-                    vaultAddress={vaultAddress as `0x${string}`}
-                    currentTick={currentTick}
-                    chain={chain}
-                    isClosed
-                  />
-                </li>
-              ))}
-            </ul>
+        {!isConnected && (
+          <div className="glass mt-10 rounded-2xl p-10 text-center">
+            <p className="text-muted">Conectá tu wallet para ver tus vaults.</p>
           </div>
         )}
+
+        {isConnected &&
+          chains.map((chain) => (
+            <ChainVaultsSection key={chain.id} chain={chain} owner={address as `0x${string}`} />
+          ))}
       </main>
     </>
   );
 }
 
-const cardReads = (address: `0x${string}`) =>
+function ChainVaultsSection({ chain, owner }: { chain: ChainDef; owner: `0x${string}` }) {
+  const { setSelectedChainId } = useSelectedChain();
+
+  const { data: slot0 } = useReadContract({
+    address: chain.pool,
+    abi: uniswapV3PoolAbi,
+    functionName: "slot0",
+    chainId: chain.id,
+    query: { refetchInterval: 15_000 },
+  });
+  const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
+
+  const { data: vaults, isLoading } = useReadContract({
+    address: chain.factoryAddress || undefined,
+    abi: chain.factoryAbi,
+    functionName: "getVaultsByOwner",
+    args: [owner],
+    chainId: chain.id,
+    query: { enabled: Boolean(chain.factoryAddress) },
+  });
+  const vaultList = (vaults as string[] | undefined) ?? [];
+
+  // closeVault() is permanent — split those out below instead of mixing them
+  // in with vaults that can still operate.
+  const { data: closedFlags } = useReadContracts({
+    contracts: vaultList.map(
+      (v) => ({ address: v as `0x${string}`, abi: chain.vaultAbi, functionName: "closed", chainId: chain.id }) as const,
+    ),
+    query: { enabled: vaultList.length > 0, refetchInterval: 15_000 },
+  });
+  const activeVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result !== true);
+  const closedVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result === true);
+
+  // Clicking into a vault also switches the app's viewing chain to match it
+  // — VaultDetail.tsx reads useSelectedChain(), so without this a vault
+  // opened while browsing a DIFFERENT chain's section would try to read its
+  // data from the wrong network.
+  const goToChain = () => setSelectedChainId(chain.id);
+
+  if (isLoading) {
+    return (
+      <div className="mt-10">
+        <ChainSectionHeader chain={chain} />
+        <div className="glass mt-4 rounded-2xl p-10 text-center">
+          <p className="text-muted">Cargando…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (vaultList.length === 0) return null; // no noise for a chain the user has nothing on
+
+  return (
+    <div className="mt-10">
+      <ChainSectionHeader chain={chain} />
+
+      {activeVaults.length > 0 && (
+        <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {activeVaults.map((vaultAddress) => (
+            <li key={vaultAddress}>
+              <VaultCard
+                vaultAddress={vaultAddress as `0x${string}`}
+                currentTick={currentTick}
+                chain={chain}
+                onNavigate={goToChain}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {closedVaults.length > 0 && (
+        <div className="mt-6">
+          <p className="text-sm text-muted">Cerrados permanentemente — no pueden recibir depósitos ni operar de nuevo.</p>
+          <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {closedVaults.map((vaultAddress) => (
+              <li key={vaultAddress}>
+                <VaultCard
+                  vaultAddress={vaultAddress as `0x${string}`}
+                  currentTick={currentTick}
+                  chain={chain}
+                  onNavigate={goToChain}
+                  isClosed
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChainSectionHeader({ chain }: { chain: ChainDef }) {
+  return (
+    <div className="flex items-center gap-2">
+      <h2 className="text-lg font-semibold tracking-tight text-white/90" style={{ fontFamily: "var(--font-display)" }}>
+        {chain.name}
+      </h2>
+      <span className="eyebrow !px-3 !py-1">
+        {chain.stableSymbol}/{chain.volatileSymbol}
+      </span>
+    </div>
+  );
+}
+
+const cardReads = (address: `0x${string}`, vaultAbi: ChainDef["vaultAbi"]) =>
   [
     "paused",
     "positionTokenId",
@@ -144,21 +174,23 @@ const cardReads = (address: `0x${string}`) =>
     "maxRebalances",
     "investableUsdt",
     "reserveBalance",
-  ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName }) as const);
+  ].map((functionName) => ({ address, abi: vaultAbi, functionName }) as const);
 
 function VaultCard({
   vaultAddress,
   currentTick,
   chain,
+  onNavigate,
   isClosed,
 }: {
   vaultAddress: `0x${string}`;
   currentTick?: number;
   chain: ChainDef;
+  onNavigate: () => void;
   isClosed?: boolean;
 }) {
   const { data } = useReadContracts({
-    contracts: cardReads(vaultAddress).map((c) => ({ ...c, chainId: chain.id })),
+    contracts: cardReads(vaultAddress, chain.vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
     query: { refetchInterval: 15_000 },
   });
   const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance] =
@@ -176,7 +208,7 @@ function VaultCard({
     query: { enabled: hasPosition, refetchInterval: 15_000 },
   });
 
-  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
+  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
 
   let positionValueUsd: number | undefined;
   let rangeLabel: string | undefined;
@@ -197,10 +229,12 @@ function VaultCard({
       bigint,
     ];
     const { amount0Raw, amount1Raw } = estimatePositionAmounts({ liquidity, currentTick, tickLower, tickUpper });
-    positionValueUsd = amount0Raw * 1e-6 + amount1Raw * 1e-18 * ethPrice;
+    const stableRaw = chain.stableIsToken0 ? amount0Raw : amount1Raw;
+    const volatileRaw = chain.stableIsToken0 ? amount1Raw : amount0Raw;
+    positionValueUsd = stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
 
-    const priceA = ethPriceFromTick(tickLower);
-    const priceB = ethPriceFromTick(tickUpper);
+    const priceA = ethPriceFromTick(tickLower, chain.stableIsToken0);
+    const priceB = ethPriceFromTick(tickUpper, chain.stableIsToken0);
     const lo = Math.min(priceA, priceB);
     const hi = Math.max(priceA, priceB);
     rangeLabel = `$${lo.toFixed(0)} – $${hi.toFixed(0)}`;
@@ -244,6 +278,7 @@ function VaultCard({
   return (
     <Link
       href={`/vault/${vaultAddress}`}
+      onClick={onNavigate}
       className={`glass glass-hover group block rounded-2xl p-5 ${isClosed ? "opacity-60" : ""}`}
     >
       <div className="flex items-center justify-between">

@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { parseEventLogs, type Log } from "viem";
-import { rangeVaultAbi } from "./contracts";
 import { getLogsChunked } from "./getLogsChunked";
 import type { ChainDef } from "./chains";
 
@@ -36,7 +35,7 @@ export function useVaultDepositSummary(address: `0x${string}` | undefined, chain
         fromBlock: chain.factoryDeployBlock,
         toBlock: "latest",
       });
-      const logs = parseEventLogs({ abi: rangeVaultAbi, logs: rawLogs as Log[] }).filter(
+      const logs = parseEventLogs({ abi: chain.vaultAbi, logs: rawLogs as Log[] }).filter(
         (l) => l.eventName === "Deposited",
       );
       if (logs.length === 0) return { initialInvestmentUsdt: 0n };

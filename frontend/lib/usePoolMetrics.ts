@@ -48,8 +48,8 @@ export interface PoolMetrics {
  *
  * Reads against `chain` explicitly (via wagmi's `usePublicClient({chainId})`)
  * rather than whatever the wallet happens to be connected to — the viewing
- * chain (useSelectedChain) and the wallet's chain are deliberately decoupled,
- * see Header.tsx's NetworkSelector.
+ * chain (useSelectedChain) and the wallet's chain are deliberately decoupled —
+ * see lib/useSelectedChain.tsx.
  */
 export function usePoolMetrics(chain: ChainDef) {
   const publicClient = usePublicClient({ chainId: chain.id });

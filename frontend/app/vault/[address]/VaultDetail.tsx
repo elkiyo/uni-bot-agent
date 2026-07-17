@@ -17,14 +17,15 @@ import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
-import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
+import { erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
+import type { ChainDef } from "@/lib/chains";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { useSelectedChain } from "@/lib/useSelectedChain";
 
-const reads = (address: `0x${string}`, chainId: number) =>
+const reads = (address: `0x${string}`, chainId: number, vaultAbi: ChainDef["vaultAbi"]) =>
   [
     "owner",
     "operator",
@@ -47,7 +48,7 @@ const reads = (address: `0x${string}`, chainId: number) =>
     "recenterMarginBps",
     "exitTopCeilingMarginBps",
     "creationFeeCharged",
-  ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName, chainId }) as const);
+  ].map((functionName) => ({ address, abi: vaultAbi, functionName, chainId }) as const);
 
 export function VaultDetail({ address }: { address: `0x${string}` }) {
   const { address: connected, chainId: walletChainId } = useAccount();
@@ -59,7 +60,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // 15s polling keeps the stats live while the keeper acts — the page is a demo
   // surface as much as a control panel.
   const { data, refetch } = useReadContracts({
-    contracts: reads(address, chain.id),
+    contracts: reads(address, chain.id, chain.vaultAbi),
     query: { refetchInterval: 15_000 },
   });
 
@@ -146,7 +147,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const feesWethStr = Number(formatUnits(feesWethRaw, 18)).toFixed(6);
   const feesUsdTotal =
     currentTick !== undefined
-      ? Number(feesUsdtStr) + Number(formatUnits(feesWethRaw, 18)) * ethPriceFromTick(currentTick)
+      ? Number(feesUsdtStr) + Number(formatUnits(feesWethRaw, 18)) * ethPriceFromTick(currentTick, chain.stableIsToken0)
       : undefined;
 
   // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
@@ -216,7 +217,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
   // Single choke point for every write in this file — the viewing chain
   // (chain, from useSelectedChain) and the wallet's actual connected chain
-  // are deliberately decoupled (see Header.tsx's NetworkSelector), so every
+  // are deliberately decoupled (see lib/useSelectedChain.tsx), so every
   // write has to confirm the wallet is actually on `chain` before signing.
   async function withTx(label: string, fn: () => Promise<`0x${string}`>) {
     if (!publicClient) return;
@@ -279,7 +280,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx("Depositando", () =>
       writeContractAsync({
         address,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "deposit",
         args: [reserve, investable],
         chainId: chain.id,
@@ -306,8 +307,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         setError("El precio máximo debe ser mayor al mínimo, ambos positivos");
         return;
       }
-      const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice), Number(tickSpacing));
-      const tickB = alignToTickSpacing(tickFromEthPrice(upperPrice), Number(tickSpacing));
+      const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice, chain.stableIsToken0), Number(tickSpacing));
+      const tickB = alignToTickSpacing(tickFromEthPrice(upperPrice, chain.stableIsToken0), Number(tickSpacing));
       lo = Math.min(tickA, tickB);
       hi = Math.max(tickA, tickB);
     } else {
@@ -319,7 +320,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx("Reconfigurando", () =>
       writeContractAsync({
         address,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "configureTarget",
         args: [
           (investableUsdt as bigint) ?? 0n,
@@ -367,7 +368,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx("Fijando límites de riesgo", () =>
       writeContractAsync({
         address,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "setRiskParams",
         args: [newMaxSlippageBps, newMinRebalanceInterval, newMaxRangeDeviationBps],
         chainId: chain.id,
@@ -386,21 +387,23 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // Sized client-side — no uni-lab consultation needed, this is just the
     // position's already-known live ratio at the pool's current price, both
     // public reads. Uses sizeRebalanceSwap (a MIXED starting balance), not
-    // sizeInitialSwap (all-token0), because the contract's increaseLiquidity()
-    // sweeps in the vault's FULL token1 balance — including any WETH already
-    // sitting idle from a prior mis-sized swap — not just what usdtAmount
-    // alone would produce. Ignoring that pre-existing WETH here is exactly
-    // what left $64.92 of USDT stranded in production 2026-07-16 (vault
-    // 0x0Bf394B3...5dEBCE5b8). token0 is still capped to usdtAmount to match
-    // increasePosition()'s own cap — old investableUsdt dust stays untouched.
-    const ethPrice = ethPriceFromTick(currentTick);
+    // sizeInitialSwap (all-stable), because the contract's increaseLiquidity()
+    // sweeps in the vault's FULL volatile-leg balance — including any WETH
+    // already sitting idle from a prior mis-sized swap — not just what
+    // usdtAmount alone would produce. Ignoring that pre-existing WETH here is
+    // exactly what left $64.92 of USDT stranded in production 2026-07-16
+    // (vault 0x0Bf394B3...5dEBCE5b8). The stable side is still capped to
+    // usdtAmount to match increasePosition()'s own cap — old investableUsdt
+    // dust stays untouched.
+    const ethPrice = ethPriceFromTick(currentTick, chain.stableIsToken0);
     const swap = sizeRebalanceSwap({
       currentTick,
       newTickLower: positionTicks.tickLower,
       newTickUpper: positionTicks.tickUpper,
-      availableToken0Raw: usdtAmount,
-      availableToken1Raw: (idleWeth as bigint) ?? 0n,
+      availableStableRaw: usdtAmount,
+      availableVolatileRaw: (idleWeth as bigint) ?? 0n,
       ethPriceUsd: ethPrice,
+      stableIsToken0: chain.stableIsToken0,
     });
 
     await withTx("Aprobando", () =>
@@ -415,10 +418,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx("Sumando a la posición", () =>
       writeContractAsync({
         address,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "increasePosition",
         args: [
-          { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n, fee: chain.feeTier },
+          {
+            token0ToToken1: swap.sellStable === chain.stableIsToken0,
+            amountIn: swap.amountIn,
+            amountOutMinimum: 0n,
+            fee: chain.feeTier,
+          },
           usdtAmount,
           0n,
           0n,
@@ -440,7 +448,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx("Retirando", () =>
       writeContractAsync({
         address,
-        abi: rangeVaultAbi,
+        abi: chain.vaultAbi,
         functionName: "withdraw",
         args: [positionShareBps, fundsShareBps],
         chainId: chain.id,
@@ -507,7 +515,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   (idleWeth as bigint | undefined) && (idleWeth as bigint) > 0n
                     ? `+ ${Number(formatUnits(idleWeth as bigint, 18)).toFixed(6)} ${chain.volatileSymbol} suelto${
                         currentTick !== undefined
-                          ? ` (~$${(Number(idleWeth as bigint) * 1e-18 * ethPriceFromTick(currentTick)).toFixed(2)})`
+                          ? ` (~$${(Number(idleWeth as bigint) * 1e-18 * ethPriceFromTick(currentTick, chain.stableIsToken0)).toFixed(2)})`
                           : ""
                       }`
                     : undefined
@@ -551,8 +559,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       {(() => {
                         const lo = Number(targetTickLower);
                         const hi = Number(targetTickUpper);
-                        const priceA = ethPriceFromTick(lo);
-                        const priceB = ethPriceFromTick(hi);
+                        const priceA = ethPriceFromTick(lo, chain.stableIsToken0);
+                        const priceB = ethPriceFromTick(hi, chain.stableIsToken0);
                         const low = Math.min(priceA, priceB);
                         const high = Math.max(priceA, priceB);
                         return `$${low.toFixed(2)} – $${high.toFixed(2)}`;
@@ -795,7 +803,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx("Reclamando comisiones", () =>
                         writeContractAsync({
                           address,
-                          abi: rangeVaultAbi,
+                          abi: chain.vaultAbi,
                           functionName: "collectFees",
                           args: [],
                           chainId: chain.id,
@@ -817,7 +825,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx("Retirando", () =>
                         writeContractAsync({
                           address,
-                          abi: rangeVaultAbi,
+                          abi: chain.vaultAbi,
                           functionName: "withdrawAll",
                           args: [],
                           chainId: chain.id,
@@ -834,7 +842,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx(paused ? "Reanudando" : "Pausando", () =>
                         writeContractAsync({
                           address,
-                          abi: rangeVaultAbi,
+                          abi: chain.vaultAbi,
                           functionName: paused ? "unpause" : "pause",
                           args: [],
                           chainId: chain.id,
@@ -851,7 +859,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx("Revocando operador", () =>
                         writeContractAsync({
                           address,
-                          abi: rangeVaultAbi,
+                          abi: chain.vaultAbi,
                           functionName: "setOperator",
                           args: ["0x0000000000000000000000000000000000000000"],
                           chainId: chain.id,
@@ -868,7 +876,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx("Retiro de emergencia", () =>
                         writeContractAsync({
                           address,
-                          abi: rangeVaultAbi,
+                          abi: chain.vaultAbi,
                           functionName: "emergencyWithdrawPosition",
                           args: [],
                           chainId: chain.id,
@@ -886,7 +894,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                         withTx("Cerrando vault", () =>
                           writeContractAsync({
                             address,
-                            abi: rangeVaultAbi,
+                            abi: chain.vaultAbi,
                             functionName: "closeVault",
                             args: [],
                             chainId: chain.id,

@@ -59,27 +59,33 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
 
   // token1/token0 raw price rises with tick, so USD-per-ETH *falls* as the tick
   // rises — the USD range bounds come out swapped and need min/max.
-  const priceA = ethPriceFromTick(tickLower);
-  const priceB = ethPriceFromTick(tickUpper);
+  const priceA = ethPriceFromTick(tickLower, chain.stableIsToken0);
+  const priceB = ethPriceFromTick(tickUpper, chain.stableIsToken0);
   const rangeLow = Math.min(priceA, priceB);
   const rangeHigh = Math.max(priceA, priceB);
-  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
+  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
   const inRange = currentTick !== undefined && currentTick >= tickLower && currentTick <= tickUpper;
 
   // Same standard concentrated-liquidity formulas Uniswap's own UI uses to
-  // show "how much of each token is my position worth right now".
+  // show "how much of each token is my position worth right now". amount0Raw/
+  // amount1Raw are Uniswap's real token0/token1 — route to stable/volatile
+  // based on this chain's actual order (WETH is token0 on Arbitrum, token1 on Celo).
   const amounts =
     currentTick !== undefined ? positionAmounts(liquidity, currentTick, tickLower, tickUpper) : undefined;
-  const usdtAmount = amounts ? amounts.amount0Raw / 1e6 : 0;
-  const wethAmount = amounts ? amounts.amount1Raw / 1e18 : 0;
+  const stableRaw = amounts ? (chain.stableIsToken0 ? amounts.amount0Raw : amounts.amount1Raw) : 0;
+  const volatileRaw = amounts ? (chain.stableIsToken0 ? amounts.amount1Raw : amounts.amount0Raw) : 0;
+  const usdtAmount = stableRaw / 1e6;
+  const wethAmount = volatileRaw / 1e18;
   const usdtValue = usdtAmount; // the stable leg (USDT/USDC) ~= $1
   const wethValue = ethPrice !== undefined ? wethAmount * ethPrice : 0;
   const totalValue = usdtValue + wethValue;
   const wethPct = totalValue > 0 ? (wethValue / totalValue) * 100 : 0;
   const usdtPct = totalValue > 0 ? 100 - wethPct : 0;
 
-  const feesUsdtAmount = Number(formatUnits(tokensOwed0, 6));
-  const feesWethAmount = Number(formatUnits(tokensOwed1, 18));
+  const tokensOwedStable = chain.stableIsToken0 ? tokensOwed0 : tokensOwed1;
+  const tokensOwedVolatile = chain.stableIsToken0 ? tokensOwed1 : tokensOwed0;
+  const feesUsdtAmount = Number(formatUnits(tokensOwedStable, 6));
+  const feesWethAmount = Number(formatUnits(tokensOwedVolatile, 18));
   const feesUsdtValue = feesUsdtAmount;
   const feesWethValue = ethPrice !== undefined ? feesWethAmount * ethPrice : 0;
   const feesTotal = feesUsdtValue + feesWethValue;

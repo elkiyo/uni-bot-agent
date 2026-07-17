@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { formatUnits, parseEventLogs, type Log } from "viem";
-import { rangeVaultAbi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { getLogsChunked } from "@/lib/getLogsChunked";
 import type { ChainDef } from "@/lib/chains";
@@ -55,7 +54,7 @@ export function PositionHistory({ address, chain }: { address: `0x${string}`; ch
         fromBlock: chain.factoryDeployBlock,
         toBlock: "latest",
       });
-      const parsed = parseEventLogs({ abi: rangeVaultAbi, logs: logs as Log[] });
+      const parsed = parseEventLogs({ abi: chain.vaultAbi, logs: logs as Log[] });
 
       const targetConfigs: Array<{ tickLower: number; tickUpper: number; blockNumber: bigint }> = [];
       const rebalances: OpenEvent[] = [];
@@ -114,8 +113,12 @@ export function PositionHistory({ address, chain }: { address: `0x${string}`; ch
       const records: PositionRecord[] = openEvents.map((e, i) => {
         const next = openEvents[i + 1];
         const fees = next ? feesByTx.get(next.txHash) : undefined;
-        const priceA = ethPriceFromTick(e.tickLower);
-        const priceB = ethPriceFromTick(e.tickUpper);
+        const priceA = ethPriceFromTick(e.tickLower, chain.stableIsToken0);
+        const priceB = ethPriceFromTick(e.tickUpper, chain.stableIsToken0);
+        // fees.amount0/amount1 are Uniswap's real token0/token1 — route to
+        // stable/volatile based on this chain's actual order.
+        const feesStable = chain.stableIsToken0 ? fees?.amount0 : fees?.amount1;
+        const feesVolatile = chain.stableIsToken0 ? fees?.amount1 : fees?.amount0;
         return {
           tokenId: e.tokenId,
           minPrice: Math.min(priceA, priceB),
@@ -125,8 +128,8 @@ export function PositionHistory({ address, chain }: { address: `0x${string}`; ch
           createdTxHash: e.txHash,
           closedBlock: next?.blockNumber,
           closedTxHash: next?.txHash,
-          feesUsdt: fees?.amount0 ?? 0n,
-          feesWeth: fees?.amount1 ?? 0n,
+          feesUsdt: feesStable ?? 0n,
+          feesWeth: feesVolatile ?? 0n,
           isOpen: !next,
         };
       });

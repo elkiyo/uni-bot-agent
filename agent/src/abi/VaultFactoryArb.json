@@ -49,12 +49,12 @@
         "internalType": "address"
       },
       {
-        "name": "token0",
+        "name": "stableToken",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "token1",
+        "name": "volatileToken",
         "type": "address",
         "internalType": "address"
       },
@@ -220,5 +220,10 @@
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "TokenMismatch",
+    "inputs": []
   }
 ]
