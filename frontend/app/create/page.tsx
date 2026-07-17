@@ -228,7 +228,7 @@ export default function CreateVault() {
       // hardcode) instead of being fixed for every vault — see field hints.
       currentPhase = "risk";
       setStep(currentPhase);
-      const maxSlippageBps = maxSlippagePct ? BigInt(Math.round(Number(maxSlippagePct) * 100)) : 500n;
+      const maxSlippageBps = maxSlippagePct ? BigInt(Math.round(Number(maxSlippagePct) * 100)) : 30n;
       const minRebalanceIntervalSec = minRebalanceCooldownHours
         ? BigInt(Math.round(Number(minRebalanceCooldownHours) * 3600))
         : 0n;
@@ -347,7 +347,7 @@ export default function CreateVault() {
                     suffix="%"
                     value={maxSlippagePct}
                     onChange={setMaxSlippagePct}
-                    placeholder="5"
+                    placeholder="0.3"
                   />
                   <Field
                     label="Cooldown mínimo entre rebalanceos"

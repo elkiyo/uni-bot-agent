@@ -292,7 +292,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   async function handleUpdateRiskParams() {
     const newMaxSlippageBps = riskMaxSlippagePct
       ? BigInt(Math.round(Number(riskMaxSlippagePct) * 100))
-      : ((maxSlippageBps as bigint) ?? 500n);
+      : ((maxSlippageBps as bigint) ?? 30n);
     const newMinRebalanceInterval = riskMinCooldownHours
       ? BigInt(Math.round(Number(riskMinCooldownHours) * 3600))
       : ((minRebalanceInterval as bigint) ?? 0n);
@@ -619,7 +619,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   </p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField
-                      label={`Slippage máx. % (hoy: ${Number(maxSlippageBps ?? 500n) / 100})`}
+                      label={`Slippage máx. % (hoy: ${Number(maxSlippageBps ?? 30n) / 100})`}
                       value={riskMaxSlippagePct}
                       onChange={setRiskMaxSlippagePct}
                     />
