@@ -39,6 +39,19 @@ export const uniswapV3PoolAbi = [
     inputs: [],
     outputs: [{ name: "", type: "uint128" }],
   },
+  {
+    type: "event",
+    name: "Swap",
+    inputs: [
+      { name: "sender", type: "address", indexed: true },
+      { name: "recipient", type: "address", indexed: true },
+      { name: "amount0", type: "int256", indexed: false },
+      { name: "amount1", type: "int256", indexed: false },
+      { name: "sqrtPriceX96", type: "uint160", indexed: false },
+      { name: "liquidity", type: "uint128", indexed: false },
+      { name: "tick", type: "int24", indexed: false },
+    ],
+  },
 ] as const;
 
 // Just enough of the Uniswap V3 Factory to look up every fee-tier pool for a

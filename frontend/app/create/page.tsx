@@ -9,6 +9,7 @@ import { AlertModal } from "../components/AlertModal";
 import { vaultFactoryAbi, rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { FACTORY_ADDRESS, PLATFORM_CONFIG_ADDRESS, USDT, WETH, POOL, FEE_TIER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
+import { usePoolMetrics } from "@/lib/usePoolMetrics";
 
 type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
 
@@ -61,13 +62,23 @@ export default function CreateVault() {
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
 
+  // Which fee-tier pool the NEW position itself will live in — independent
+  // of pickDeepestSwapFee (server-side, keeper-only: picks where SWAPS
+  // route). This is a yield-strategy choice, not a pure cost minimization —
+  // see usePoolMetrics's own docstring for why a lower fee tier isn't
+  // automatically better. Defaults to the platform's main pool (FEE_TIER).
+  const { data: poolMetrics } = usePoolMetrics();
+  const [selectedFee, setSelectedFee] = useState<number>(FEE_TIER);
+  const selectedPoolMeta = poolMetrics?.find((p) => p.fee === selectedFee);
+  const selectedPool = (selectedPoolMeta?.pool ?? POOL) as `0x${string}`;
+
   const { data: slot0 } = useReadContract({
-    address: POOL,
+    address: selectedPool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
   });
   const { data: tickSpacing } = useReadContract({
-    address: POOL,
+    address: selectedPool,
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
   });
@@ -160,7 +171,7 @@ export default function CreateVault() {
         address: FACTORY_ADDRESS,
         abi: vaultFactoryAbi,
         functionName: "createVault",
-        args: [POOL, USDT, WETH, FEE_TIER],
+        args: [selectedPool, USDT, WETH, selectedFee],
       });
       const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createHash });
 
@@ -303,9 +314,74 @@ export default function CreateVault() {
           Configurá tu posición
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
-          Par USDT/WETH (0.3%). El agente arma la posición inicial con estos parámetros y la
+          Par USDT/WETH. El agente arma la posición inicial con estos parámetros y la
           rebalancea automáticamente — vos mantenés el control y la custodia.
         </p>
+
+        {isConnected && (
+          <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+              Elegí la pool donde vive tu posición
+            </span>
+            <p className="mt-1 text-xs text-faint">
+              Métricas en vivo, se actualizan cada minuto. Menor fee no es automáticamente mejor —
+              depende del volumen real que pase por esa pool, no solo de la tasa. La comisión por
+              unidad de liquidez es la mejor referencia de cuánto rendiría un LP ahí ahora mismo.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {(poolMetrics ?? []).map((p) => {
+                const isSelected = p.fee === selectedFee;
+                const disabled = !p.exists || p.liquidity === 0n;
+                return (
+                  <button
+                    key={p.fee}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setSelectedFee(p.fee)}
+                    className={`rounded-xl border p-4 text-left transition ${
+                      isSelected
+                        ? "border-accent bg-accent/[0.08]"
+                        : disabled
+                          ? "border-hairline opacity-40"
+                          : "border-hairline hover:border-accent/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-sm font-semibold">{p.fee / 10_000}%</span>
+                      {isSelected && <span className="font-mono text-[10px] uppercase text-accent">Elegida</span>}
+                    </div>
+                    {disabled ? (
+                      <p className="mt-2 text-xs text-faint">Sin liquidez — no disponible</p>
+                    ) : (
+                      <dl className="mt-2 flex flex-col gap-1 text-xs text-muted">
+                        <div className="flex justify-between">
+                          <dt>Liquidez</dt>
+                          <dd className="font-mono">{p.liquidity.toString()}</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt>Volumen (reciente)</dt>
+                          <dd className="font-mono">${p.volumeUsdt.toFixed(0)}</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt>Swaps (reciente)</dt>
+                          <dd className="font-mono">{p.swapCount}</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt>Comisión/liquidez</dt>
+                          <dd className="font-mono">
+                            {p.feeRevenuePerLiquidity !== undefined
+                              ? p.feeRevenuePerLiquidity.toExponential(2)
+                              : "—"}
+                          </dd>
+                        </div>
+                      </dl>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {!FACTORY_ADDRESS && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
@@ -435,6 +511,7 @@ export default function CreateVault() {
                   Resumen
                 </span>
                 <dl className="mt-4 flex flex-col gap-3 text-sm">
+                  <SummaryRow k="Pool elegida" v={`${selectedFee / 10_000}%`} />
                   <SummaryRow
                     k="Precio actual ETH"
                     v={currentPrice !== undefined ? `$${currentPrice.toFixed(2)}` : "…"}
