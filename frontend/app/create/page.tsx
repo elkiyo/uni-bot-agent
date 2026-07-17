@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import { Header } from "../components/Header";
+import { AlertModal } from "../components/AlertModal";
 import { vaultFactoryAbi, rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { FACTORY_ADDRESS, PLATFORM_CONFIG_ADDRESS, USDT, WETH, POOL, FEE_TIER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
@@ -76,6 +77,16 @@ export default function CreateVault() {
     functionName: "creationFeeUsdt",
   });
   const creationFeeUsdt = (creationFeeUsdtRaw as bigint) ?? 0n;
+  // 0 == no cap, same convention RangeVault.deposit() itself uses — read live
+  // so a later platform change (e.g. raising it) is reflected without a
+  // frontend redeploy. New vault, so nothing previously committed to weigh in.
+  const { data: maxDepositUsdRaw } = useReadContract({
+    address: PLATFORM_CONFIG_ADDRESS,
+    abi: platformConfigAbi,
+    functionName: "maxDepositUsd",
+  });
+  const maxDepositUsd = (maxDepositUsdRaw as bigint) ?? 0n;
+  const [capAlert, setCapAlert] = useState<string | null>(null);
 
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
@@ -125,6 +136,20 @@ export default function CreateVault() {
     if (!investAmount || !minPrice || !maxPrice || !maxRebalances || !reinjectionAmount || !periodicHours) {
       setError("Completá todos los campos — no hay valores por defecto.");
       setStep("error");
+      return;
+    }
+
+    // Same check RangeVault.deposit() itself makes (reserveAmount +
+    // investableAmount vs PlatformConfig.maxDepositUsd, fee excluded) — catch
+    // it here so the wallet never even pops up for a deposit that's certain
+    // to revert on-chain. Confirmed in production 2026-07-17: a user hit
+    // DepositExceedsPlatformCap with no explanation, just a raw revert.
+    const requestedTotalUsd = (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0);
+    if (maxDepositUsd !== 0n && requestedTotalUsd > Number(formatUnits(maxDepositUsd, 6))) {
+      setCapAlert(
+        `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} USDT. ` +
+          `Estás pidiendo ${requestedTotalUsd.toFixed(2)} USDT entre capital invertible y reserva — reducí el monto.`,
+      );
       return;
     }
 
@@ -265,6 +290,9 @@ export default function CreateVault() {
 
   return (
     <>
+      {capAlert && (
+        <AlertModal title="Supera el tope de depósito" message={capAlert} onClose={() => setCapAlert(null)} />
+      )}
       <Header />
       <main className="section flex-1 pb-24 pt-32">
         <span className="eyebrow">Nuevo vault</span>
@@ -427,6 +455,9 @@ export default function CreateVault() {
                   )}
                   <div className="my-1 border-t border-hairline" />
                   <SummaryRow k="Total a depositar" v={`${totalUsdt.toFixed(2)} USDT`} strong />
+                  {maxDepositUsd > 0n && (
+                    <SummaryRow k="Tope de la plataforma" v={`${formatUnits(maxDepositUsd, 6)} USDT`} />
+                  )}
                 </dl>
               </div>
 
