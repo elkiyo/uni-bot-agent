@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { parseEventLogs, type Log } from "viem";
 import { rangeVaultAbi } from "./contracts";
-import { FACTORY_DEPLOY_BLOCK } from "./addresses";
 import { getLogsChunked } from "./getLogsChunked";
+import type { ChainDef } from "./chains";
 
 export interface VaultFeesSummary {
   totalUsdt: bigint; // token0 fees paid to owner (LpFeesPaidToOwner.amount0 + FeesCollected.amount0)
@@ -25,16 +25,20 @@ export interface VaultFeesSummary {
  * (older clones mixed fees into principal), so vaults predating that deploy
  * always resolve to zero here — that's accurate, not a bug.
  */
-export function useVaultFeesSummary(address: `0x${string}` | undefined) {
-  const publicClient = usePublicClient();
+export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: ChainDef) {
+  const publicClient = usePublicClient({ chainId: chain.id });
 
   return useQuery({
-    queryKey: ["vault-fees-summary", address],
+    queryKey: ["vault-fees-summary", chain.id, address],
     enabled: Boolean(publicClient && address),
     refetchInterval: 15_000,
     queryFn: async (): Promise<VaultFeesSummary> => {
       if (!publicClient || !address) return { totalUsdt: 0n, totalWeth: 0n, payoutCount: 0 };
-      const rawLogs = await getLogsChunked(publicClient, { address, fromBlock: FACTORY_DEPLOY_BLOCK, toBlock: "latest" });
+      const rawLogs = await getLogsChunked(publicClient, {
+        address,
+        fromBlock: chain.factoryDeployBlock,
+        toBlock: "latest",
+      });
       const logs = parseEventLogs({ abi: rangeVaultAbi, logs: rawLogs as Log[] }).filter(
         (l) => l.eventName === "LpFeesPaidToOwner" || l.eventName === "FeesCollected",
       );

@@ -10,6 +10,11 @@ export function logEvent(event: Record<string, unknown>) {
 
 export interface UniLabCallLog {
   vault: string;
+  // Which chain the VAULT lives on (for admin filtering) — not necessarily
+  // where the payment itself settled, which is always Celo regardless (see
+  // unilab.ts's own docstring). Defaults to Celo for callers that predate
+  // multichain support.
+  chainId?: number;
   endpoint: string;
   request: Record<string, unknown>;
   httpStatus: number;
@@ -36,6 +41,7 @@ export async function logUniLabCall(call: UniLabCallLog): Promise<void> {
       .from("keeper_unilab_calls")
       .insert({
         vault: call.vault,
+        chain_id: call.chainId ?? 42220,
         endpoint: call.endpoint,
         request: call.request,
         http_status: call.httpStatus,

@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { formatUnits, parseEventLogs, type Log } from "viem";
 import { rangeVaultAbi } from "@/lib/contracts";
-import { FACTORY_DEPLOY_BLOCK } from "@/lib/addresses";
 import { getLogsChunked } from "@/lib/getLogsChunked";
+import type { ChainDef } from "@/lib/chains";
 
 interface FeedItem {
   txHash: string;
@@ -22,21 +22,25 @@ interface FeedItem {
  * feed is reconstructed straight from the RPC — no backend, and it shows the
  * keeper acting in real time (10s polling) during a demo.
  */
-export function ActivityFeed({ address }: { address: `0x${string}` }) {
-  const publicClient = usePublicClient();
+export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
+  const publicClient = usePublicClient({ chainId: chain.id });
 
   const { data: items } = useQuery({
-    queryKey: ["vault-activity", address],
+    queryKey: ["vault-activity", chain.id, address],
     enabled: Boolean(publicClient),
     refetchInterval: 10_000,
     queryFn: async (): Promise<FeedItem[]> => {
       if (!publicClient) return [];
-      const logs = await getLogsChunked(publicClient, { address, fromBlock: FACTORY_DEPLOY_BLOCK, toBlock: "latest" });
+      const logs = await getLogsChunked(publicClient, {
+        address,
+        fromBlock: chain.factoryDeployBlock,
+        toBlock: "latest",
+      });
       const parsed = parseEventLogs({ abi: rangeVaultAbi, logs: logs as Log[] });
 
       const feed: FeedItem[] = [];
       for (const log of parsed) {
-        const item = describe(log.eventName, log.args as Record<string, unknown>);
+        const item = describe(log.eventName, log.args as Record<string, unknown>, chain);
         if (!item) continue;
         feed.push({
           txHash: log.transactionHash ?? "",
@@ -109,7 +113,7 @@ export function ActivityFeed({ address }: { address: `0x${string}` }) {
                   <span>{new Date(item.timestamp * 1000).toLocaleString("es", { dateStyle: "short", timeStyle: "medium" })}</span>
                 )}
                 <a
-                  href={`https://celoscan.io/tx/${item.txHash}`}
+                  href={`${chain.explorerBaseUrl}/tx/${item.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline-offset-4 hover:text-accent hover:underline"
@@ -128,8 +132,10 @@ export function ActivityFeed({ address }: { address: `0x${string}` }) {
 function describe(
   eventName: string,
   args: Record<string, unknown>,
+  chain: ChainDef,
 ): Omit<FeedItem, "txHash" | "blockNumber" | "timestamp"> | null {
-  const usdt = (v: unknown) => `${formatUnits((v as bigint) ?? 0n, 6)} USDT`;
+  const usdt = (v: unknown) => `${formatUnits((v as bigint) ?? 0n, 6)} ${chain.stableSymbol}`;
+  const weth = (v: unknown) => `${Number(formatUnits((v as bigint) ?? 0n, 18)).toFixed(6)} ${chain.volatileSymbol}`;
   switch (eventName) {
     case "Deposited":
       return {
@@ -159,7 +165,7 @@ function describe(
       return {
         kind: "agent",
         title: `Posición creada — NFT #${args.tokenId}`,
-        detail: `El agente armó la posición con ${usdt(args.amount0)} + ${Number(formatUnits((args.amount1 as bigint) ?? 0n, 18)).toFixed(6)} WETH`,
+        detail: `El agente armó la posición con ${usdt(args.amount0)} + ${weth(args.amount1)}`,
       };
     case "Rebalanced": {
       const reinjectedAmount = (args.reinjectedAmount as bigint) ?? 0n;
@@ -174,7 +180,7 @@ function describe(
       return {
         kind: "money",
         title: "Comisiones de Uniswap pagadas al owner",
-        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} netos generados por la posición, enviados directo a tu wallet antes de rearmarla`,
+        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""} netos generados por la posición, enviados directo a tu wallet antes de rearmarla`,
       };
     }
     case "FeesCollected": {
@@ -182,7 +188,7 @@ function describe(
       return {
         kind: "money",
         title: "Comisiones reclamadas manualmente",
-        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} netos para vos — la posición sigue abierta, solo se cobraron las comisiones`,
+        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""} netos para vos — la posición sigue abierta, solo se cobraron las comisiones`,
       };
     }
     case "PerformanceFeeCollected": {
@@ -190,14 +196,14 @@ function describe(
       return {
         kind: "money",
         title: "Fee de performance a la plataforma",
-        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} — corte de plataforma sobre las comisiones de Uniswap generadas`,
+        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""} — corte de plataforma sobre las comisiones de Uniswap generadas`,
       };
     }
     case "Withdrawn":
       return {
         kind: "money",
         title: "Retiro del owner",
-        detail: `${usdt(args.amount0)} + ${Number(formatUnits((args.amount1 as bigint) ?? 0n, 18)).toFixed(6)} WETH devueltos al owner`,
+        detail: `${usdt(args.amount0)} + ${weth(args.amount1)} devueltos al owner`,
       };
     case "PositionIncreased":
       return {
@@ -216,14 +222,14 @@ function describe(
       return {
         kind: "agent",
         title: "El agente barrió sobrante suelto con un swap",
-        detail: `${usdt(args.used0)}${used1 > 0n ? ` + ${Number(formatUnits(used1, 18)).toFixed(6)} WETH` : ""} que estaban sueltos entraron a la posición`,
+        detail: `${usdt(args.used0)}${used1 > 0n ? ` + ${weth(used1)}` : ""} que estaban sueltos entraron a la posición`,
       };
     }
     case "EmergencyWithdraw":
       return {
         kind: "money",
         title: "Retiro de emergencia",
-        detail: `${usdt(args.amount0)} + ${Number(formatUnits((args.amount1 as bigint) ?? 0n, 18)).toFixed(6)} WETH devueltos al owner (vault pausado)`,
+        detail: `${usdt(args.amount0)} + ${weth(args.amount1)} devueltos al owner (vault pausado)`,
       };
     case "OperatorUpdated":
       return {

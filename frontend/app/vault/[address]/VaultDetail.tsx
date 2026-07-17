@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAccount, usePublicClient, useReadContract, useReadContracts, useWriteContract } from "wagmi";
+import {
+  useAccount,
+  usePublicClient,
+  useReadContract,
+  useReadContracts,
+  useWriteContract,
+  useSwitchChain,
+} from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 import { Header } from "../../components/Header";
 import { AlertModal } from "../../components/AlertModal";
@@ -11,13 +18,13 @@ import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
 import { rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
-import { USDT, WETH, POOL, POSITION_MANAGER, PLATFORM_CONFIG_ADDRESS, FEE_TIER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
+import { useSelectedChain } from "@/lib/useSelectedChain";
 
-const reads = (address: `0x${string}`) =>
+const reads = (address: `0x${string}`, chainId: number) =>
   [
     "owner",
     "operator",
@@ -40,17 +47,19 @@ const reads = (address: `0x${string}`) =>
     "recenterMarginBps",
     "exitTopCeilingMarginBps",
     "creationFeeCharged",
-  ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName }) as const);
+  ].map((functionName) => ({ address, abi: rangeVaultAbi, functionName, chainId }) as const);
 
 export function VaultDetail({ address }: { address: `0x${string}` }) {
-  const { address: connected } = useAccount();
-  const publicClient = usePublicClient();
+  const { address: connected, chainId: walletChainId } = useAccount();
+  const { selectedChain: chain } = useSelectedChain();
+  const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
+  const { switchChainAsync } = useSwitchChain();
 
   // 15s polling keeps the stats live while the keeper acts — the page is a demo
   // surface as much as a control panel.
   const { data, refetch } = useReadContracts({
-    contracts: reads(address),
+    contracts: reads(address, chain.id),
     query: { refetchInterval: 15_000 },
   });
 
@@ -59,9 +68,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // server logs — see app/api/vault/[address]/alert. Clears itself once a
   // later call succeeds.
   const { data: rebalanceAlert } = useQuery({
-    queryKey: ["vault-rebalance-alert", address],
+    queryKey: ["vault-rebalance-alert", chain.id, address],
     queryFn: async () => {
-      const res = await fetch(`/api/vault/${address}/alert`);
+      const res = await fetch(`/api/vault/${address}/alert?chainId=${chain.id}`);
       if (!res.ok) return null;
       const body = (await res.json()) as { alert: { message: string; endpoint: string; createdAt: string } | null };
       return body.alert;
@@ -93,9 +102,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   ] = data?.map((d) => d.result) ?? [];
 
   const { data: creationFeeUsdtRaw } = useReadContract({
-    address: PLATFORM_CONFIG_ADDRESS,
+    address: chain.platformConfigAddress || undefined,
     abi: platformConfigAbi,
     functionName: "creationFeeUsdt",
+    chainId: chain.id,
   });
   // Only actually owed if this vault never had a successful deposit() yet —
   // see RangeVault.sol's creationFeeCharged, set permanently true the first
@@ -106,20 +116,27 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // so a later platform change (e.g. raising it) is reflected without a
   // frontend redeploy. See handleDepositMore's own check below.
   const { data: maxDepositUsdRaw } = useReadContract({
-    address: PLATFORM_CONFIG_ADDRESS,
+    address: chain.platformConfigAddress || undefined,
     abi: platformConfigAbi,
     functionName: "maxDepositUsd",
+    chainId: chain.id,
   });
   const maxDepositUsd = (maxDepositUsdRaw as bigint) ?? 0n;
   const [capAlert, setCapAlert] = useState<string | null>(null);
 
-  const { data: feesSummary } = useVaultFeesSummary(address);
-  const { data: depositSummary } = useVaultDepositSummary(address);
-  const { data: tickSpacing } = useReadContract({ address: POOL, abi: uniswapV3PoolAbi, functionName: "tickSpacing" });
+  const { data: feesSummary } = useVaultFeesSummary(address, chain);
+  const { data: depositSummary } = useVaultDepositSummary(address, chain);
+  const { data: tickSpacing } = useReadContract({
+    address: chain.pool,
+    abi: uniswapV3PoolAbi,
+    functionName: "tickSpacing",
+    chainId: chain.id,
+  });
   const { data: slot0 } = useReadContract({
-    address: POOL,
+    address: chain.pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
+    chainId: chain.id,
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
@@ -148,10 +165,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // Only needed to size increasePosition()'s swap — the position's OWN live
   // range (not targetTickLower/Upper, which don't move on rebalance()).
   const { data: positionData } = useReadContract({
-    address: POSITION_MANAGER,
+    address: chain.positionManager,
     abi: positionManagerAbi,
     functionName: "positions",
     args: hasPosition ? [positionTokenId as bigint] : undefined,
+    chainId: chain.id,
     query: { enabled: hasPosition, refetchInterval: 15_000 },
   });
   const positionTicks = positionData
@@ -170,10 +188,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // 0x0Bf394B3...5dEBCE5b8: $64.92 USDT left over after "Sumar a la
   // posición" ignored ~$190 of pre-existing idle WETH).
   const { data: idleWeth } = useReadContract({
-    address: WETH,
+    address: chain.volatileToken,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [address],
+    chainId: chain.id,
     query: { refetchInterval: 15_000 },
   });
 
@@ -195,11 +214,23 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Single choke point for every write in this file — the viewing chain
+  // (chain, from useSelectedChain) and the wallet's actual connected chain
+  // are deliberately decoupled (see Header.tsx's NetworkSelector), so every
+  // write has to confirm the wallet is actually on `chain` before signing.
   async function withTx(label: string, fn: () => Promise<`0x${string}`>) {
     if (!publicClient) return;
     setBusy(label);
     setError(null);
     try {
+      if (walletChainId !== chain.id) {
+        try {
+          await switchChainAsync({ chainId: chain.id });
+        } catch {
+          setError(`Cambiá tu wallet a ${chain.name} para continuar.`);
+          return;
+        }
+      }
       const hash = await fn();
       await publicClient.waitForTransactionReceipt({ hash });
       await refetch();
@@ -226,8 +257,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     if (maxDepositUsd > 0n && currentTotal + total > maxDepositUsd) {
       const room = maxDepositUsd > currentTotal ? maxDepositUsd - currentTotal : 0n;
       setCapAlert(
-        `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} USDT y este vault ya tiene ` +
-          `${formatUnits(currentTotal, 6)} USDT comprometidos — quedan ${formatUnits(room, 6)} USDT de margen. ` +
+        `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol} y este vault ya tiene ` +
+          `${formatUnits(currentTotal, 6)} ${chain.stableSymbol} comprometidos — quedan ${formatUnits(room, 6)} ${chain.stableSymbol} de margen. ` +
           `Reducí el monto.`,
       );
       return;
@@ -238,10 +269,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // on top, so the approval has to cover it too (see RangeVault.sol).
     await withTx("Aprobando", () =>
       writeContractAsync({
-        address: USDT,
+        address: chain.stableToken,
         abi: erc20Abi,
         functionName: "approve",
         args: [address, total + pendingCreationFee],
+        chainId: chain.id,
       }),
     );
     await withTx("Depositando", () =>
@@ -250,6 +282,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         abi: rangeVaultAbi,
         functionName: "deposit",
         args: [reserve, investable],
+        chainId: chain.id,
       }),
     );
   }
@@ -302,6 +335,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             ? BigInt(Math.round(Number(cfgExitTopCeilingMarginPct) * 100))
             : ((exitTopCeilingMarginBps as bigint) ?? 300n),
         ],
+        chainId: chain.id,
       }),
     );
 
@@ -336,6 +370,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         abi: rangeVaultAbi,
         functionName: "setRiskParams",
         args: [newMaxSlippageBps, newMinRebalanceInterval, newMaxRangeDeviationBps],
+        chainId: chain.id,
       }),
     );
   }
@@ -369,7 +404,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     });
 
     await withTx("Aprobando", () =>
-      writeContractAsync({ address: USDT, abi: erc20Abi, functionName: "approve", args: [address, usdtAmount] }),
+      writeContractAsync({
+        address: chain.stableToken,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [address, usdtAmount],
+        chainId: chain.id,
+      }),
     );
     await withTx("Sumando a la posición", () =>
       writeContractAsync({
@@ -377,11 +418,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         abi: rangeVaultAbi,
         functionName: "increasePosition",
         args: [
-          { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n, fee: FEE_TIER },
+          { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum: 0n, fee: chain.feeTier },
           usdtAmount,
           0n,
           0n,
         ],
+        chainId: chain.id,
       }),
     );
     setIncreaseAmount("0");
@@ -401,6 +443,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         abi: rangeVaultAbi,
         functionName: "withdraw",
         args: [positionShareBps, fundsShareBps],
+        chainId: chain.id,
       }),
     );
     setWithdrawPositionPct("0");
@@ -415,7 +458,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       <Header />
       <main className="section flex-1 pb-24 pt-32">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="eyebrow">Vault · USDT/WETH 0.3%</span>
+          <span className="eyebrow">
+            Vault · {chain.stableSymbol}/{chain.volatileSymbol} {chain.feeTier / 10_000}%
+          </span>
           {paused ? (
             <span className="eyebrow !border-negative/40 !text-negative">Pausado</span>
           ) : (
@@ -457,10 +502,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
                 label="Capital invertible"
-                value={`${formatUnits((investableUsdt as bigint) ?? 0n, 6)} USDT`}
+                value={`${formatUnits((investableUsdt as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
                 hint={
                   (idleWeth as bigint | undefined) && (idleWeth as bigint) > 0n
-                    ? `+ ${Number(formatUnits(idleWeth as bigint, 18)).toFixed(6)} WETH suelto${
+                    ? `+ ${Number(formatUnits(idleWeth as bigint, 18)).toFixed(6)} ${chain.volatileSymbol} suelto${
                         currentTick !== undefined
                           ? ` (~$${(Number(idleWeth as bigint) * 1e-18 * ethPriceFromTick(currentTick)).toFixed(2)})`
                           : ""
@@ -470,8 +515,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
               <Stat
                 label="Reserva reinyección"
-                value={`${formatUnits((reserveBalance as bigint) ?? 0n, 6)} USDT`}
-                hint={`tope por ciclo: ${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} USDT`}
+                value={`${formatUnits((reserveBalance as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
+                hint={`tope por ciclo: ${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
               />
               <Stat
                 label="Rebalanceos"
@@ -481,15 +526,19 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <Stat
                 label="Comisiones generadas"
                 value={
-                  feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} USDT`
+                  feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} ${chain.stableSymbol}`
                 }
-                hint={feesWethRaw > 0n ? `${feesUsdtStr} USDT + ${feesWethStr} WETH` : `${feesUsdtStr} USDT`}
+                hint={
+                  feesWethRaw > 0n
+                    ? `${feesUsdtStr} ${chain.stableSymbol} + ${feesWethStr} ${chain.volatileSymbol}`
+                    : `${feesUsdtStr} ${chain.stableSymbol}`
+                }
                 hint2={rentLabel}
                 accent
               />
             </div>
 
-            {hasPosition && <PositionNFT tokenId={positionTokenId as bigint} />}
+            {hasPosition && <PositionNFT tokenId={positionTokenId as bigint} chain={chain} />}
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="glass rounded-2xl p-5">
@@ -551,7 +600,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
                 <ConfigRow
                   k="Reinyección alternada"
-                  v={`${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} USDT`}
+                  v={`${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
                 />
                 <ConfigRow
                   k="Rebalanceo periódico"
@@ -590,17 +639,17 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 <div className="mt-6">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Depositar USDT (repartido entre capital invertible y reserva de reinyección)
+                    Depositar {chain.stableSymbol} (repartido entre capital invertible y reserva de reinyección)
                   </span>
                   {pendingCreationFee > 0n && (
                     <p className="mt-1 text-xs text-faint">
                       Este vault todavía no pagó el fee de creación — se suma {formatUnits(pendingCreationFee, 6)}{" "}
-                      USDT arriba de lo que pongas acá, una sola vez.
+                      {chain.stableSymbol} arriba de lo que pongas acá, una sola vez.
                     </p>
                   )}
                   {maxDepositUsd > 0n && (
                     <p className="mt-1 text-xs text-faint">
-                      Tope de la plataforma: {formatUnits(maxDepositUsd, 6)} USDT — quedan{" "}
+                      Tope de la plataforma: {formatUnits(maxDepositUsd, 6)} {chain.stableSymbol} — quedan{" "}
                       {formatUnits(
                         maxDepositUsd >
                           ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n)
@@ -608,7 +657,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                           : 0n,
                         6,
                       )}{" "}
-                      USDT de margen.
+                      {chain.stableSymbol} de margen.
                     </p>
                   )}
                   <div className="mt-2 flex flex-wrap items-end gap-3">
@@ -637,7 +686,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       value={cfgMaxRebalances}
                       onChange={setCfgMaxRebalances}
                     />
-                    <MiniField label="Reinyección (USDT)" value={cfgReinjection} onChange={setCfgReinjection} />
+                    <MiniField
+                      label={`Reinyección (${chain.stableSymbol})`}
+                      value={cfgReinjection}
+                      onChange={setCfgReinjection}
+                    />
                     <MiniField label="Periódico (horas)" value={cfgPeriodicHours} onChange={setCfgPeriodicHours} />
                     <MiniField
                       label={`Margen recentrado % (hoy: ${Number(recenterMarginBps ?? 500n) / 100})`}
@@ -695,7 +748,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       calcula acá mismo el swap necesario para respetar el rango vigente.
                     </p>
                     <div className="mt-2 flex flex-wrap items-end gap-3">
-                      <MiniField label="Monto (USDT)" value={increaseAmount} onChange={setIncreaseAmount} />
+                      <MiniField
+                        label={`Monto (${chain.stableSymbol})`}
+                        value={increaseAmount}
+                        onChange={setIncreaseAmount}
+                      />
                       <button
                         onClick={handleIncreasePosition}
                         disabled={Boolean(busy)}
@@ -736,7 +793,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   <button
                     onClick={() =>
                       withTx("Reclamando comisiones", () =>
-                        writeContractAsync({ address, abi: rangeVaultAbi, functionName: "collectFees", args: [] }),
+                        writeContractAsync({
+                          address,
+                          abi: rangeVaultAbi,
+                          functionName: "collectFees",
+                          args: [],
+                          chainId: chain.id,
+                        }),
                       )
                     }
                     disabled={Boolean(busy) || !hasPosition}
@@ -752,7 +815,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   <button
                     onClick={() =>
                       withTx("Retirando", () =>
-                        writeContractAsync({ address, abi: rangeVaultAbi, functionName: "withdrawAll", args: [] }),
+                        writeContractAsync({
+                          address,
+                          abi: rangeVaultAbi,
+                          functionName: "withdrawAll",
+                          args: [],
+                          chainId: chain.id,
+                        }),
                       )
                     }
                     disabled={Boolean(busy)}
@@ -768,6 +837,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                           abi: rangeVaultAbi,
                           functionName: paused ? "unpause" : "pause",
                           args: [],
+                          chainId: chain.id,
                         }),
                       )
                     }
@@ -784,6 +854,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                           abi: rangeVaultAbi,
                           functionName: "setOperator",
                           args: ["0x0000000000000000000000000000000000000000"],
+                          chainId: chain.id,
                         }),
                       )
                     }
@@ -800,6 +871,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                           abi: rangeVaultAbi,
                           functionName: "emergencyWithdrawPosition",
                           args: [],
+                          chainId: chain.id,
                         }),
                       )
                     }
@@ -812,7 +884,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     <button
                       onClick={() =>
                         withTx("Cerrando vault", () =>
-                          writeContractAsync({ address, abi: rangeVaultAbi, functionName: "closeVault", args: [] }),
+                          writeContractAsync({
+                            address,
+                            abi: rangeVaultAbi,
+                            functionName: "closeVault",
+                            args: [],
+                            chainId: chain.id,
+                          }),
                         )
                       }
                       disabled={Boolean(busy)}
@@ -838,8 +916,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               </div>
             )}
 
-            <PositionHistory address={address} />
-            <ActivityFeed address={address} />
+            <PositionHistory address={address} chain={chain} />
+            <ActivityFeed address={address} chain={chain} />
           </>
         )}
       </main>

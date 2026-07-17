@@ -1,10 +1,9 @@
 import "server-only";
 import type { Address } from "viem";
-import { publicClient } from "./wallet";
+import type { ChainRuntime } from "./wallet";
 import { Store } from "./store";
 import { registerAgent } from "./unilab";
 import { vaultFactoryAbi } from "../contracts";
-import { FACTORY_DEPLOY_BLOCK } from "../addresses";
 
 const MAX_BLOCK_RANGE = 5_000n; // conservative chunk size for public RPC log queries
 
@@ -14,8 +13,8 @@ const MAX_BLOCK_RANGE = 5_000n; // conservative chunk size for public RPC log qu
  * the vault itself sends the USDT payment — see PLAN.md). Safe to call repeatedly;
  * already-known vaults are skipped.
  */
-export async function discoverAndRegisterVaults(factoryAddress: Address, store: Store): Promise<void> {
-  const latestBlock = await publicClient.getBlockNumber();
+export async function discoverAndRegisterVaults(chain: ChainRuntime, factoryAddress: Address, store: Store): Promise<void> {
+  const latestBlock = await chain.publicClient.getBlockNumber();
   let fromBlock = await store.getLastProcessedBlock();
   if (fromBlock === 0n) {
     // First run (fresh Supabase store — e.g. right after the Vercel migration,
@@ -24,13 +23,13 @@ export async function discoverAndRegisterVaults(factoryAddress: Address, store: 
     // Celo (~5s blocks) even a few hours of activity is tens of thousands of
     // blocks — a fixed lookback window silently missed the one real vault the
     // first time this ran against the new store.
-    fromBlock = FACTORY_DEPLOY_BLOCK;
+    fromBlock = chain.factoryDeployBlock;
   }
 
   while (fromBlock <= latestBlock) {
     const toBlock = fromBlock + MAX_BLOCK_RANGE > latestBlock ? latestBlock : fromBlock + MAX_BLOCK_RANGE;
 
-    const logs = await publicClient.getContractEvents({
+    const logs = await chain.publicClient.getContractEvents({
       address: factoryAddress,
       abi: vaultFactoryAbi,
       eventName: "VaultCreated",

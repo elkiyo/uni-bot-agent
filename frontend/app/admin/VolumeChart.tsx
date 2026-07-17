@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient } from "wagmi";
 import { rangeVaultAbi, positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
-import { FACTORY_DEPLOY_BLOCK, POOL, POSITION_MANAGER } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
+import type { ChainDef } from "@/lib/chains";
 
 type Granularity = "day" | "week" | "month" | "year";
 
@@ -42,8 +42,8 @@ type PositionTuple = readonly [
  * but any block it can't serve is just skipped rather than failing the
  * whole chart.
  */
-export function VolumeChart({ vaultAddresses }: { vaultAddresses: Address[] }) {
-  const publicClient = usePublicClient();
+export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address[]; chain: ChainDef }) {
+  const publicClient = usePublicClient({ chainId: chain.id });
   const [events, setEvents] = useState<VolumeEvent[] | null>(null);
   const [granularity, setGranularity] = useState<Granularity>("day");
 
@@ -57,7 +57,7 @@ export function VolumeChart({ vaultAddresses }: { vaultAddresses: Address[] }) {
       const mints: { tokenId: bigint; blockNumber: bigint }[] = [];
 
       for (const vault of vaultAddresses) {
-        let fromBlock = FACTORY_DEPLOY_BLOCK;
+        let fromBlock = chain.factoryDeployBlock;
         while (fromBlock <= latest) {
           const toBlock = fromBlock + MAX_RANGE > latest ? latest : fromBlock + MAX_RANGE;
           const [initLogs, rebalLogs] = await Promise.all([
@@ -91,14 +91,14 @@ export function VolumeChart({ vaultAddresses }: { vaultAddresses: Address[] }) {
           try {
             const [position, slot0, block] = await Promise.all([
               publicClient!.readContract({
-                address: POSITION_MANAGER,
+                address: chain.positionManager,
                 abi: positionManagerAbi,
                 functionName: "positions",
                 args: [tokenId],
                 blockNumber,
               }) as Promise<PositionTuple>,
               publicClient!.readContract({
-                address: POOL,
+                address: chain.pool,
                 abi: uniswapV3PoolAbi,
                 functionName: "slot0",
                 blockNumber,
@@ -130,7 +130,7 @@ export function VolumeChart({ vaultAddresses }: { vaultAddresses: Address[] }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- vaultAddresses is a derived array, re-created every render; length is enough here
-  }, [publicClient, vaultAddresses.length]);
+  }, [publicClient, vaultAddresses.length, chain.factoryDeployBlock]);
 
   return (
     <div className="glass mt-8 rounded-2xl p-6 sm:p-8">

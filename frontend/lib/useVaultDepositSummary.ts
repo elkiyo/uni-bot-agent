@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { parseEventLogs, type Log } from "viem";
 import { rangeVaultAbi } from "./contracts";
-import { FACTORY_DEPLOY_BLOCK } from "./addresses";
 import { getLogsChunked } from "./getLogsChunked";
+import type { ChainDef } from "./chains";
 
 export interface VaultDepositSummary {
   initialInvestmentUsdt: bigint; // investableAmount + reserveAmount from the vault's very first deposit() call
@@ -21,17 +21,21 @@ export interface VaultDepositSummary {
  * "rentabilidad" stat (comisiones / inversión inicial), so later top-up
  * deposits don't get folded in and dilute it.
  */
-export function useVaultDepositSummary(address: `0x${string}` | undefined) {
-  const publicClient = usePublicClient();
+export function useVaultDepositSummary(address: `0x${string}` | undefined, chain: ChainDef) {
+  const publicClient = usePublicClient({ chainId: chain.id });
 
   return useQuery({
-    queryKey: ["vault-deposit-summary", address],
+    queryKey: ["vault-deposit-summary", chain.id, address],
     enabled: Boolean(publicClient && address),
     refetchInterval: 60_000,
     queryFn: async (): Promise<VaultDepositSummary> => {
       if (!publicClient || !address) return { initialInvestmentUsdt: 0n };
 
-      const rawLogs = await getLogsChunked(publicClient, { address, fromBlock: FACTORY_DEPLOY_BLOCK, toBlock: "latest" });
+      const rawLogs = await getLogsChunked(publicClient, {
+        address,
+        fromBlock: chain.factoryDeployBlock,
+        toBlock: "latest",
+      });
       const logs = parseEventLogs({ abi: rangeVaultAbi, logs: rawLogs as Log[] }).filter(
         (l) => l.eventName === "Deposited",
       );

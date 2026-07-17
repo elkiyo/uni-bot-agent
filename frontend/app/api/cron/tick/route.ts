@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { runTick } from "../../../../lib/keeper/tick";
 
 export const runtime = "nodejs";
-// Hobby plan default+max is 300s with Fluid compute — a tick over a handful of
-// vaults (a few RPC reads + at most a couple of tx confirmations) fits well
-// inside this, but stays generous so a slow Celo RPC round-trip doesn't 504.
-export const maxDuration = 120;
+// Hobby plan default+max is 300s with Fluid compute. A tick now processes
+// every deployed chain sequentially within one invocation (see
+// lib/keeper/tick.ts) — 120s was sized for a single chain; bumped to leave
+// headroom for a second chain's RPC round-trips without approaching the
+// 300s ceiling.
+export const maxDuration = 200;
 
 /**
  * Triggered every 5 minutes by a GitHub Actions schedule (see

@@ -1,48 +1,53 @@
 import "server-only";
 import { BaseError, ContractFunctionRevertedError, parseEventLogs, type Abi, type Address, type Log } from "viem";
-import { publicClient, operatorAccount } from "./wallet";
+import { operatorAccount, type ChainRuntime } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
 import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeCoverage, targetRawRatio } from "./swapMath";
-import { POOL, WETH, USDT, SWAP_ROUTER02, UNISWAP_V3_FACTORY, CANDIDATE_SWAP_FEE_TIERS, FEE_TIER } from "../addresses";
 import { Store } from "./store";
 import { logEvent, logUniLabCall } from "./logger";
 import { rangeVaultAbi, erc20Abi, swapRouter02Abi, uniswapV3FactoryAbi } from "../contracts";
 
-async function currentTick(): Promise<number> {
-  const [, tick] = (await publicClient.readContract({
-    address: POOL,
+async function currentTick(chain: ChainRuntime): Promise<number> {
+  const [, tick] = (await chain.publicClient.readContract({
+    address: chain.pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
   })) as readonly [bigint, number, number, number, number, number, boolean];
   return tick;
 }
 
-async function tickSpacing(): Promise<number> {
-  return (await publicClient.readContract({
-    address: POOL,
+async function tickSpacing(chain: ChainRuntime): Promise<number> {
+  return (await chain.publicClient.readContract({
+    address: chain.pool,
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
   })) as number;
 }
 
 /**
- * Picks whichever fee-tier pool for this pair has the most live liquidity,
- * to route a swap through — independent of FEE_TIER (the pool every vault's
- * LP position actually lives in). Confirmed in production 2026-07-17 (vault
- * 0xaeFE8a2b...891017F): a $389 swap cost 1.26% (~$4.86) routed through
- * POOL (0.3%), vs. an estimated 0.03% through this same pair's 0.01% pool —
- * 8.5x more liquidity on Celo mainnet that day, ~$5.53 cheaper for that
- * exact trade. Falls back to FEE_TIER if the factory lookup fails or every
- * candidate pool is empty/nonexistent — same behavior as before this existed.
+ * Picks whichever fee-tier pool for this chain's pair has the most live
+ * liquidity, to route a swap through — independent of chain.feeTier (the
+ * pool every vault's LP position actually lives in). Confirmed in production
+ * 2026-07-17 (vault 0xaeFE8a2b...891017F, Celo): a $389 swap cost 1.26%
+ * (~$4.86) routed through the position's own 0.3% pool, vs. an estimated
+ * 0.03% through this same pair's 0.01% pool — 8.5x more liquidity that day,
+ * ~$5.53 cheaper for that exact trade. Falls back to chain.feeTier if the
+ * factory lookup fails or every candidate pool is empty/nonexistent — same
+ * behavior as before this existed.
  */
-async function pickDeepestSwapFee(): Promise<number> {
+async function pickDeepestSwapFee(chain: ChainRuntime): Promise<number> {
   try {
     const pools = await Promise.all(
-      CANDIDATE_SWAP_FEE_TIERS.map((fee) =>
-        publicClient
-          .readContract({ address: UNISWAP_V3_FACTORY, abi: uniswapV3FactoryAbi, functionName: "getPool", args: [USDT, WETH, fee] })
+      chain.candidateSwapFeeTiers.map((fee) =>
+        chain.publicClient
+          .readContract({
+            address: chain.uniswapV3Factory,
+            abi: uniswapV3FactoryAbi,
+            functionName: "getPool",
+            args: [chain.stableToken, chain.volatileToken, fee],
+          })
           .then((pool) => ({ fee, pool: pool as Address })),
       ),
     );
@@ -50,13 +55,13 @@ async function pickDeepestSwapFee(): Promise<number> {
       pools.map(({ pool }) =>
         pool === "0x0000000000000000000000000000000000000000"
           ? Promise.resolve(0n)
-          : publicClient
+          : chain.publicClient
               .readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "liquidity" })
               .then((l) => l as bigint)
               .catch(() => 0n),
       ),
     );
-    let bestFee = FEE_TIER;
+    let bestFee = chain.feeTier;
     let bestLiquidity = -1n;
     for (let i = 0; i < pools.length; i++) {
       if (liquidities[i] > bestLiquidity) {
@@ -64,10 +69,10 @@ async function pickDeepestSwapFee(): Promise<number> {
         bestFee = pools[i].fee;
       }
     }
-    return bestLiquidity > 0n ? bestFee : FEE_TIER;
+    return bestLiquidity > 0n ? bestFee : chain.feeTier;
   } catch (err) {
     logEvent({ level: "warn", msg: "pickDeepestSwapFee failed, falling back to the vault's own pool", err: String(err) });
-    return FEE_TIER;
+    return chain.feeTier;
   }
 }
 
@@ -89,9 +94,9 @@ const legacyRebalanceFeeAbi = [
  * above). Vaults cloned after the flat fee's removal resolve to 0, making
  * ensureFeeCoverage a no-op for them, which is correct — they have nothing
  * left to guarantee payment for. */
-async function currentRebalanceFee(platformConfig: Address): Promise<bigint> {
+async function currentRebalanceFee(chain: ChainRuntime, platformConfig: Address): Promise<bigint> {
   return (
-    (await publicClient
+    (await chain.publicClient
       .readContract({ address: platformConfig, abi: legacyRebalanceFeeAbi, functionName: "rebalanceFee" })
       .catch(() => 0n)) as bigint
   );
@@ -100,26 +105,28 @@ async function currentRebalanceFee(platformConfig: Address): Promise<bigint> {
 const GAS_SAFETY_MULTIPLIER_PCT = 130n; // 30% buffer over the current estimate, for gas-price drift between check and send
 
 /**
- * Real gas-cost estimate against the operator's actual CELO balance — NOT
- * covered by `wouldSucceed`'s free simulation, which never checks funds.
- * Missing this check is exactly how a vault burned 0.8 USDT of its uni-lab
- * budget on 2026-07-14, back when uni-lab was still paid on-chain per vault
- * (retired 2026-07-15 in favor of x402 — see HACKATHON.md "Track 2 — x402"):
- * with the operator low on CELO, the cheap payment call kept succeeding
- * while the much heavier rebalance() that had to follow kept reverting for
- * insufficient funds. Still worth checking before rebalance() itself for the
- * same reason — no point letting the (now free, x402-paid) uni-lab call
- * succeed if the operator can't afford to act on its answer.
+ * Real gas-cost estimate against the operator's actual native-token balance
+ * on this chain — NOT covered by `wouldSucceed`'s free simulation, which
+ * never checks funds. Missing this check is exactly how a vault burned 0.8
+ * USDT of its uni-lab budget on 2026-07-14, back when uni-lab was still paid
+ * on-chain per vault (retired 2026-07-15 in favor of x402 — see
+ * HACKATHON.md "Track 2 — x402"): with the operator low on CELO, the cheap
+ * payment call kept succeeding while the much heavier rebalance() that had
+ * to follow kept reverting for insufficient funds. Still worth checking
+ * before rebalance() itself for the same reason — no point letting the (now
+ * free, x402-paid) uni-lab call succeed if the operator can't afford to act
+ * on its answer.
  */
 async function hasEnoughOperatorGas(
+  chain: ChainRuntime,
   vaultAddress: Address,
   mainCall: { functionName: string; args: readonly unknown[] },
 ): Promise<boolean> {
   if (!operatorAccount) return false;
   const [gasPrice, balance, mainGas] = await Promise.all([
-    publicClient.getGasPrice(),
-    publicClient.getBalance({ address: operatorAccount.address }),
-    publicClient.estimateContractGas({
+    chain.publicClient.getGasPrice(),
+    chain.publicClient.getBalance({ address: operatorAccount.address }),
+    chain.publicClient.estimateContractGas({
       address: vaultAddress,
       abi: rangeVaultAbi as Abi,
       functionName: mainCall.functionName,
@@ -133,7 +140,7 @@ async function hasEnoughOperatorGas(
     logEvent({
       level: "warn",
       vault: vaultAddress,
-      msg: `operator CELO balance too low to complete ${mainCall.functionName} — skipping cycle`,
+      msg: `operator ${chain.viemChain.nativeCurrency.symbol} balance too low to complete ${mainCall.functionName} on ${chain.name} — skipping cycle`,
       balance: balance.toString(),
       estimatedCost: estimatedCost.toString(),
     });
@@ -150,11 +157,12 @@ async function hasEnoughOperatorGas(
  * whose calculations could never be used), paying first is throwing money away.
  */
 async function wouldSucceed(
+  chain: ChainRuntime,
   vaultAddress: Address,
   functionName: string,
   args: readonly unknown[],
 ): Promise<boolean> {
-  return (await simulateAttempt(vaultAddress, functionName, args)).ok;
+  return (await simulateAttempt(chain, vaultAddress, functionName, args)).ok;
 }
 
 /**
@@ -165,12 +173,13 @@ async function wouldSucceed(
  * range guess tripped RangeTooFarFromMarket, uni-lab's real answer might not."
  */
 async function simulateAttempt(
+  chain: ChainRuntime,
   vaultAddress: Address,
   functionName: string,
   args: readonly unknown[],
 ): Promise<{ ok: boolean; errorName?: string }> {
   try {
-    await publicClient.simulateContract({
+    await chain.publicClient.simulateContract({
       address: vaultAddress,
       abi: rangeVaultAbi as Abi,
       functionName,
@@ -199,9 +208,9 @@ const DUST_SWEEP_MIN_USD = 1; // not worth the gas below this
  * the caller — errors are logged, not thrown, since the mint/rebalance this
  * runs after already succeeded by the time this executes.
  */
-export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
+export async function maybeSweepIdleDust(chain: ChainRuntime, vaultAddress: Address): Promise<void> {
   try {
-    const vault = vaultContract(vaultAddress);
+    const vault = vaultContract(chain, vaultAddress);
     const [positionTokenId, idleUsdt, positionManager, maxSlippageBps] = await Promise.all([
       vault.read.positionTokenId() as Promise<bigint>,
       vault.read.investableUsdt() as Promise<bigint>,
@@ -211,14 +220,14 @@ export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
     if (positionTokenId === 0n) return;
 
     const [idleWeth, tick, position] = await Promise.all([
-      publicClient.readContract({
-        address: WETH,
+      chain.publicClient.readContract({
+        address: chain.volatileToken,
         abi: erc20Abi,
         functionName: "balanceOf",
         args: [vaultAddress],
       }) as Promise<bigint>,
-      currentTick(),
-      publicClient.readContract({
+      currentTick(chain),
+      chain.publicClient.readContract({
         address: positionManager,
         abi: positionManagerAbi,
         functionName: "positions",
@@ -243,12 +252,12 @@ export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
     });
     if (swap.amountIn === 0n) return;
 
-    const swapFee = await pickDeepestSwapFee();
-    const amountOutMinimum = await minAmountOutForSwap(vaultAddress, swap, maxSlippageBps, swapFee);
+    const swapFee = await pickDeepestSwapFee(chain);
+    const amountOutMinimum = await minAmountOutForSwap(chain, vaultAddress, swap, maxSlippageBps, swapFee);
     const swapIx = { token0ToToken1: swap.token0ToToken1, amountIn: swap.amountIn, amountOutMinimum, fee: swapFee };
     const args = [swapIx, 0n, 0n] as const;
 
-    const check = await simulateAttempt(vaultAddress, "sweepIdleDust", args);
+    const check = await simulateAttempt(chain, vaultAddress, "sweepIdleDust", args);
     if (!check.ok) {
       logEvent({
         level: "warn",
@@ -259,12 +268,12 @@ export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
       });
       return;
     }
-    if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "sweepIdleDust", args }))) {
+    if (!(await hasEnoughOperatorGas(chain, vaultAddress, { functionName: "sweepIdleDust", args }))) {
       return;
     }
 
-    const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "sweepIdleDust", args);
-    await publicClient.waitForTransactionReceipt({ hash });
+    const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "sweepIdleDust", args);
+    await chain.publicClient.waitForTransactionReceipt({ hash });
     logEvent({ level: "info", vault: vaultAddress, msg: "swept idle dust", idleUsdValue, txHash: hash });
   } catch (err) {
     logEvent({ level: "warn", vault: vaultAddress, msg: "maybeSweepIdleDust failed, ignoring", err: String(err) });
@@ -283,14 +292,15 @@ export async function maybeSweepIdleDust(vaultAddress: Address): Promise<void> {
  * any account) because the simulated call still checks real token
  * balance/allowance — only the vault itself has both. */
 async function quoteExactInputSingle(
+  chain: ChainRuntime,
   vaultAddress: Address,
   tokenIn: Address,
   tokenOut: Address,
   amountIn: bigint,
   fee: number,
 ): Promise<bigint> {
-  const { result } = await publicClient.simulateContract({
-    address: SWAP_ROUTER02,
+  const { result } = await chain.publicClient.simulateContract({
+    address: chain.swapRouter02,
     abi: swapRouter02Abi,
     functionName: "exactInputSingle",
     args: [{ tokenIn, tokenOut, fee, recipient: vaultAddress, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }],
@@ -312,14 +322,15 @@ async function quoteExactInputSingle(
  * spending gas on a doomed send.
  */
 async function minAmountOutForSwap(
+  chain: ChainRuntime,
   vaultAddress: Address,
   swap: { token0ToToken1: boolean; amountIn: bigint },
   maxSlippageBps: bigint,
   fee: number,
 ): Promise<bigint> {
   if (swap.amountIn === 0n) return 0n;
-  const [tokenIn, tokenOut] = swap.token0ToToken1 ? [USDT, WETH] : [WETH, USDT];
-  const quotedOut = await quoteExactInputSingle(vaultAddress, tokenIn, tokenOut, swap.amountIn, fee);
+  const [tokenIn, tokenOut] = swap.token0ToToken1 ? [chain.stableToken, chain.volatileToken] : [chain.volatileToken, chain.stableToken];
+  const quotedOut = await quoteExactInputSingle(chain, vaultAddress, tokenIn, tokenOut, swap.amountIn, fee);
   return (quotedOut * (10_000n - maxSlippageBps)) / 10_000n;
 }
 
@@ -353,6 +364,7 @@ async function minAmountOutForSwap(
  * stale range) — the caller should skip the cycle without sending.
  */
 async function minAmountOutForRebalanceSwap(
+  chain: ChainRuntime,
   vaultAddress: Address,
   buildArgs: (amountOutMinimum: bigint) => readonly unknown[],
   swap: { token0ToToken1: boolean; amountIn: bigint },
@@ -360,7 +372,7 @@ async function minAmountOutForRebalanceSwap(
   maxSlippageBps: bigint,
 ): Promise<bigint | null> {
   if (swap.amountIn === 0n) return 0n;
-  if (!(await wouldSucceed(vaultAddress, "rebalance", buildArgs(0n)))) return null;
+  if (!(await wouldSucceed(chain, vaultAddress, "rebalance", buildArgs(0n)))) return null;
 
   // Generous upper bound for the search range — pre-fee, pre-impact spot
   // conversion, always >= the real achievable output.
@@ -374,7 +386,7 @@ async function minAmountOutForRebalanceSwap(
   for (let i = 0; i < 12 && hi - lo > precision; i++) {
     const mid = (lo + hi + 1n) / 2n;
     // eslint-disable-next-line no-await-in-loop -- sequential probes of the same contract, deliberately not parallelized
-    if (await wouldSucceed(vaultAddress, "rebalance", buildArgs(mid))) lo = mid;
+    if (await wouldSucceed(chain, vaultAddress, "rebalance", buildArgs(mid))) lo = mid;
     else hi = mid - 1n;
   }
   return (lo * (10_000n - maxSlippageBps)) / 10_000n;
@@ -399,6 +411,7 @@ async function minAmountOutForRebalanceSwap(
  * produces.
  */
 async function capSwapWithinRange(
+  chain: ChainRuntime,
   vaultAddress: Address,
   amountIn: bigint,
   tickLower: number,
@@ -421,11 +434,11 @@ async function capSwapWithinRange(
     if (candidate === 0n) return 0n;
     let amountOut: bigint;
     try {
-      amountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate, fee);
+      amountOut = await quoteExactInputSingle(chain, vaultAddress, chain.stableToken, chain.volatileToken, candidate, fee);
     } catch {
       return candidate; // can't quote a smaller size either — use what we have
     }
-    const execRate = Number(amountOut) / Number(candidate); // this trade's own realized WETH-raw-per-USDT-raw rate
+    const execRate = Number(amountOut) / Number(candidate); // this trade's own realized volatile-raw-per-stable-raw rate
     if (!Number.isFinite(execRate) || execRate <= 0) return candidate;
     const estimatedTick = tickFromEthPrice(1 / (execRate * 1e-12));
 
@@ -470,6 +483,7 @@ async function capSwapWithinRange(
  * target range's own boundary, on top of that.
  */
 async function sizeInitialSwapAccurate(
+  chain: ChainRuntime,
   vaultAddress: Address,
   input: {
     currentTick: number;
@@ -483,12 +497,13 @@ async function sizeInitialSwapAccurate(
   const guess = sizeInitialSwap(input);
   if (guess.amountIn === 0n) return guess;
 
-  // Only the position's OWN pool (FEE_TIER) is affected by this swap when it
-  // routes there too — a swap through a different, deeper pool never touches
-  // FEE_TIER's reserves, so that pool's tick simply stays at input.currentTick
-  // regardless of swap size. Re-estimating a "post-swap tick" from the OTHER
-  // pool's execution rate would describe a pool the mint never happens in.
-  const sameFeeAsPosition = fee === FEE_TIER;
+  // Only the position's OWN pool (chain.feeTier) is affected by this swap
+  // when it routes there too — a swap through a different, deeper pool never
+  // touches that pool's reserves, so its tick simply stays at
+  // input.currentTick regardless of swap size. Re-estimating a "post-swap
+  // tick" from the OTHER pool's execution rate would describe a pool the
+  // mint never happens in.
+  const sameFeeAsPosition = fee === chain.feeTier;
 
   const investable = Number(input.availableToken0Raw);
   let candidate = guess.amountIn;
@@ -496,7 +511,7 @@ async function sizeInitialSwapAccurate(
   try {
     for (let i = 0; i < 4; i++) {
       if (candidate === 0n) break;
-      const realAmountOut = await quoteExactInputSingle(vaultAddress, USDT, WETH, candidate, fee);
+      const realAmountOut = await quoteExactInputSingle(chain, vaultAddress, chain.stableToken, chain.volatileToken, candidate, fee);
       const execRate = Number(realAmountOut) / Number(candidate); // WETH raw per USDT raw, actually observed
       if (!Number.isFinite(execRate) || execRate <= 0) break;
 
@@ -522,11 +537,11 @@ async function sizeInitialSwapAccurate(
     candidate = guess.amountIn;
   }
 
-  const cappedAmountIn = await capSwapWithinRange(vaultAddress, candidate, input.tickLower, input.tickUpper, fee);
+  const cappedAmountIn = await capSwapWithinRange(chain, vaultAddress, candidate, input.tickLower, input.tickUpper, fee);
   return { token0ToToken1: true, amountIn: cappedAmountIn };
 }
 
-export async function runInitPosition(vaultAddress: Address, store: Store): Promise<void> {
+export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address, store: Store): Promise<void> {
   const record = await store.getVault(vaultAddress);
   // No uni-lab dependency here anymore (see below) — a vault can build its
   // initial position even before its uni-lab registration lands. Rebalances
@@ -536,7 +551,7 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     return;
   }
 
-  const vault = vaultContract(vaultAddress);
+  const vault = vaultContract(chain, vaultAddress);
   const [targetTickLower, targetTickUpper, investableUsdt, maxSlippageBps] = await Promise.all([
     vault.read.targetTickLower() as Promise<number>,
     vault.read.targetTickUpper() as Promise<number>,
@@ -544,7 +559,7 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     vault.read.maxSlippageBps() as Promise<bigint>,
   ]);
 
-  const tick = await currentTick();
+  const tick = await currentTick(chain);
   const ethPrice = ethPriceFromTick(tick);
 
   // Sized locally, corrected against a real Uniswap Quoter call for the
@@ -559,8 +574,9 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
   // owner for zero benefit, so initPosition no longer calls uni-lab at all;
   // only rebalance() does, where the API's answer (the new upper bound)
   // genuinely drives the outcome. See PLAN.md.
-  const swapFee = await pickDeepestSwapFee();
+  const swapFee = await pickDeepestSwapFee(chain);
   const swapIx = await sizeInitialSwapAccurate(
+    chain,
     vaultAddress,
     {
       currentTick: tick,
@@ -572,14 +588,14 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     swapFee,
   );
 
-  const initAmountOutMinimum = await minAmountOutForSwap(vaultAddress, swapIx, maxSlippageBps, swapFee);
+  const initAmountOutMinimum = await minAmountOutForSwap(chain, vaultAddress, swapIx, maxSlippageBps, swapFee);
   const initArgs = [
     { token0ToToken1: swapIx.token0ToToken1, amountIn: swapIx.amountIn, amountOutMinimum: initAmountOutMinimum, fee: swapFee },
     0n,
     0n,
   ] as const;
 
-  if (!(await wouldSucceed(vaultAddress, "initPosition", initArgs))) {
+  if (!(await wouldSucceed(chain, vaultAddress, "initPosition", initArgs))) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
@@ -588,17 +604,17 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
     return;
   }
 
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "initPosition", args: initArgs }))) {
+  if (!(await hasEnoughOperatorGas(chain, vaultAddress, { functionName: "initPosition", args: initArgs }))) {
     return;
   }
 
-  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "initPosition", initArgs);
-  await publicClient.waitForTransactionReceipt({ hash });
+  const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "initPosition", initArgs);
+  await chain.publicClient.waitForTransactionReceipt({ hash });
 
   await store.upsertVault({ ...record, positionInitialized: true });
   logEvent({ level: "info", vault: vaultAddress, msg: "position initialized", txHash: hash });
 
-  await maybeSweepIdleDust(vaultAddress);
+  await maybeSweepIdleDust(chain, vaultAddress);
 }
 
 /**
@@ -616,13 +632,13 @@ export async function runInitPosition(vaultAddress: Address, store: Store): Prom
  */
 const EVENT_SCAN_CHUNK = 5_000n; // forno.celo.org's eth_getLogs range cap — see lib/getLogsChunked.ts
 
-async function getCumulativeInvestmentUsd(vaultAddress: Address, fromBlock: bigint): Promise<number> {
-  const latestBlock = await publicClient.getBlockNumber();
+async function getCumulativeInvestmentUsd(chain: ChainRuntime, vaultAddress: Address, fromBlock: bigint): Promise<number> {
+  const latestBlock = await chain.publicClient.getBlockNumber();
   const logs: Log[] = [];
   let from = fromBlock;
   while (from <= latestBlock) {
     const to = from + EVENT_SCAN_CHUNK > latestBlock ? latestBlock : from + EVENT_SCAN_CHUNK;
-    logs.push(...(await publicClient.getLogs({ address: vaultAddress, fromBlock: from, toBlock: to })));
+    logs.push(...(await chain.publicClient.getLogs({ address: vaultAddress, fromBlock: from, toBlock: to })));
     from = to + 1n;
   }
   const events = parseEventLogs({ abi: rangeVaultAbi, logs });
@@ -662,6 +678,7 @@ async function getCumulativeInvestmentUsd(vaultAddress: Address, fromBlock: bigi
  * already ~100% stable and there's no split left to compute.
  */
 async function runRebalanceViaUniLab(
+  chain: ChainRuntime,
   vaultAddress: Address,
   store: Store,
   reason: "periodic" | "out-of-range-bottom",
@@ -672,7 +689,7 @@ async function runRebalanceViaUniLab(
     return;
   }
 
-  const vault = vaultContract(vaultAddress);
+  const vault = vaultContract(chain, vaultAddress);
   const [
     positionTokenId,
     reinjectionCap,
@@ -689,7 +706,7 @@ async function runRebalanceViaUniLab(
     vault.read.positionManager() as Promise<Address>,
     vault.read.reserveBalance() as Promise<bigint>,
     vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a PRIOR cycle — see availableToken0Raw below
-    publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>, // WETH-side counterpart of idleInvestableUsdt — see availableToken1Raw below
+    chain.publicClient.readContract({ address: chain.volatileToken, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>, // volatile-side counterpart of idleInvestableUsdt — see availableToken1Raw below
     // Falls back to the platform's old hardcoded 5% for vaults cloned from
     // an implementation that predates this field — that call reverts
     // outright (RangeVault has no fallback()), not just "returns 0", so a
@@ -700,9 +717,9 @@ async function runRebalanceViaUniLab(
   ]);
 
   const [tick, spacing, position] = await Promise.all([
-    currentTick(),
-    tickSpacing(),
-    publicClient.readContract({
+    currentTick(chain),
+    tickSpacing(chain),
+    chain.publicClient.readContract({
       address: positionManager,
       abi: positionManagerAbi,
       functionName: "positions",
@@ -745,7 +762,6 @@ async function runRebalanceViaUniLab(
   // reliably minted a position that was already out of range the moment
   // price moved at all before the tx confirmed — confirmed in production
   // 2026-07-16 (vault 0x8Ed2ad9f...42737C88).
-  let newUpperPrice: number;
 
   const { amount0Raw: closedAmount0Raw, amount1Raw: closedAmount1Raw } = estimatePositionAmounts({
     liquidity,
@@ -841,7 +857,7 @@ async function runRebalanceViaUniLab(
   // can sit below what was actually invested even while genuinely in range;
   // using positionValueUsd here would understate B1 and feed uni-lab a
   // "amount to recover" smaller than the real capital at stake.
-  const amountToRecoverUsd = await getCumulativeInvestmentUsd(vaultAddress, BigInt(record.createdAtBlock));
+  const amountToRecoverUsd = await getCumulativeInvestmentUsd(chain, vaultAddress, BigInt(record.createdAtBlock));
 
   const baseParams = {
     currentLiquidityUsd: positionValueUsd,
@@ -852,9 +868,10 @@ async function runRebalanceViaUniLab(
   };
 
   // x402-only (2026-07-15) — the operator's own USDC pays uni-lab directly,
-  // no vault budget involved at all. Confirmed working end-to-end on-chain,
-  // see HACKATHON.md "Track 2 — x402". The retired on-chain
-  // payUniLabFee()+tx_hash path is gone.
+  // no vault budget involved at all, always via Celo regardless of which
+  // chain THIS vault lives on (see unilab.ts's own docstring). Confirmed
+  // working end-to-end on-chain, see HACKATHON.md "Track 2 — x402". The
+  // retired on-chain payUniLabFee()+tx_hash path is gone.
   //
   // No local fallback for the actual mint (explicit product decision,
   // 2026-07-16): the ceiling on a real rebalance — periodic or
@@ -892,6 +909,7 @@ async function runRebalanceViaUniLab(
     // endpoint's response schema itself.
     await logUniLabCall({
       vault: vaultAddress,
+      chainId: chain.id,
       endpoint: "rc-rlp-rebalance (x402, unusable response)",
       request: baseParams,
       httpStatus: 200,
@@ -908,7 +926,7 @@ async function runRebalanceViaUniLab(
     });
     return;
   }
-  newUpperPrice = upper;
+  const newUpperPrice = upper;
 
   // Higher USD price of ETH = lower tick in this pool, so the converted bounds
   // come out swapped — sort them, Uniswap requires tickLower < tickUpper.
@@ -924,7 +942,7 @@ async function runRebalanceViaUniLab(
   //
   // Then guarantee the (possibly zero, on a post-removal vault) flat fee is
   // payable — see ensureFeeCoverage's own docstring.
-  const rebalanceFee = await currentRebalanceFee(platformConfig);
+  const rebalanceFee = await currentRebalanceFee(chain, platformConfig);
   const finalSwap = ensureFeeCoverage(
     buildSwapIx(newTickLower, newTickUpper),
     availableToken0Raw,
@@ -936,7 +954,7 @@ async function runRebalanceViaUniLab(
   // collect() have already moved the old position's tokens into the vault's
   // real balance, same-tx — unlike the standalone pre-tx quote this whole
   // rebalance-swap path exists to avoid (see minAmountOutForRebalanceSwap).
-  const swapFee = await pickDeepestSwapFee();
+  const swapFee = await pickDeepestSwapFee(chain);
   const buildFinalArgs = (amountOutMinimum: bigint) =>
     [
       newTickLower,
@@ -952,6 +970,7 @@ async function runRebalanceViaUniLab(
   // never validated what actually gets sent. uni-lab is already paid at this
   // point either way; this only prevents burning gas on a doomed send.
   const finalAmountOutMinimum = await minAmountOutForRebalanceSwap(
+    chain,
     vaultAddress,
     buildFinalArgs,
     finalSwap,
@@ -969,12 +988,12 @@ async function runRebalanceViaUniLab(
     return;
   }
   const finalArgs = buildFinalArgs(finalAmountOutMinimum);
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: finalArgs }))) {
+  if (!(await hasEnoughOperatorGas(chain, vaultAddress, { functionName: "rebalance", args: finalArgs }))) {
     return;
   }
 
-  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "rebalance", finalArgs);
-  await publicClient.waitForTransactionReceipt({ hash });
+  const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "rebalance", finalArgs);
+  await chain.publicClient.waitForTransactionReceipt({ hash });
 
   logEvent({
     level: "info",
@@ -987,7 +1006,7 @@ async function runRebalanceViaUniLab(
     txHash: hash,
   });
 
-  await maybeSweepIdleDust(vaultAddress);
+  await maybeSweepIdleDust(chain, vaultAddress);
 }
 
 /**
@@ -1000,8 +1019,8 @@ async function runRebalanceViaUniLab(
  * (RangeVault.sol). No reinjection here either — same as every reason other
  * than out-of-range-bottom (see runRebalanceViaUniLab's reinjectAmount).
  */
-async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
-  const vault = vaultContract(vaultAddress);
+async function runRebalanceExitTop(chain: ChainRuntime, vaultAddress: Address): Promise<void> {
+  const vault = vaultContract(chain, vaultAddress);
   const [
     positionTokenId,
     positionManager,
@@ -1015,7 +1034,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.positionManager() as Promise<Address>,
     vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a prior cycle — see runRebalanceViaUniLab
-    publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>,
+    chain.publicClient.readContract({ address: chain.volatileToken, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>,
     // Same fallback as runRebalanceViaUniLab, same reason: these two revert
     // outright on a vault cloned from an implementation that predates them.
     (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
@@ -1025,9 +1044,9 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
   ]);
 
   const [tick, spacing, position] = await Promise.all([
-    currentTick(),
-    tickSpacing(),
-    publicClient.readContract({
+    currentTick(chain),
+    tickSpacing(chain),
+    chain.publicClient.readContract({
       address: positionManager,
       abi: positionManagerAbi,
       functionName: "positions",
@@ -1062,7 +1081,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
   // keeps growing. Then guarantee the (possibly zero) flat fee is payable —
   // see ensureFeeCoverage's own docstring.
   const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + idleInvestableUsdt;
-  const rebalanceFee = await currentRebalanceFee(platformConfig);
+  const rebalanceFee = await currentRebalanceFee(chain, platformConfig);
   const swapIx = ensureFeeCoverage(
     sizeRebalanceSwap({
       currentTick: tick,
@@ -1079,7 +1098,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
 
   // Safe here for the same reason as runRebalanceViaUniLab: decreaseLiquidity+
   // collect already ran by the time _executeSwap does, inside the same tx.
-  const swapFee = await pickDeepestSwapFee();
+  const swapFee = await pickDeepestSwapFee(chain);
   const buildRebalanceArgs = (amountOutMinimum: bigint) =>
     [
       newTickLower,
@@ -1091,6 +1110,7 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     ] as const;
 
   const exitTopAmountOutMinimum = await minAmountOutForRebalanceSwap(
+    chain,
     vaultAddress,
     buildRebalanceArgs,
     swapIx,
@@ -1107,12 +1127,12 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
   }
   const rebalanceArgs = buildRebalanceArgs(exitTopAmountOutMinimum);
 
-  if (!(await hasEnoughOperatorGas(vaultAddress, { functionName: "rebalance", args: rebalanceArgs }))) {
+  if (!(await hasEnoughOperatorGas(chain, vaultAddress, { functionName: "rebalance", args: rebalanceArgs }))) {
     return;
   }
 
-  const hash = await sendTaggedTx(vaultAddress, rangeVaultAbi as Abi, "rebalance", rebalanceArgs);
-  await publicClient.waitForTransactionReceipt({ hash });
+  const hash = await sendTaggedTx(chain, vaultAddress, rangeVaultAbi as Abi, "rebalance", rebalanceArgs);
+  await chain.publicClient.waitForTransactionReceipt({ hash });
 
   logEvent({
     level: "info",
@@ -1125,17 +1145,18 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
     txHash: hash,
   });
 
-  await maybeSweepIdleDust(vaultAddress);
+  await maybeSweepIdleDust(chain, vaultAddress);
 }
 
 export async function runRebalance(
+  chain: ChainRuntime,
   vaultAddress: Address,
   store: Store,
   reason: "periodic" | "out-of-range-top" | "out-of-range-bottom",
 ): Promise<void> {
   if (reason === "out-of-range-top") {
-    await runRebalanceExitTop(vaultAddress);
+    await runRebalanceExitTop(chain, vaultAddress);
     return;
   }
-  await runRebalanceViaUniLab(vaultAddress, store, reason);
+  await runRebalanceViaUniLab(chain, vaultAddress, store, reason);
 }

@@ -9,7 +9,14 @@
 -- other part of the project might use client-side gets nothing.
 
 create table if not exists keeper_vaults (
-  address text primary key,
+  -- 42220 = Celo mainnet, matches CHAINS[celo.id].id in lib/chains.ts — the
+  -- default keeps a fresh install correct even before anyone edits this
+  -- file for a second chain. Part of the primary key (not just address)
+  -- since a vault address could in principle exist on two different chains
+  -- (each has its own factory/deployer nonce) — address alone stopped being
+  -- a safe uniqueness guarantee once the keeper went multichain.
+  chain_id integer not null default 42220,
+  address text not null,
   owner text not null,
   uni_lab_api_key text,
   position_initialized boolean not null default false,
@@ -20,12 +27,21 @@ create table if not exists keeper_vaults (
   -- an alternating pattern (see PLAN.md) — the keeper decides E1 freely each
   -- cycle, informed by uni-lab's live simulation; this column is purely the
   -- keeper's own bookkeeping of what it last chose, not a contract guarantee.
-  reinjection_active boolean not null default false
+  reinjection_active boolean not null default false,
+  primary key (chain_id, address)
 );
 alter table keeper_vaults enable row level security;
 
 -- Migration for a table created before reinjection_active existed:
 -- alter table keeper_vaults add column if not exists reinjection_active boolean not null default false;
+
+-- Migration for a table created before multichain support (2026-07-17) — run
+-- this in the Supabase SQL Editor once, before deploying the multichain
+-- keeper. Safe to run even if chain_id already exists (idempotent).
+-- alter table keeper_vaults add column if not exists chain_id integer not null default 42220;
+-- alter table keeper_vaults drop constraint if exists keeper_vaults_pkey;
+-- alter table keeper_vaults add primary key (chain_id, address);
+-- alter table keeper_unilab_calls add column if not exists chain_id integer not null default 42220;
 
 -- Generic key/value for keeper bookkeeping (currently just lastProcessedBlock).
 create table if not exists keeper_state (
@@ -38,6 +54,7 @@ alter table keeper_state enable row level security;
 -- latency. See PLAN.md: the paid API the agent's design revolves around.
 create table if not exists keeper_unilab_calls (
   id bigint generated always as identity primary key,
+  chain_id integer not null default 42220,
   vault text not null,
   endpoint text not null,
   request jsonb not null,

@@ -1,9 +1,8 @@
 import "server-only";
 import type { Address } from "viem";
-import { publicClient } from "./wallet";
+import type { ChainRuntime } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi } from "./serverContracts";
 import { erc20Abi } from "../contracts";
-import { POOL, WETH } from "../addresses";
 import { ethPriceFromTick } from "../priceMath";
 
 export type VaultAction =
@@ -25,8 +24,8 @@ const DUST_SWEEP_MIN_USD = 1;
  * itself, this is just the off-chain pre-check so we don't waste a paid API call
  * on a doomed transaction.
  */
-export async function checkVault(vaultAddress: Address): Promise<VaultAction> {
-  const vault = vaultContract(vaultAddress);
+export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Promise<VaultAction> {
+  const vault = vaultContract(chain, vaultAddress);
 
   const [targetConfigured, positionTokenId, rebalanceCount, maxRebalances, lastRebalanceTimestamp, minInterval, periodicInterval] =
     await Promise.all([
@@ -64,7 +63,7 @@ export async function checkVault(vaultAddress: Address): Promise<VaultAction> {
   if (periodicDue) return { kind: "rebalance", reason: "periodic" };
 
   const posManager = (await vault.read.positionManager()) as Address;
-  const positions = (await publicClient.readContract({
+  const positions = (await chain.publicClient.readContract({
     address: posManager,
     abi: positionManagerAbi,
     functionName: "positions",
@@ -72,8 +71,8 @@ export async function checkVault(vaultAddress: Address): Promise<VaultAction> {
   })) as readonly [bigint, Address, Address, Address, number, number, number, bigint, bigint, bigint, bigint, bigint];
 
   const [, , , , , tickLower, tickUpper] = positions;
-  const [, currentTick] = (await publicClient.readContract({
-    address: POOL,
+  const [, currentTick] = (await chain.publicClient.readContract({
+    address: chain.pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
   })) as readonly [bigint, number, number, number, number, number, boolean];
@@ -103,8 +102,8 @@ export async function checkVault(vaultAddress: Address): Promise<VaultAction> {
   // indefinitely.
   const [idleUsdt, idleWeth] = await Promise.all([
     vault.read.investableUsdt() as Promise<bigint>,
-    publicClient.readContract({
-      address: WETH,
+    chain.publicClient.readContract({
+      address: chain.volatileToken,
       abi: erc20Abi,
       functionName: "balanceOf",
       args: [vaultAddress],

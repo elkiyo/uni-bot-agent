@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 export async function GET() {
   const { data, error } = await supabase()
     .from("keeper_unilab_calls")
-    .select("id, vault, endpoint, http_status, ok, duration_ms, request, response, error, created_at")
+    .select("id, vault, chain_id, endpoint, http_status, ok, duration_ms, request, response, error, created_at")
     .order("created_at", { ascending: false })
     .limit(50);
 

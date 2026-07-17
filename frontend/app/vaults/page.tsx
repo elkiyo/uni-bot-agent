@@ -5,31 +5,35 @@ import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
 import { Header } from "../components/Header";
 import { vaultFactoryAbi, rangeVaultAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
-import { FACTORY_ADDRESS, POOL, POSITION_MANAGER, WETH } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
+import { useSelectedChain } from "@/lib/useSelectedChain";
+import type { ChainDef } from "@/lib/chains";
 
 export default function VaultsPage() {
   const { address, isConnected } = useAccount();
+  const { selectedChain: chain } = useSelectedChain();
 
   // Fetched once here and passed down — every card needs the live price, no
   // reason for each of N cards to poll the same pool independently.
   const { data: slot0 } = useReadContract({
-    address: POOL,
+    address: chain.pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
+    chainId: chain.id,
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
 
   const { data: vaults, isLoading } = useReadContract({
-    address: FACTORY_ADDRESS,
+    address: chain.factoryAddress || undefined,
     abi: vaultFactoryAbi,
     functionName: "getVaultsByOwner",
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && FACTORY_ADDRESS) },
+    chainId: chain.id,
+    query: { enabled: Boolean(address && chain.factoryAddress) },
   });
   const vaultList = (vaults as string[] | undefined) ?? [];
 
@@ -37,7 +41,7 @@ export default function VaultsPage() {
   // in with vaults that can still operate.
   const { data: closedFlags } = useReadContracts({
     contracts: vaultList.map(
-      (v) => ({ address: v as `0x${string}`, abi: rangeVaultAbi, functionName: "closed" }) as const,
+      (v) => ({ address: v as `0x${string}`, abi: rangeVaultAbi, functionName: "closed", chainId: chain.id }) as const,
     ),
     query: { enabled: vaultList.length > 0, refetchInterval: 15_000 },
   });
@@ -64,25 +68,25 @@ export default function VaultsPage() {
         </div>
 
         <div className="mt-10">
-          {!FACTORY_ADDRESS && (
+          {!chain.factoryAddress && (
             <div className="glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
-              Los contratos todavía no están configurados en este entorno.
+              Los contratos todavía no están configurados en {chain.name}.
             </div>
           )}
 
-          {FACTORY_ADDRESS && !isConnected && (
+          {chain.factoryAddress && !isConnected && (
             <div className="glass rounded-2xl p-10 text-center">
               <p className="text-muted">Conectá tu wallet para ver tus vaults.</p>
             </div>
           )}
 
-          {FACTORY_ADDRESS && isConnected && isLoading && (
+          {chain.factoryAddress && isConnected && isLoading && (
             <div className="glass rounded-2xl p-10 text-center">
               <p className="text-muted">Cargando…</p>
             </div>
           )}
 
-          {FACTORY_ADDRESS && isConnected && !isLoading && vaultList.length === 0 && (
+          {chain.factoryAddress && isConnected && !isLoading && vaultList.length === 0 && (
             <div className="glass rounded-2xl p-10 text-center">
               <p className="text-muted">Todavía no tenés ningún vault.</p>
               <Link href="/create" className="btn-primary mt-6 !px-5 !py-2.5">
@@ -95,7 +99,7 @@ export default function VaultsPage() {
             <ul className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
               {activeVaults.map((vaultAddress) => (
                 <li key={vaultAddress}>
-                  <VaultCard vaultAddress={vaultAddress as `0x${string}`} currentTick={currentTick} />
+                  <VaultCard vaultAddress={vaultAddress as `0x${string}`} currentTick={currentTick} chain={chain} />
                 </li>
               ))}
             </ul>
@@ -116,7 +120,12 @@ export default function VaultsPage() {
             <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
               {closedVaults.map((vaultAddress) => (
                 <li key={vaultAddress}>
-                  <VaultCard vaultAddress={vaultAddress as `0x${string}`} currentTick={currentTick} isClosed />
+                  <VaultCard
+                    vaultAddress={vaultAddress as `0x${string}`}
+                    currentTick={currentTick}
+                    chain={chain}
+                    isClosed
+                  />
                 </li>
               ))}
             </ul>
@@ -140,27 +149,30 @@ const cardReads = (address: `0x${string}`) =>
 function VaultCard({
   vaultAddress,
   currentTick,
+  chain,
   isClosed,
 }: {
   vaultAddress: `0x${string}`;
   currentTick?: number;
+  chain: ChainDef;
   isClosed?: boolean;
 }) {
   const { data } = useReadContracts({
-    contracts: cardReads(vaultAddress),
+    contracts: cardReads(vaultAddress).map((c) => ({ ...c, chainId: chain.id })),
     query: { refetchInterval: 15_000 },
   });
   const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance] =
     data?.map((d) => d.result) ?? [];
-  const { data: feesSummary } = useVaultFeesSummary(vaultAddress);
+  const { data: feesSummary } = useVaultFeesSummary(vaultAddress, chain);
 
   const hasPosition = Boolean(positionTokenId && (positionTokenId as bigint) > 0n);
 
   const { data: positionData } = useReadContract({
-    address: POSITION_MANAGER,
+    address: chain.positionManager,
     abi: positionManagerAbi,
     functionName: "positions",
     args: hasPosition ? [positionTokenId as bigint] : undefined,
+    chainId: chain.id,
     query: { enabled: hasPosition, refetchInterval: 15_000 },
   });
 
@@ -207,10 +219,11 @@ function VaultCard({
   // production 2026-07-16, e.g. vault 0x0Bf394B3...5dEBCE5b8: $191 of WETH
   // sitting here with the USDT-only stat showing $0).
   const { data: idleWeth } = useReadContract({
-    address: WETH,
+    address: chain.volatileToken,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [vaultAddress],
+    chainId: chain.id,
     query: { refetchInterval: 15_000 },
   });
   const idleWethRaw = (idleWeth as bigint) ?? 0n;
@@ -220,7 +233,7 @@ function VaultCard({
   // depositado cuando se creó el vault — no el total histórico (top-ups
   // posteriores no cuentan) ni el capital libre actual (que baja cada vez que
   // se abre/reinyecta una posición), ni anualizado.
-  const { data: depositSummary } = useVaultDepositSummary(vaultAddress);
+  const { data: depositSummary } = useVaultDepositSummary(vaultAddress, chain);
   const feesUsdEquivalent =
     Number(formatUnits(feesSummary?.totalUsdt ?? 0n, 6)) +
     (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)) * ethPrice : 0);
@@ -260,7 +273,9 @@ function VaultCard({
       </div>
 
       <p className="mt-4 break-all font-mono text-xs text-white/70">{vaultAddress}</p>
-      <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">USDT / WETH · 0.3%</p>
+      <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+        {chain.stableSymbol} / {chain.volatileSymbol} · {chain.feeTier / 10_000}%
+      </p>
 
       {/* Headline: what the position is actually worth right now, and where */}
       <div className="mt-4 rounded-xl border border-hairline bg-white/[0.02] p-4">
@@ -279,10 +294,12 @@ function VaultCard({
       <div className="mt-4 grid grid-cols-3 gap-4 border-t border-hairline pt-4">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Capital libre</p>
-          <p className="mt-1 text-sm font-medium text-white/90">{formatUnits(idleCapital, 6)} USDT</p>
+          <p className="mt-1 text-sm font-medium text-white/90">
+            {formatUnits(idleCapital, 6)} {chain.stableSymbol}
+          </p>
           {idleWethRaw > 0n && (
             <p className="mt-0.5 font-mono text-xs text-negative">
-              + {Number(formatUnits(idleWethRaw, 18)).toFixed(6)} WETH
+              + {Number(formatUnits(idleWethRaw, 18)).toFixed(6)} {chain.volatileSymbol}
               {idleWethUsd !== undefined ? ` (~$${idleWethUsd.toFixed(2)})` : ""}
             </p>
           )}
@@ -296,11 +313,11 @@ function VaultCard({
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Comisiones</p>
           <p className="mt-1 text-sm font-medium text-positive">
-            {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT
+            {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} {chain.stableSymbol}
           </p>
           {(feesSummary?.totalWeth ?? 0n) > 0n && (
             <p className="mt-0.5 font-mono text-xs text-positive/70">
-              + {Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)).toFixed(6)} WETH
+              + {Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)).toFixed(6)} {chain.volatileSymbol}
               {ethPrice !== undefined
                 ? ` (~$${(Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)) * ethPrice).toFixed(2)})`
                 : ""}

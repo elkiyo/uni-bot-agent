@@ -4,28 +4,35 @@ import { useMemo } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
 import { positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
-import { POSITION_MANAGER, POOL } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { positionAmounts } from "@/lib/positionMath";
+import type { ChainDef } from "@/lib/chains";
 
 /**
  * Renders the actual Uniswap V3 position NFT — the SVG art is generated fully
  * on-chain by the NonfungiblePositionManager and shipped inside tokenURI() as
  * base64 JSON — plus a composition breakdown styled after Uniswap's own
- * position page (value + WETH/USDT split bar, fees-earned card).
+ * position page (value + volatile/stable split bar, fees-earned card).
  */
-export function PositionNFT({ tokenId }: { tokenId: bigint }) {
+export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainDef }) {
   const { data: uri } = useReadContract({
-    address: POSITION_MANAGER,
+    address: chain.positionManager,
     abi: positionManagerAbi,
     functionName: "tokenURI",
     args: [tokenId],
+    chainId: chain.id,
   });
 
   const { data: reads } = useReadContracts({
     contracts: [
-      { address: POSITION_MANAGER, abi: positionManagerAbi, functionName: "positions", args: [tokenId] },
-      { address: POOL, abi: uniswapV3PoolAbi, functionName: "slot0" },
+      {
+        address: chain.positionManager,
+        abi: positionManagerAbi,
+        functionName: "positions",
+        args: [tokenId],
+        chainId: chain.id,
+      },
+      { address: chain.pool, abi: uniswapV3PoolAbi, functionName: "slot0", chainId: chain.id },
     ],
     query: { refetchInterval: 15_000 },
   });
@@ -65,7 +72,7 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
     currentTick !== undefined ? positionAmounts(liquidity, currentTick, tickLower, tickUpper) : undefined;
   const usdtAmount = amounts ? amounts.amount0Raw / 1e6 : 0;
   const wethAmount = amounts ? amounts.amount1Raw / 1e18 : 0;
-  const usdtValue = usdtAmount; // USDT ~= $1
+  const usdtValue = usdtAmount; // the stable leg (USDT/USDC) ~= $1
   const wethValue = ethPrice !== undefined ? wethAmount * ethPrice : 0;
   const totalValue = usdtValue + wethValue;
   const wethPct = totalValue > 0 ? (wethValue / totalValue) * 100 : 0;
@@ -93,7 +100,9 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
         ) : (
           <span className="eyebrow !border-negative/40 !text-negative">Fuera de rango</span>
         )}
-        <span className="eyebrow">USDT / WETH · 0.3%</span>
+        <span className="eyebrow">
+          {chain.stableSymbol} / {chain.volatileSymbol} · {chain.feeTier / 10_000}%
+        </span>
       </div>
       <p className="mt-1 text-sm text-muted">
         Arte generado 100% on-chain por el contrato de Uniswap V3 — el NFT vive dentro del
@@ -118,12 +127,12 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
             </div>
           )}
           <a
-            href={`https://celoscan.io/nft/${POSITION_MANAGER}/${String(tokenId)}`}
+            href={`${chain.explorerBaseUrl}/nft/${chain.positionManager}/${String(tokenId)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-3 block text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted underline-offset-4 hover:text-accent hover:underline"
           >
-            Ver NFT en Celoscan →
+            Ver NFT en el explorer →
           </a>
         </div>
 
@@ -139,8 +148,18 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
             </p>
             <CompositionBar leftPct={wethPct} />
             <div className="mt-3 flex flex-col gap-2 text-sm">
-              <TokenRow label="WETH" pct={wethPct} usd={wethValue} native={`${wethAmount.toFixed(4)} WETH`} />
-              <TokenRow label="USDT" pct={usdtPct} usd={usdtValue} native={`${usdtAmount.toFixed(2)} USDT`} />
+              <TokenRow
+                label={chain.volatileSymbol}
+                pct={wethPct}
+                usd={wethValue}
+                native={`${wethAmount.toFixed(4)} ${chain.volatileSymbol}`}
+              />
+              <TokenRow
+                label={chain.stableSymbol}
+                pct={usdtPct}
+                usd={usdtValue}
+                native={`${usdtAmount.toFixed(2)} ${chain.stableSymbol}`}
+              />
             </div>
           </div>
 
@@ -157,16 +176,16 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
             <CompositionBar leftPct={feesWethPct} />
             <div className="mt-3 flex flex-col gap-2 text-sm">
               <TokenRow
-                label="WETH"
+                label={chain.volatileSymbol}
                 pct={feesWethPct}
                 usd={feesWethValue}
-                native={`${feesWethAmount.toFixed(6)} WETH`}
+                native={`${feesWethAmount.toFixed(6)} ${chain.volatileSymbol}`}
               />
               <TokenRow
-                label="USDT"
+                label={chain.stableSymbol}
                 pct={feesUsdtPct}
                 usd={feesUsdtValue}
-                native={`${feesUsdtAmount.toFixed(4)} USDT`}
+                native={`${feesUsdtAmount.toFixed(4)} ${chain.stableSymbol}`}
               />
             </div>
             <p className="mt-3 text-xs text-faint">
@@ -191,7 +210,9 @@ export function PositionNFT({ tokenId }: { tokenId: bigint }) {
               </span>
             </div>
             {ethPrice !== undefined && (
-              <p className="mt-2 text-xs text-faint">Precio actual: ${ethPrice.toFixed(2)} · USDT/WETH</p>
+              <p className="mt-2 text-xs text-faint">
+                Precio actual: ${ethPrice.toFixed(2)} · {chain.stableSymbol}/{chain.volatileSymbol}
+              </p>
             )}
           </div>
         </div>

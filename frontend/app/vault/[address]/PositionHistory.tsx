@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { formatUnits, parseEventLogs, type Log } from "viem";
 import { rangeVaultAbi } from "@/lib/contracts";
-import { FACTORY_DEPLOY_BLOCK } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { getLogsChunked } from "@/lib/getLogsChunked";
+import type { ChainDef } from "@/lib/chains";
 
 interface OpenEvent {
   tokenId: bigint;
@@ -41,16 +41,20 @@ interface PositionRecord {
  * PositionInitialized/Rebalanced event, pair it with the NEXT such event
  * (its close) and whatever LpFeesPaidToOwner fired in that same closing tx.
  */
-export function PositionHistory({ address }: { address: `0x${string}` }) {
-  const publicClient = usePublicClient();
+export function PositionHistory({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
+  const publicClient = usePublicClient({ chainId: chain.id });
 
   const { data: positions } = useQuery({
-    queryKey: ["vault-position-history", address],
+    queryKey: ["vault-position-history", chain.id, address],
     enabled: Boolean(publicClient),
     refetchInterval: 20_000,
     queryFn: async (): Promise<PositionRecord[]> => {
       if (!publicClient) return [];
-      const logs = await getLogsChunked(publicClient, { address, fromBlock: FACTORY_DEPLOY_BLOCK, toBlock: "latest" });
+      const logs = await getLogsChunked(publicClient, {
+        address,
+        fromBlock: chain.factoryDeployBlock,
+        toBlock: "latest",
+      });
       const parsed = parseEventLogs({ abi: rangeVaultAbi, logs: logs as Log[] });
 
       const targetConfigs: Array<{ tickLower: number; tickUpper: number; blockNumber: bigint }> = [];
@@ -190,18 +194,18 @@ export function PositionHistory({ address }: { address: `0x${string}` }) {
                 <p className="mt-0.5 text-positive">
                   {p.isOpen
                     ? "en curso"
-                    : `${formatUnits(p.feesUsdt, 6)} USDT${p.feesWeth > 0n ? ` + ${Number(formatUnits(p.feesWeth, 18)).toFixed(6)} WETH` : ""}`}
+                    : `${formatUnits(p.feesUsdt, 6)} ${chain.stableSymbol}${p.feesWeth > 0n ? ` + ${Number(formatUnits(p.feesWeth, 18)).toFixed(6)} ${chain.volatileSymbol}` : ""}`}
                 </p>
               </div>
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Reinyección al abrir</p>
                 <p className="mt-0.5 text-white/90">
-                  {p.reinjectedUsdt > 0n ? `${formatUnits(p.reinjectedUsdt, 6)} USDT` : "sin reinyección"}
+                  {p.reinjectedUsdt > 0n ? `${formatUnits(p.reinjectedUsdt, 6)} ${chain.stableSymbol}` : "sin reinyección"}
                 </p>
               </div>
             </div>
             <a
-              href={`https://celoscan.io/tx/${p.createdTxHash}`}
+              href={`${chain.explorerBaseUrl}/tx/${p.createdTxHash}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-3 inline-block font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"

@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { parseEventLogs, type Log } from "viem";
 import { uniswapV3PoolAbi, uniswapV3FactoryAbi } from "./contracts";
-import { USDT, WETH, UNISWAP_V3_FACTORY, CANDIDATE_SWAP_FEE_TIERS } from "./addresses";
 import { getLogsChunked } from "./getLogsChunked";
+import type { ChainDef } from "./chains";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 // ~how far back to sample recent trading activity from — a snapshot, not
@@ -21,7 +21,7 @@ export interface PoolMetrics {
   tick: number | undefined;
   swapCount: number;
   distinctTraders: number;
-  volumeUsdt: number;
+  volumeStable: number; // in the chain's stable token (USDT on Celo, USDC on Arbitrum), not always USDT
   estimatedFeeRevenueUsd: number;
   /** Fee revenue generated per unit of liquidity over the lookback window —
    * a rough proxy for what an LP actually earns per dollar staked, since raw
@@ -32,37 +32,42 @@ export interface PoolMetrics {
 }
 
 /**
- * Live per-pool metrics for every USDT/WETH fee tier that exists on Celo
- * mainnet — same pair every vault already trades, just at different fee
- * tiers/depths. Surfaced so a user picking WHERE to open their position sees
- * real numbers instead of guessing: a lower fee tier isn't automatically a
- * better (or worse) place to earn LP yield — it depends on how much volume
- * that specific pool actually sees relative to its own liquidity, which
- * shifts over time. Confirmed 2026-07-17 comparing Celo's 0.3% and 0.01%
- * USDT/WETH pools: the 0.01% pool had ~35x the swap volume but ~8x the
- * liquidity and 30x lower fee rate — closer than either number alone
- * suggests, and not something that holds forever.
+ * Live per-pool metrics for every fee tier of the given chain's stable/WETH
+ * pair — same pair every vault on that chain already trades, just at
+ * different fee tiers/depths. Surfaced so a user picking WHERE to open their
+ * position sees real numbers instead of guessing: a lower fee tier isn't
+ * automatically a better (or worse) place to earn LP yield — it depends on
+ * how much volume that specific pool actually sees relative to its own
+ * liquidity, which shifts over time. Confirmed 2026-07-17 comparing Celo's
+ * 0.3% and 0.01% USDT/WETH pools: the 0.01% pool had ~35x the swap volume
+ * but ~8x the liquidity and 30x lower fee rate — closer than either number
+ * alone suggests, and not something that holds forever.
  *
  * Deliberately does NOT rank/recommend a pool — see feeRevenuePerLiquidity's
  * own caveat above about why a single recent window isn't the whole story.
+ *
+ * Reads against `chain` explicitly (via wagmi's `usePublicClient({chainId})`)
+ * rather than whatever the wallet happens to be connected to — the viewing
+ * chain (useSelectedChain) and the wallet's chain are deliberately decoupled,
+ * see Header.tsx's NetworkSelector.
  */
-export function usePoolMetrics() {
-  const publicClient = usePublicClient();
+export function usePoolMetrics(chain: ChainDef) {
+  const publicClient = usePublicClient({ chainId: chain.id });
 
   return useQuery({
-    queryKey: ["pool-metrics"],
+    queryKey: ["pool-metrics", chain.id],
     enabled: Boolean(publicClient),
     refetchInterval: 60_000,
     queryFn: async (): Promise<PoolMetrics[]> => {
       if (!publicClient) return [];
 
       const pools = await Promise.all(
-        CANDIDATE_SWAP_FEE_TIERS.map(async (fee) => {
+        chain.candidateSwapFeeTiers.map(async (fee) => {
           const pool = (await publicClient.readContract({
-            address: UNISWAP_V3_FACTORY,
+            address: chain.uniswapV3Factory,
             abi: uniswapV3FactoryAbi,
             functionName: "getPool",
-            args: [USDT, WETH, fee],
+            args: [chain.stableToken, chain.volatileToken, fee],
           })) as `0x${string}`;
           return { fee, pool };
         }),
@@ -82,7 +87,7 @@ export function usePoolMetrics() {
               tick: undefined,
               swapCount: 0,
               distinctTraders: 0,
-              volumeUsdt: 0,
+              volumeStable: 0,
               estimatedFeeRevenueUsd: 0,
               feeRevenuePerLiquidity: undefined,
             };
@@ -106,8 +111,8 @@ export function usePoolMetrics() {
             senders.add(args.sender);
             volumeRaw += args.amount0 < 0n ? -args.amount0 : args.amount0;
           }
-          const volumeUsdt = Number(volumeRaw) / 1e6;
-          const estimatedFeeRevenueUsd = (volumeUsdt * fee) / 1_000_000; // fee is in hundredths of a bip (3000 == 0.3%)
+          const volumeStable = Number(volumeRaw) / 1e6; // both USDT and USDC are 6 decimals
+          const estimatedFeeRevenueUsd = (volumeStable * fee) / 1_000_000; // fee is in hundredths of a bip (3000 == 0.3%)
 
           return {
             fee,
@@ -117,7 +122,7 @@ export function usePoolMetrics() {
             tick: slot0?.[1],
             swapCount: swaps.length,
             distinctTraders: senders.size,
-            volumeUsdt,
+            volumeStable,
             estimatedFeeRevenueUsd,
             feeRevenuePerLiquidity: liquidity > 0n ? estimatedFeeRevenueUsd / Number(liquidity) : undefined,
           };

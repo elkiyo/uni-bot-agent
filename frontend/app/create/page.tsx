@@ -2,99 +2,113 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWriteContract, useSwitchChain } from "wagmi";
 import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import { Header } from "../components/Header";
 import { AlertModal } from "../components/AlertModal";
 import { vaultFactoryAbi, rangeVaultAbi, erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
-import { FACTORY_ADDRESS, PLATFORM_CONFIG_ADDRESS, USDT, WETH, POOL, FEE_TIER } from "@/lib/addresses";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { usePoolMetrics } from "@/lib/usePoolMetrics";
+import { useSelectedChain } from "@/lib/useSelectedChain";
 
 type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
 
-const stepLabel: Record<Step, string> = {
-  idle: "Crear vault",
-  creating: "1/5 · Creando vault…",
-  approving: "2/5 · Aprobando USDT…",
-  configuring: "3/5 · Configurando objetivo…",
-  risk: "4/5 · Fijando límites de riesgo…",
-  depositing: "5/5 · Depositando…",
-  done: "Listo ✓",
-  error: "Reintentar",
-};
+function stepLabelFor(stableSymbol: string): Record<Step, string> {
+  return {
+    idle: "Crear vault",
+    creating: "1/5 · Creando vault…",
+    approving: `2/5 · Aprobando ${stableSymbol}…`,
+    configuring: "3/5 · Configurando objetivo…",
+    risk: "4/5 · Fijando límites de riesgo…",
+    depositing: "5/5 · Depositando…",
+    done: "Listo ✓",
+    error: "Reintentar",
+  };
+}
 
 // The 5 signatures the wallet is going to ask for, in order — shown as a
 // checklist so the user knows what each one actually does before signing,
 // not just a changing "3/5…" label on the button mid-flow.
-const SIGNATURE_STEPS: { key: Exclude<Step, "idle" | "done" | "error">; title: string; desc: string }[] = [
-  {
-    key: "creating",
-    title: "Crear vault",
-    desc: "Despliega tu vault personal (un clon del contrato) — todavía no mueve ningún fondo.",
-  },
-  {
-    key: "approving",
-    title: "Aprobar USDT",
-    desc: "Le da permiso al vault para transferir el USDT que vas a depositar en el siguiente paso.",
-  },
-  {
-    key: "configuring",
-    title: "Configurar objetivo",
-    desc: "Fija el rango de precio, el tope de rebalanceos y el tope de reinyección que el agente tiene que respetar.",
-  },
-  {
-    key: "risk",
-    title: "Fijar límites de riesgo",
-    desc: "Slippage máximo y cuánto puede desviarse el rango que proponga el agente del precio de mercado.",
-  },
-  {
-    key: "depositing",
-    title: "Depositar",
-    desc: "Transfiere el USDT real al vault, repartido en capital invertible y reserva de reinyección.",
-  },
-];
-const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
+function signatureStepsFor(
+  stableSymbol: string,
+): { key: Exclude<Step, "idle" | "done" | "error">; title: string; desc: string }[] {
+  return [
+    {
+      key: "creating",
+      title: "Crear vault",
+      desc: "Despliega tu vault personal (un clon del contrato) — todavía no mueve ningún fondo.",
+    },
+    {
+      key: "approving",
+      title: `Aprobar ${stableSymbol}`,
+      desc: `Le da permiso al vault para transferir el ${stableSymbol} que vas a depositar en el siguiente paso.`,
+    },
+    {
+      key: "configuring",
+      title: "Configurar objetivo",
+      desc: "Fija el rango de precio, el tope de rebalanceos y el tope de reinyección que el agente tiene que respetar.",
+    },
+    {
+      key: "risk",
+      title: "Fijar límites de riesgo",
+      desc: "Slippage máximo y cuánto puede desviarse el rango que proponga el agente del precio de mercado.",
+    },
+    {
+      key: "depositing",
+      title: "Depositar",
+      desc: `Transfiere el ${stableSymbol} real al vault, repartido en capital invertible y reserva de reinyección.`,
+    },
+  ];
+}
 
 export default function CreateVault() {
   const router = useRouter();
-  const { address, isConnected } = useAccount();
-  const publicClient = usePublicClient();
+  const { address, isConnected, chainId: walletChainId } = useAccount();
+  const { selectedChain: chain } = useSelectedChain();
+  const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
+  const { switchChainAsync } = useSwitchChain();
+  const stepLabel = stepLabelFor(chain.stableSymbol);
+  const SIGNATURE_STEPS = signatureStepsFor(chain.stableSymbol);
+  const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
 
   // Which fee-tier pool the NEW position itself will live in — independent
   // of pickDeepestSwapFee (server-side, keeper-only: picks where SWAPS
   // route). This is a yield-strategy choice, not a pure cost minimization —
   // see usePoolMetrics's own docstring for why a lower fee tier isn't
-  // automatically better. Defaults to the platform's main pool (FEE_TIER).
-  const { data: poolMetrics } = usePoolMetrics();
-  const [selectedFee, setSelectedFee] = useState<number>(FEE_TIER);
+  // automatically better. Defaults to the platform's main pool (chain.feeTier).
+  const { data: poolMetrics } = usePoolMetrics(chain);
+  const [selectedFee, setSelectedFee] = useState<number>(chain.feeTier);
   const selectedPoolMeta = poolMetrics?.find((p) => p.fee === selectedFee);
-  const selectedPool = (selectedPoolMeta?.pool ?? POOL) as `0x${string}`;
+  const selectedPool = (selectedPoolMeta?.pool ?? chain.pool) as `0x${string}`;
 
   const { data: slot0 } = useReadContract({
     address: selectedPool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
+    chainId: chain.id,
   });
   const { data: tickSpacing } = useReadContract({
     address: selectedPool,
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
+    chainId: chain.id,
   });
   const { data: creationFeeUsdtRaw } = useReadContract({
-    address: PLATFORM_CONFIG_ADDRESS,
+    address: chain.platformConfigAddress || undefined,
     abi: platformConfigAbi,
     functionName: "creationFeeUsdt",
+    chainId: chain.id,
   });
   const creationFeeUsdt = (creationFeeUsdtRaw as bigint) ?? 0n;
   // 0 == no cap, same convention RangeVault.deposit() itself uses — read live
   // so a later platform change (e.g. raising it) is reflected without a
   // frontend redeploy. New vault, so nothing previously committed to weigh in.
   const { data: maxDepositUsdRaw } = useReadContract({
-    address: PLATFORM_CONFIG_ADDRESS,
+    address: chain.platformConfigAddress || undefined,
     abi: platformConfigAbi,
     functionName: "maxDepositUsd",
+    chainId: chain.id,
   });
   const maxDepositUsd = (maxDepositUsdRaw as bigint) ?? 0n;
   const [capAlert, setCapAlert] = useState<string | null>(null);
@@ -159,20 +173,35 @@ export default function CreateVault() {
     const requestedTotalUsd = (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0);
     if (maxDepositUsd !== 0n && requestedTotalUsd > Number(formatUnits(maxDepositUsd, 6))) {
       setCapAlert(
-        `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} USDT. ` +
-          `Estás pidiendo ${requestedTotalUsd.toFixed(2)} USDT entre capital invertible y reserva — reducí el monto.`,
+        `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol}. ` +
+          `Estás pidiendo ${requestedTotalUsd.toFixed(2)} ${chain.stableSymbol} entre capital invertible y reserva — reducí el monto.`,
       );
       return;
+    }
+
+    // The viewing chain (chain, from useSelectedChain) and the wallet's
+    // actual connected chain are independent — see Header.tsx's
+    // NetworkSelector. Every write in this flow targets `chain`, so the
+    // wallet has to actually be on it before the first signature.
+    if (walletChainId !== chain.id) {
+      try {
+        await switchChainAsync({ chainId: chain.id });
+      } catch {
+        setError(`Cambiá tu wallet a ${chain.name} para crear un vault ahí.`);
+        setStep("error");
+        return;
+      }
     }
 
     try {
       currentPhase = "creating";
       setStep(currentPhase);
       const createHash = await writeContractAsync({
-        address: FACTORY_ADDRESS,
+        address: chain.factoryAddress || "0x0000000000000000000000000000000000000000",
         abi: vaultFactoryAbi,
         functionName: "createVault",
-        args: [selectedPool, USDT, WETH, selectedFee],
+        args: [selectedPool, chain.stableToken, chain.volatileToken, selectedFee],
+        chainId: chain.id,
       });
       const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createHash });
 
@@ -213,10 +242,11 @@ export default function CreateVault() {
       // fee on top of investable+reserve on a vault's first deposit (see
       // RangeVault.sol), so the approval has to cover it too or that call reverts.
       const approveHash = await writeContractAsync({
-        address: USDT,
+        address: chain.stableToken,
         abi: erc20Abi,
         functionName: "approve",
         args: [vaultAddress, total + creationFeeUsdt],
+        chainId: chain.id,
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
@@ -243,6 +273,7 @@ export default function CreateVault() {
           recenterMarginBps,
           exitTopCeilingMarginBps,
         ],
+        chainId: chain.id,
       });
       await publicClient.waitForTransactionReceipt({ hash: configureHash });
 
@@ -275,6 +306,7 @@ export default function CreateVault() {
         abi: rangeVaultAbi,
         functionName: "setRiskParams",
         args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
+        chainId: chain.id,
       });
       await publicClient.waitForTransactionReceipt({ hash: riskHash });
 
@@ -285,6 +317,7 @@ export default function CreateVault() {
         abi: rangeVaultAbi,
         functionName: "deposit",
         args: [reserve, investable],
+        chainId: chain.id,
       });
       await publicClient.waitForTransactionReceipt({ hash: depositHash });
 
@@ -315,8 +348,8 @@ export default function CreateVault() {
           Configurá tu posición
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
-          Par USDT/WETH. El agente arma la posición inicial con estos parámetros y la
-          rebalancea automáticamente — vos mantenés el control y la custodia.
+          Par {chain.stableSymbol}/{chain.volatileSymbol} en {chain.name}. El agente arma la posición inicial con
+          estos parámetros y la rebalancea automáticamente — vos mantenés el control y la custodia.
         </p>
 
         {isConnected && (
@@ -361,7 +394,7 @@ export default function CreateVault() {
                         </div>
                         <div className="flex justify-between">
                           <dt>Volumen (reciente)</dt>
-                          <dd className="font-mono">${p.volumeUsdt.toFixed(0)}</dd>
+                          <dd className="font-mono">${p.volumeStable.toFixed(0)}</dd>
                         </div>
                         <div className="flex justify-between">
                           <dt>Swaps (reciente)</dt>
@@ -384,9 +417,9 @@ export default function CreateVault() {
           </div>
         )}
 
-        {!FACTORY_ADDRESS && (
+        {!chain.factoryAddress && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
-            Los contratos todavía no están configurados en este entorno.
+            Los contratos todavía no están configurados en {chain.name}.
           </div>
         )}
 
@@ -397,7 +430,7 @@ export default function CreateVault() {
               <div className="grid gap-6 sm:grid-cols-2">
                 <Field
                   label="Monto de inversión"
-                  suffix="USDT"
+                  suffix={chain.stableSymbol}
                   value={investAmount}
                   onChange={setInvestAmount}
                   placeholder="100"
@@ -427,7 +460,7 @@ export default function CreateVault() {
                 />
                 <Field
                   label="Tope de reinyección por ciclo"
-                  suffix="USDT"
+                  suffix={chain.stableSymbol}
                   value={reinjectionAmount}
                   onChange={setReinjectionAmount}
                   placeholder="10"
@@ -505,7 +538,7 @@ export default function CreateVault() {
                 )}
               </div>
 
-              <button onClick={handleCreate} disabled={busy || !FACTORY_ADDRESS} className="btn-primary mt-8 w-full">
+              <button onClick={handleCreate} disabled={busy || !chain.factoryAddress} className="btn-primary mt-8 w-full">
                 {stepLabel[step]}
               </button>
 
@@ -517,7 +550,7 @@ export default function CreateVault() {
               {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
 
               <div className="mt-6">
-                <SignatureStepper current={step} failedAt={failedAt} />
+                <SignatureStepper current={step} failedAt={failedAt} steps={SIGNATURE_STEPS} keys={SIGNATURE_KEYS} />
               </div>
             </div>
 
@@ -542,15 +575,21 @@ export default function CreateVault() {
                     }
                   />
                   <div className="my-1 border-t border-hairline" />
-                  <SummaryRow k="Capital invertible" v={`${investAmount || "0"} USDT`} />
-                  <SummaryRow k="Reserva de reinyección" v={`${reinjectionAmount || "0"} USDT`} />
+                  <SummaryRow k="Capital invertible" v={`${investAmount || "0"} ${chain.stableSymbol}`} />
+                  <SummaryRow k="Reserva de reinyección" v={`${reinjectionAmount || "0"} ${chain.stableSymbol}`} />
                   {creationFeeUsdt > 0n && (
-                    <SummaryRow k="Fee de creación (una vez)" v={`${formatUnits(creationFeeUsdt, 6)} USDT`} />
+                    <SummaryRow
+                      k="Fee de creación (una vez)"
+                      v={`${formatUnits(creationFeeUsdt, 6)} ${chain.stableSymbol}`}
+                    />
                   )}
                   <div className="my-1 border-t border-hairline" />
-                  <SummaryRow k="Total a depositar" v={`${totalUsdt.toFixed(2)} USDT`} strong />
+                  <SummaryRow k="Total a depositar" v={`${totalUsdt.toFixed(2)} ${chain.stableSymbol}`} strong />
                   {maxDepositUsd > 0n && (
-                    <SummaryRow k="Tope de la plataforma" v={`${formatUnits(maxDepositUsd, 6)} USDT`} />
+                    <SummaryRow
+                      k="Tope de la plataforma"
+                      v={`${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol}`}
+                    />
                   )}
                 </dl>
               </div>
@@ -623,11 +662,21 @@ function SummaryRow({ k, v, strong }: { k: string; v: string; strong?: boolean }
 /** Shows the 5 signatures the wallet will ask for, what each one does, and —
  * once the flow starts — which one is in progress / done / where it failed.
  * Visible from before the user even clicks "Crear vault", not just mid-flow. */
-function SignatureStepper({ current, failedAt }: { current: Step; failedAt: Step | null }) {
-  const currentIndex = SIGNATURE_KEYS.indexOf(current as (typeof SIGNATURE_KEYS)[number]);
+function SignatureStepper({
+  current,
+  failedAt,
+  steps,
+  keys,
+}: {
+  current: Step;
+  failedAt: Step | null;
+  steps: ReturnType<typeof signatureStepsFor>;
+  keys: Step[];
+}) {
+  const currentIndex = keys.indexOf(current);
   const isDone = current === "done";
   const isError = current === "error";
-  const failedIndex = failedAt ? SIGNATURE_KEYS.indexOf(failedAt as (typeof SIGNATURE_KEYS)[number]) : -1;
+  const failedIndex = failedAt ? keys.indexOf(failedAt) : -1;
 
   return (
     <div className="glass rounded-2xl p-5">
@@ -635,7 +684,7 @@ function SignatureStepper({ current, failedAt }: { current: Step; failedAt: Step
         Firmas necesarias (5)
       </span>
       <ol className="mt-4 flex flex-col gap-4">
-        {SIGNATURE_STEPS.map((s, i) => {
+        {steps.map((s, i) => {
           const done = isDone || i < currentIndex || (isError && i < failedIndex);
           const failed = isError && i === failedIndex;
           const active = !isDone && !isError && i === currentIndex;

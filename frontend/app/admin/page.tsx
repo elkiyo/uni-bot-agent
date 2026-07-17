@@ -1,14 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount, useBalance, usePublicClient, useReadContract, useReadContracts, useWriteContract } from "wagmi";
+import {
+  useAccount,
+  useBalance,
+  usePublicClient,
+  useReadContract,
+  useReadContracts,
+  useWriteContract,
+  useSwitchChain,
+} from "wagmi";
 import { formatUnits, parseUnits, type Address } from "viem";
 import { Header } from "../components/Header";
 import { VolumeChart } from "./VolumeChart";
 import { platformConfigAbi, vaultFactoryAbi, rangeVaultAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
-import { PLATFORM_CONFIG_ADDRESS, FACTORY_ADDRESS, FACTORY_DEPLOY_BLOCK, POOL, WETH, USDC, POSITION_MANAGER } from "@/lib/addresses";
+import { USDC } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
+import { useSelectedChain } from "@/lib/useSelectedChain";
 
 interface UniLabCallRow {
   id: number;
@@ -24,21 +33,43 @@ interface UniLabCallRow {
 }
 
 export default function Admin() {
-  const { address: connected } = useAccount();
-  const publicClient = usePublicClient();
+  const { address: connected, chainId: walletChainId } = useAccount();
+  const { selectedChain: chain } = useSelectedChain();
+  const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
+  const { switchChainAsync } = useSwitchChain();
 
   const { data, refetch } = useReadContracts({
     contracts: [
-      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "owner" },
-      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "defaultOperator" },
-      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "maxDepositUsd" },
-      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "performanceFeeBps" },
-      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "creationFeeUsdt" },
-      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "treasury" },
-      { address: FACTORY_ADDRESS, abi: vaultFactoryAbi, functionName: "vaultCount" },
+      { address: chain.platformConfigAddress || undefined, abi: platformConfigAbi, functionName: "owner", chainId: chain.id },
+      {
+        address: chain.platformConfigAddress || undefined,
+        abi: platformConfigAbi,
+        functionName: "defaultOperator",
+        chainId: chain.id,
+      },
+      {
+        address: chain.platformConfigAddress || undefined,
+        abi: platformConfigAbi,
+        functionName: "maxDepositUsd",
+        chainId: chain.id,
+      },
+      {
+        address: chain.platformConfigAddress || undefined,
+        abi: platformConfigAbi,
+        functionName: "performanceFeeBps",
+        chainId: chain.id,
+      },
+      {
+        address: chain.platformConfigAddress || undefined,
+        abi: platformConfigAbi,
+        functionName: "creationFeeUsdt",
+        chainId: chain.id,
+      },
+      { address: chain.platformConfigAddress || undefined, abi: platformConfigAbi, functionName: "treasury", chainId: chain.id },
+      { address: chain.factoryAddress || undefined, abi: vaultFactoryAbi, functionName: "vaultCount", chainId: chain.id },
     ],
-    query: { enabled: Boolean(PLATFORM_CONFIG_ADDRESS && FACTORY_ADDRESS) },
+    query: { enabled: Boolean(chain.platformConfigAddress && chain.factoryAddress) },
   });
 
   const [owner, defaultOperator, maxDepositUsd, performanceFeeBps, creationFeeUsdt, treasury, vaultCount] =
@@ -50,12 +81,13 @@ export default function Admin() {
   // All vault addresses, to sum Rebalanced events across the whole platform.
   const { data: allVaultsData } = useReadContracts({
     contracts: Array.from({ length: Number(vaultCount ?? 0n) }, (_, i) => ({
-      address: FACTORY_ADDRESS,
+      address: chain.factoryAddress || undefined,
       abi: vaultFactoryAbi,
       functionName: "allVaults",
       args: [BigInt(i)],
+      chainId: chain.id,
     })),
-    query: { enabled: Boolean(FACTORY_ADDRESS) && Number(vaultCount ?? 0n) > 0 },
+    query: { enabled: Boolean(chain.factoryAddress) && Number(vaultCount ?? 0n) > 0 },
   });
   const vaultAddresses = (allVaultsData?.map((d) => d.result) ?? []).filter(Boolean) as Address[];
 
@@ -81,7 +113,7 @@ export default function Admin() {
       let totalPerformanceFee1Raw = 0n;
 
       for (const vault of vaultAddresses) {
-        let fromBlock = FACTORY_DEPLOY_BLOCK;
+        let fromBlock = chain.factoryDeployBlock;
         while (fromBlock <= latest) {
           const toBlock = fromBlock + MAX_RANGE > latest ? latest : fromBlock + MAX_RANGE;
           const [rebalancedLogs, lpFeeLogs, performanceFeeLogs] = await Promise.all([
@@ -136,13 +168,14 @@ export default function Admin() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- vaultAddresses is a derived array, re-created every render; comparing its content via length+publicClient is enough here
-  }, [publicClient, vaultAddresses.length]);
+  }, [publicClient, vaultAddresses.length, chain.factoryDeployBlock]);
 
   // --- Live per-vault snapshot: active/closed split, idle capital, TVL, in-range health ---
   const { data: slot0 } = useReadContract({
-    address: POOL,
+    address: chain.pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
+    chainId: chain.id,
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
@@ -152,10 +185,10 @@ export default function Admin() {
     contracts: vaultAddresses.flatMap(
       (v) =>
         [
-          { address: v, abi: rangeVaultAbi, functionName: "closed" },
-          { address: v, abi: rangeVaultAbi, functionName: "positionTokenId" },
-          { address: v, abi: rangeVaultAbi, functionName: "investableUsdt" },
-          { address: v, abi: rangeVaultAbi, functionName: "reserveBalance" },
+          { address: v, abi: rangeVaultAbi, functionName: "closed", chainId: chain.id },
+          { address: v, abi: rangeVaultAbi, functionName: "positionTokenId", chainId: chain.id },
+          { address: v, abi: rangeVaultAbi, functionName: "investableUsdt", chainId: chain.id },
+          { address: v, abi: rangeVaultAbi, functionName: "reserveBalance", chainId: chain.id },
         ] as const,
     ),
     query: { enabled: vaultAddresses.length > 0, refetchInterval: 30_000 },
@@ -163,7 +196,8 @@ export default function Admin() {
 
   const { data: vaultWethBalances } = useReadContracts({
     contracts: vaultAddresses.map(
-      (v) => ({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [v] }) as const,
+      (v) =>
+        ({ address: chain.volatileToken, abi: erc20Abi, functionName: "balanceOf", args: [v], chainId: chain.id }) as const,
     ),
     query: { enabled: vaultAddresses.length > 0, refetchInterval: 30_000 },
   });
@@ -185,10 +219,11 @@ export default function Admin() {
     contracts: vaultsWithPosition.map(
       (v) =>
         ({
-          address: POSITION_MANAGER,
+          address: chain.positionManager,
           abi: positionManagerAbi,
           functionName: "positions",
           args: [v.positionTokenId as bigint],
+          chainId: chain.id,
         }) as const,
     ),
     query: { enabled: vaultsWithPosition.length > 0, refetchInterval: 30_000 },
@@ -217,8 +252,13 @@ export default function Admin() {
     ethPrice !== undefined ? totalIdleUsdtNum + totalIdleWethNum * ethPrice + totalPositionValueUsd : undefined;
 
   // --- Operator health — real incident 2026-07-16: ran out of CELO gas mid-session ---
-  const { data: operatorCelo } = useBalance({
+  // Native gas is per-chain (CELO on Celo, ETH on Arbitrum) — follows the
+  // selected chain. The USDC balance is deliberately NOT chain-aware: uni-lab
+  // payment always happens from the operator's Celo-side USDC regardless of
+  // which chain's vault triggered the rebalance cycle (see unilab.ts).
+  const { data: operatorGas } = useBalance({
     address: defaultOperator as Address | undefined,
+    chainId: chain.id,
     query: { enabled: Boolean(defaultOperator), refetchInterval: 30_000 },
   });
   const { data: operatorUsdc } = useReadContract({
@@ -228,7 +268,7 @@ export default function Admin() {
     args: defaultOperator ? [defaultOperator as Address] : undefined,
     query: { enabled: Boolean(defaultOperator), refetchInterval: 30_000 },
   });
-  const operatorCeloLow = operatorCelo !== undefined && Number(operatorCelo.formatted) < 1;
+  const operatorGasLow = operatorGas !== undefined && Number(operatorGas.formatted) < 1;
 
   const [uniLabCalls, setUniLabCalls] = useState<UniLabCallRow[] | null>(null);
   useEffect(() => {
@@ -255,6 +295,14 @@ export default function Admin() {
     setBusy(label);
     setError(null);
     try {
+      if (walletChainId !== chain.id) {
+        try {
+          await switchChainAsync({ chainId: chain.id });
+        } catch {
+          setError(`Cambiá tu wallet a ${chain.name} para continuar.`);
+          return;
+        }
+      }
       const hash = await fn();
       await publicClient.waitForTransactionReceipt({ hash });
       await refetch();
@@ -281,19 +329,21 @@ export default function Admin() {
           configuración global que aplica a todos los vaults.
         </p>
 
-        {(!PLATFORM_CONFIG_ADDRESS || !FACTORY_ADDRESS) && (
+        {(!chain.platformConfigAddress || !chain.factoryAddress) && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
-            Los contratos todavía no están configurados en este entorno.
+            Los contratos todavía no están configurados en {chain.name}.
           </div>
         )}
 
-        {operatorCeloLow && (
+        {operatorGasLow && (
           <div className="glass mt-8 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
             <p className="text-sm font-medium text-negative">
-              El operador tiene menos de 1 CELO — puede quedarse sin gas para rebalancear o
-              barrer dust en cualquier momento.
+              El operador tiene menos de 1 {chain.viemChain.nativeCurrency.symbol} en {chain.name} — puede quedarse
+              sin gas para rebalancear o barrer dust en cualquier momento.
             </p>
-            <p className="mt-1 font-mono text-xs text-muted">Mandale CELO a {String(defaultOperator)}</p>
+            <p className="mt-1 font-mono text-xs text-muted">
+              Mandale {chain.viemChain.nativeCurrency.symbol} a {String(defaultOperator)}
+            </p>
           </div>
         )}
 
@@ -310,17 +360,17 @@ export default function Admin() {
               />
               <Stat
                 label="Capital libre"
-                value={`${totalIdleUsdtNum.toFixed(2)} USDT${
-                  totalIdleWethNum > 0 ? ` + ${totalIdleWethNum.toFixed(6)} WETH` : ""
+                value={`${totalIdleUsdtNum.toFixed(2)} ${chain.stableSymbol}${
+                  totalIdleWethNum > 0 ? ` + ${totalIdleWethNum.toFixed(6)} ${chain.volatileSymbol}` : ""
                 }`}
               />
               <Stat
                 label="Comisiones LP generadas (bruto)"
                 value={
                   platformStats
-                    ? `${(platformStats.totalLpFees0Usd + platformStats.totalPerformanceFee0Usd).toFixed(2)} USDT${
+                    ? `${(platformStats.totalLpFees0Usd + platformStats.totalPerformanceFee0Usd).toFixed(2)} ${chain.stableSymbol}${
                         platformStats.totalLpFees1Weth + platformStats.totalPerformanceFee1Weth > 0
-                          ? ` + ${(platformStats.totalLpFees1Weth + platformStats.totalPerformanceFee1Weth).toFixed(6)} WETH`
+                          ? ` + ${(platformStats.totalLpFees1Weth + platformStats.totalPerformanceFee1Weth).toFixed(6)} ${chain.volatileSymbol}`
                           : ""
                       }`
                     : "…"
@@ -344,12 +394,12 @@ export default function Admin() {
             <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Operador</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
-                label="CELO (gas)"
-                value={operatorCelo ? `${Number(operatorCelo.formatted).toFixed(3)} CELO` : "…"}
-                negative={operatorCeloLow}
+                label={`${chain.viemChain.nativeCurrency.symbol} (gas, ${chain.name})`}
+                value={operatorGas ? `${Number(operatorGas.formatted).toFixed(3)} ${chain.viemChain.nativeCurrency.symbol}` : "…"}
+                negative={operatorGasLow}
               />
               <Stat
-                label="USDC (x402)"
+                label="USDC (x402, Celo)"
                 value={operatorUsdc !== undefined ? `${formatUnits(operatorUsdc as bigint, 6)} USDC` : "…"}
               />
               <Stat
@@ -372,14 +422,17 @@ export default function Admin() {
 
             <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Configuración</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <Stat label="Tope por vault" value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} USDT`} />
+              <Stat
+                label="Tope por vault"
+                value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
+              />
               <Stat
                 label="Performance fee"
                 value={`${Number((performanceFeeBps as bigint) ?? 0n) / 100}% de las comisiones LP`}
               />
               <Stat
                 label="Fee de creación"
-                value={`${formatUnits((creationFeeUsdt as bigint) ?? 0n, 6)} USDT · una vez por vault`}
+                value={`${formatUnits((creationFeeUsdt as bigint) ?? 0n, 6)} ${chain.stableSymbol} · una vez por vault`}
               />
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
@@ -394,7 +447,7 @@ export default function Admin() {
               <Stat label="Precio ETH" value={ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"} />
             </div>
 
-            <VolumeChart vaultAddresses={vaultAddresses} />
+            <VolumeChart vaultAddresses={vaultAddresses} chain={chain} />
           </>
         )}
 
@@ -427,16 +480,17 @@ export default function Admin() {
                 onSubmit={() =>
                   withTx("operator", () =>
                     writeContractAsync({
-                      address: PLATFORM_CONFIG_ADDRESS,
+                      address: chain.platformConfigAddress || "0x0000000000000000000000000000000000000000",
                       abi: platformConfigAbi,
                       functionName: "setDefaultOperator",
                       args: [newOperator as `0x${string}`],
+                      chainId: chain.id,
                     }),
                   )
                 }
               />
               <AdminField
-                label="Nuevo tope de depósito por vault (USDT)"
+                label={`Nuevo tope de depósito por vault (${chain.stableSymbol})`}
                 value={newCap}
                 onChange={setNewCap}
                 action="Actualizar"
@@ -444,10 +498,11 @@ export default function Admin() {
                 onSubmit={() =>
                   withTx("cap", () =>
                     writeContractAsync({
-                      address: PLATFORM_CONFIG_ADDRESS,
+                      address: chain.platformConfigAddress || "0x0000000000000000000000000000000000000000",
                       abi: platformConfigAbi,
                       functionName: "setMaxDepositUsd",
                       args: [parseUnits(newCap || "0", 6)],
+                      chainId: chain.id,
                     }),
                   )
                 }
@@ -461,16 +516,17 @@ export default function Admin() {
                 onSubmit={() =>
                   withTx("performanceFee", () =>
                     writeContractAsync({
-                      address: PLATFORM_CONFIG_ADDRESS,
+                      address: chain.platformConfigAddress || "0x0000000000000000000000000000000000000000",
                       abi: platformConfigAbi,
                       functionName: "setPerformanceFeeBps",
                       args: [BigInt(Math.round(Number(newPerformanceFeePct || "0") * 100))],
+                      chainId: chain.id,
                     }),
                   )
                 }
               />
               <AdminField
-                label="Nuevo fee de creación (USDT, una vez por vault)"
+                label={`Nuevo fee de creación (${chain.stableSymbol}, una vez por vault)`}
                 value={newCreationFee}
                 onChange={setNewCreationFee}
                 action="Actualizar"
@@ -478,10 +534,11 @@ export default function Admin() {
                 onSubmit={() =>
                   withTx("creationFee", () =>
                     writeContractAsync({
-                      address: PLATFORM_CONFIG_ADDRESS,
+                      address: chain.platformConfigAddress || "0x0000000000000000000000000000000000000000",
                       abi: platformConfigAbi,
                       functionName: "setCreationFeeUsdt",
                       args: [parseUnits(newCreationFee || "0", 6)],
+                      chainId: chain.id,
                     }),
                   )
                 }
@@ -495,10 +552,11 @@ export default function Admin() {
                 onSubmit={() =>
                   withTx("treasury", () =>
                     writeContractAsync({
-                      address: PLATFORM_CONFIG_ADDRESS,
+                      address: chain.platformConfigAddress || "0x0000000000000000000000000000000000000000",
                       abi: platformConfigAbi,
                       functionName: "setTreasury",
                       args: [newTreasury as `0x${string}`],
+                      chainId: chain.id,
                     }),
                   )
                 }

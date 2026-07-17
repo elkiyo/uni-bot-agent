@@ -13,15 +13,18 @@ export const runtime = "nodejs";
  * Clears itself automatically the moment a later call succeeds — no
  * separate "resolved" flag to maintain.
  */
-export async function GET(_request: Request, { params }: { params: Promise<{ address: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
-  const { data, error } = await supabase()
+  // chainId is optional (older links / callers that predate multichain) —
+  // when present, disambiguates in the (astronomically unlikely but not
+  // impossible) case the same vault address exists on two different chains.
+  const chainId = new URL(request.url).searchParams.get("chainId");
+  let query = supabase()
     .from("keeper_unilab_calls")
     .select("endpoint, ok, error, http_status, created_at")
-    .eq("vault", address.toLowerCase())
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq("vault", address.toLowerCase());
+  if (chainId) query = query.eq("chain_id", Number(chainId));
+  const { data, error } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

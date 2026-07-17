@@ -1,29 +1,29 @@
 import "server-only";
 import { encodeFunctionData, getContract, type Abi, type Address, type Hex } from "viem";
-import { publicClient, walletClient } from "./wallet";
+import type { ChainRuntime } from "./wallet";
 import { withAttribution } from "./attribution";
 import { rangeVaultAbi, vaultFactoryAbi, uniswapV3PoolAbi, positionManagerAbi } from "../contracts";
 
 export { uniswapV3PoolAbi, positionManagerAbi };
 
-function client() {
-  if (!walletClient) throw new Error("OPERATOR_PRIVATE_KEY not set — cannot send transactions");
-  return walletClient;
+function client(chain: ChainRuntime) {
+  if (!chain.walletClient) throw new Error("OPERATOR_PRIVATE_KEY not set — cannot send transactions");
+  return chain.walletClient;
 }
 
-export function vaultContract(address: Address) {
+export function vaultContract(chain: ChainRuntime, address: Address) {
   return getContract({
     address,
     abi: rangeVaultAbi,
-    client: { public: publicClient, wallet: client() },
+    client: { public: chain.publicClient, wallet: client(chain) },
   });
 }
 
-export function factoryContract(address: Address) {
+export function factoryContract(chain: ChainRuntime, address: Address) {
   return getContract({
     address,
     abi: vaultFactoryAbi,
-    client: { public: publicClient, wallet: client() },
+    client: { public: chain.publicClient, wallet: client(chain) },
   });
 }
 
@@ -34,12 +34,13 @@ export function factoryContract(address: Address) {
  * calldata hook.
  */
 export async function sendTaggedTx(
+  chain: ChainRuntime,
   address: Address,
   abi: Abi,
   functionName: string,
   args: readonly unknown[],
 ): Promise<Hex> {
-  const wallet = client();
+  const wallet = client(chain);
   const baseData = encodeFunctionData({ abi, functionName, args });
   const data = withAttribution(baseData);
   return wallet.sendTransaction({ to: address, data, account: wallet.account!, chain: wallet.chain });

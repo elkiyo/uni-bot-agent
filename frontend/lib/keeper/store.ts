@@ -37,17 +37,26 @@ function fromRow(row: VaultRow): VaultRecord {
  * Supabase (Postgres)-backed state for the keeper: which vaults exist, their
  * uni-lab.xyz api_key (one per vault — see PLAN.md, agent_wallet = vault
  * address because the vault itself sends the USDT payment), and how far
- * event discovery has scanned. Schema: lib/keeper/schema.sql. Replaced the
- * original JSON-file-backed store (see SCALING.md) when the keeper moved off
- * a single Mac onto Vercel — serverless functions have no persistent local
- * disk across invocations.
+ * event discovery has scanned. Schema: lib/keeper/schema.sql. Scoped to a
+ * single chain per instance — keeper_vaults' primary key is (chain_id,
+ * address) since the same vault address could in principle exist on two
+ * different chains (each has its own factory/deployer nonce), and
+ * keeper_state's lastProcessedBlock is namespaced per chain in the key
+ * itself rather than a separate column, since it's already a generic
+ * key/value table.
  */
 export class Store {
+  constructor(private readonly chainId: number) {}
+
+  private get lastProcessedBlockKey(): string {
+    return `lastProcessedBlock:${this.chainId}`;
+  }
+
   async getLastProcessedBlock(): Promise<bigint> {
     const { data, error } = await supabase()
       .from("keeper_state")
       .select("value")
-      .eq("key", "lastProcessedBlock")
+      .eq("key", this.lastProcessedBlockKey)
       .maybeSingle();
     if (error) throw error;
     return data ? BigInt(data.value as string) : 0n;
@@ -56,7 +65,7 @@ export class Store {
   async setLastProcessedBlock(block: bigint): Promise<void> {
     const { error } = await supabase()
       .from("keeper_state")
-      .upsert({ key: "lastProcessedBlock", value: block.toString() });
+      .upsert({ key: this.lastProcessedBlockKey, value: block.toString() });
     if (error) throw error;
   }
 
@@ -64,6 +73,7 @@ export class Store {
     const { data, error } = await supabase()
       .from("keeper_vaults")
       .select("*")
+      .eq("chain_id", this.chainId)
       .eq("address", address.toLowerCase())
       .maybeSingle();
     if (error) throw error;
@@ -71,7 +81,7 @@ export class Store {
   }
 
   async listVaults(): Promise<VaultRecord[]> {
-    const { data, error } = await supabase().from("keeper_vaults").select("*");
+    const { data, error } = await supabase().from("keeper_vaults").select("*").eq("chain_id", this.chainId);
     if (error) throw error;
     return ((data as VaultRow[]) ?? []).map(fromRow);
   }
@@ -80,6 +90,7 @@ export class Store {
     const { error } = await supabase()
       .from("keeper_vaults")
       .upsert({
+        chain_id: this.chainId,
         address: record.address.toLowerCase(),
         owner: record.owner,
         uni_lab_api_key: record.uniLabApiKey ?? null,
@@ -98,7 +109,11 @@ export class Store {
  * rather than by a single in-process scheduler: a slow tick (RPC lag, a
  * pending tx confirmation) could still be running when the next 5-minute
  * trigger fires. Implemented as an atomic conditional UPDATE in Postgres
- * (acquire_tick_lock / release_tick_lock, see schema.sql).
+ * (acquire_tick_lock / release_tick_lock, see schema.sql). One global lock
+ * for the whole platform, not per-chain — a single runTick() invocation
+ * processes every configured chain sequentially within one lock/unlock, so
+ * there's never a real race between chains to guard against, and a
+ * per-chain lock would just add schema complexity for no benefit.
  */
 export async function acquireTickLock(ttlSeconds: number): Promise<boolean> {
   const { data, error } = await supabase().rpc("acquire_tick_lock", { ttl_seconds: ttlSeconds });

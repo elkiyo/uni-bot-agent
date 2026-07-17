@@ -4,24 +4,28 @@ import Link from "next/link";
 import { useReadContract } from "wagmi";
 import { Header } from "./components/Header";
 import { uniswapV3PoolAbi, vaultFactoryAbi } from "@/lib/contracts";
-import { USDT, WETH, POOL, FEE_TIER, FACTORY_ADDRESS, POSITION_MANAGER, SWAP_ROUTER02 } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
+import { useSelectedChain } from "@/lib/useSelectedChain";
 
 export default function Home() {
+  const { selectedChain: chain } = useSelectedChain();
+
   const { data: slot0 } = useReadContract({
-    address: POOL,
+    address: chain.pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
+    chainId: chain.id,
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick) : undefined;
 
   const { data: vaultCount } = useReadContract({
-    address: FACTORY_ADDRESS,
+    address: chain.factoryAddress || undefined,
     abi: vaultFactoryAbi,
     functionName: "vaultCount",
-    query: { enabled: Boolean(FACTORY_ADDRESS), refetchInterval: 30_000 },
+    chainId: chain.id,
+    query: { enabled: Boolean(chain.factoryAddress), refetchInterval: 30_000 },
   });
 
   return (
@@ -31,7 +35,7 @@ export default function Home() {
         {/* Hero */}
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="eyebrow">Uniswap V3 · Celo Mainnet</span>
+            <span className="eyebrow">Uniswap V3 · {chain.name} Mainnet</span>
             <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-60" />
@@ -49,8 +53,8 @@ export default function Home() {
             custodia.
           </h1>
           <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
-            Depositás <span className="text-white/80">USDT</span> — un solo token. El
-            agente arma y rebalancea tu posición en el pool USDT/WETH por vos.{" "}
+            Depositás <span className="text-white/80">{chain.stableSymbol}</span> — un solo token. El
+            agente arma y rebalancea tu posición en el pool {chain.stableSymbol}/{chain.volatileSymbol} por vos.{" "}
             <span className="text-white/80">Solo vos podés retirar los fondos</span>: el
             operador únicamente rebalancea, dentro de los límites que vos configurás.
           </p>
@@ -79,7 +83,9 @@ export default function Home() {
             </div>
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Pool</p>
-              <p className="mt-1 font-mono text-lg text-white/90">USDT/WETH · 0.3%</p>
+              <p className="mt-1 font-mono text-lg text-white/90">
+                {chain.stableSymbol}/{chain.volatileSymbol} · {chain.feeTier / 10_000}%
+              </p>
             </div>
           </div>
         </div>
@@ -89,7 +95,7 @@ export default function Home() {
           {[
             {
               n: "01",
-              t: "Depositás USDT",
+              t: `Depositás ${chain.stableSymbol}`,
               d: "Un solo token. El vault lo reparte entre capital invertible y reserva de reinyección.",
             },
             {
@@ -177,11 +183,11 @@ export default function Home() {
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            USDT/WETH, 0.3%, con liquidez real
+            {chain.stableSymbol}/{chain.volatileSymbol}, {chain.feeTier / 10_000}%, con liquidez real
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             No es un pool de prueba armado para la demo — cada vault mintea su posición en
-            el mismo pool público de Uniswap V3 que ya opera en Celo mainnet, compartiendo
+            el mismo pool público de Uniswap V3 que ya opera en {chain.name} mainnet, compartiendo
             liquidez con cualquier otro LP.
           </p>
 
@@ -189,40 +195,40 @@ export default function Home() {
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Pool</p>
               <a
-                href={`https://app.uniswap.org/explore/pools/celo/${POOL}`}
+                href={`${chain.explorerBaseUrl}/address/${chain.pool}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1.5 block break-all font-mono text-xs text-white/80 underline-offset-4 hover:text-accent hover:underline"
               >
-                {POOL} ↗
+                {chain.pool} ↗
               </a>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
                 Fee tier
               </p>
-              <p className="mt-1 text-sm text-white/80">{FEE_TIER / 10_000}%</p>
+              <p className="mt-1 text-sm text-white/80">{chain.feeTier / 10_000}%</p>
             </div>
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                token0 · USDT (Celo nativo)
+                token0 · {chain.stableSymbol}
               </p>
               <a
-                href={`https://celoscan.io/address/${USDT}`}
+                href={`${chain.explorerBaseUrl}/address/${chain.stableToken}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1.5 block break-all font-mono text-xs text-white/80 underline-offset-4 hover:text-accent hover:underline"
               >
-                {USDT} ↗
+                {chain.stableToken} ↗
               </a>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                token1 · WETH puenteado
+                token1 · {chain.volatileSymbol} puenteado
               </p>
               <a
-                href={`https://celoscan.io/address/${WETH}`}
+                href={`${chain.explorerBaseUrl}/address/${chain.volatileToken}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1.5 block break-all font-mono text-xs text-white/80 underline-offset-4 hover:text-accent hover:underline"
               >
-                {WETH} ↗
+                {chain.volatileToken} ↗
               </a>
             </div>
           </div>
@@ -230,7 +236,7 @@ export default function Home() {
           <p className="mt-4 font-mono text-[11px] text-faint">
             El agente opera vía el{" "}
             <a
-              href={`https://celoscan.io/address/${POSITION_MANAGER}`}
+              href={`${chain.explorerBaseUrl}/address/${chain.positionManager}`}
               target="_blank"
               rel="noopener noreferrer"
               className="underline-offset-4 hover:text-accent hover:underline"
@@ -239,14 +245,14 @@ export default function Home() {
             </a>{" "}
             y el{" "}
             <a
-              href={`https://celoscan.io/address/${SWAP_ROUTER02}`}
+              href={`${chain.explorerBaseUrl}/address/${chain.swapRouter02}`}
               target="_blank"
               rel="noopener noreferrer"
               className="underline-offset-4 hover:text-accent hover:underline"
             >
               SwapRouter02
             </a>{" "}
-            oficiales de Uniswap en Celo — contratos verificados, no wrappers propios.
+            oficiales de Uniswap en {chain.name} — contratos verificados, no wrappers propios.
           </p>
         </div>
 
