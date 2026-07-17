@@ -9,6 +9,7 @@ import {PlatformConfig} from "../src/PlatformConfig.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {RangeVault} from "../src/RangeVault.sol";
 import {INonfungiblePositionManager} from "../src/interfaces/INonfungiblePositionManager.sol";
+import {ISwapRouter02} from "../src/interfaces/ISwapRouter02.sol";
 
 /// Fork tests against real Celo mainnet contracts — see PLAN.md "Verificación":
 /// nothing here touches real capital, `deal()` mints test balances on the fork only.
@@ -32,12 +33,14 @@ contract RangeVaultTest is Test {
 
     uint256 constant REBALANCE_FEE = 1_000_000; // 1 USDT
     uint256 constant MAX_DEPOSIT_USD = 20_000_000_000; // 20,000 USDT cap while unaudited
+    uint256 constant PERFORMANCE_FEE_BPS = 1_000; // 10%
 
     function setUp() public {
         vm.createSelectFork(vm.envString("CELO_RPC_URL"));
         tickSpacing = pool.tickSpacing();
 
-        config = new PlatformConfig(platformOwner, USDT, defaultOperator, REBALANCE_FEE, MAX_DEPOSIT_USD);
+        config =
+            new PlatformConfig(platformOwner, USDT, defaultOperator, REBALANCE_FEE, MAX_DEPOSIT_USD, PERFORMANCE_FEE_BPS);
         factory = new VaultFactory(address(config), POSITION_MANAGER, SWAP_ROUTER02);
 
         vm.prank(lp);
@@ -62,6 +65,45 @@ contract RangeVaultTest is Test {
         if (lower == upper) upper += tickSpacing;
     }
 
+    /// Generates REAL Uniswap trading fees against whatever position is
+    /// currently open and in range, by having an unrelated trader swap
+    /// through the real forked pool — used to test performanceFeeBps
+    /// without mocking positionManager.collect().
+    function _generateTradingFees() internal {
+        address trader = makeAddr("trader");
+        deal(USDT, trader, 500_000_000_000); // 500,000 USDT — large enough to move price and accrue real fees
+        vm.startPrank(trader);
+        IERC20(USDT).approve(SWAP_ROUTER02, type(uint256).max);
+        ISwapRouter02(SWAP_ROUTER02).exactInputSingle(
+            ISwapRouter02.ExactInputSingleParams({
+                tokenIn: USDT,
+                tokenOut: WETH,
+                fee: 3000,
+                recipient: trader,
+                amountIn: 500_000_000_000,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            })
+        );
+        // Swap back so the price returns near where it started — keeps the
+        // vault's position in range for the rebalance/withdraw call that
+        // follows, isolating "fees accrued" from "price moved out of range".
+        uint256 wethBal = IERC20(WETH).balanceOf(trader);
+        IERC20(WETH).approve(SWAP_ROUTER02, type(uint256).max);
+        ISwapRouter02(SWAP_ROUTER02).exactInputSingle(
+            ISwapRouter02.ExactInputSingleParams({
+                tokenIn: WETH,
+                tokenOut: USDT,
+                fee: 3000,
+                recipient: trader,
+                amountIn: wethBal,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            })
+        );
+        vm.stopPrank();
+    }
+
     // ---------------------------------------------------------------------
     // Happy path
     // ---------------------------------------------------------------------
@@ -77,7 +119,9 @@ contract RangeVaultTest is Test {
             _targetTickUpper: upper,
             _maxRebalances: 5,
             _reinjectionAmount: 50_000_000,
-            _periodicRebalanceInterval: 1 days
+            _periodicRebalanceInterval: 1 days,
+            _recenterMarginBps: 500,
+            _exitTopCeilingMarginBps: 300
         });
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
@@ -179,7 +223,7 @@ contract RangeVaultTest is Test {
 
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
-        vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -205,7 +249,7 @@ contract RangeVaultTest is Test {
 
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
-        vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vault.setRiskParams(500, 12 hours, 100_000); // minRebalanceInterval = 12h
         vm.stopPrank();
@@ -229,7 +273,7 @@ contract RangeVaultTest is Test {
 
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
-        vault.configureTarget(5_000_000_000, lower, upper, 1, 0, 1 hours); // maxRebalances = 1
+        vault.configureTarget(5_000_000_000, lower, upper, 1, 0, 1 hours, 500, 300); // maxRebalances = 1
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -258,7 +302,7 @@ contract RangeVaultTest is Test {
 
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 5_000_000_000});
-        vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 hours);
+        vault.configureTarget(5_000_000_000, lower, upper, 5, 0, 1 hours, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -303,7 +347,7 @@ contract RangeVaultTest is Test {
 
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
-        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 hours); // cap = 50 USDT
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 hours, 500, 300); // cap = 50 USDT
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -329,7 +373,7 @@ contract RangeVaultTest is Test {
         // reserveBalance = 10 USDT, but the owner's per-cycle cap is much higher (100 USDT) —
         // the keeper still can't reinject more than what's actually sitting in reserve.
         vault.deposit({reserveAmount: 10_000_000, investableAmount: 4_990_000_000});
-        vault.configureTarget(4_990_000_000, lower, upper, 5, 100_000_000, 1 hours);
+        vault.configureTarget(4_990_000_000, lower, upper, 5, 100_000_000, 1 hours, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -353,7 +397,7 @@ contract RangeVaultTest is Test {
 
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
-        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 hours);
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 hours, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -390,7 +434,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
-        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 hours);
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 hours, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -415,7 +459,7 @@ contract RangeVaultTest is Test {
         vault.deposit({reserveAmount: 0, investableAmount: 1});
 
         vm.expectRevert(RangeVault.VaultClosed.selector);
-        vault.configureTarget(1, 0, 100, 1, 0, 1 hours);
+        vault.configureTarget(1, 0, 100, 1, 0, 1 hours, 500, 300);
 
         vm.expectRevert(RangeVault.VaultClosed.selector);
         vault.setRiskParams(1, 1, 1);
@@ -451,7 +495,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
-        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 days);
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -473,7 +517,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 4_800_000_000});
-        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 days);
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 50_000_000, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -509,7 +553,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
-        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -530,11 +574,224 @@ contract RangeVaultTest is Test {
         vault.withdraw(5_000, 5_000);
     }
 
+    // ---------------------------------------------------------------------
+    // Collect fees — trading fees only, principal untouched
+    // ---------------------------------------------------------------------
+
+    function test_collectFees_revertsWithNoPosition() public {
+        vm.prank(lp);
+        vm.expectRevert(RangeVault.NoPosition.selector);
+        vault.collectFees();
+    }
+
+    function test_collectFees_leavesPositionLiquidityUntouched() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days, 500, 300);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        uint256 tokenId = vault.initPosition(initSwap, 0, 0);
+        (,,,,,,, uint128 liquidityBefore,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+
+        vm.prank(lp);
+        vault.collectFees();
+
+        (,,,,,,, uint128 liquidityAfter,,,,) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+        assertEq(liquidityAfter, liquidityBefore, "collectFees must never touch position liquidity");
+        assertEq(vault.positionTokenId(), tokenId, "position stays open");
+    }
+
+    function test_collectFees_callableWhilePaused() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days, 500, 300);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 500_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        vm.startPrank(lp);
+        vault.pause();
+        vault.collectFees(); // must not revert — pause only stops the keeper, not the owner's own claim
+        vm.stopPrank();
+    }
+
+    function test_strangerCannotCollectFees() public {
+        vm.prank(stranger);
+        vm.expectRevert(RangeVault.NotOwner.selector);
+        vault.collectFees();
+    }
+
+    function test_operatorCannotCollectFees() public {
+        vm.prank(defaultOperator);
+        vm.expectRevert(RangeVault.NotOwner.selector);
+        vault.collectFees();
+    }
+
+    // ---------------------------------------------------------------------
+    // Performance fee — cut of LP trading fees, applied everywhere fees
+    // leave the vault (rebalance, collectFees, withdraw, withdrawAll), never
+    // on principal.
+    // ---------------------------------------------------------------------
+
+    function test_performanceFee_splitsFeesOnCollectFees() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(4000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 4_800_000_000});
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 0, 1 days, 500, 300);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        _generateTradingFees();
+
+        uint256 lpUsdtBefore = IERC20(USDT).balanceOf(lp);
+        uint256 lpWethBefore = IERC20(WETH).balanceOf(lp);
+        uint256 operatorUsdtBefore = IERC20(USDT).balanceOf(defaultOperator);
+        uint256 operatorWethBefore = IERC20(WETH).balanceOf(defaultOperator);
+
+        vm.prank(lp);
+        (uint256 netFee0, uint256 netFee1) = vault.collectFees();
+
+        uint256 lpGain0 = IERC20(USDT).balanceOf(lp) - lpUsdtBefore;
+        uint256 lpGain1 = IERC20(WETH).balanceOf(lp) - lpWethBefore;
+        uint256 platformGain0 = IERC20(USDT).balanceOf(defaultOperator) - operatorUsdtBefore;
+        uint256 platformGain1 = IERC20(WETH).balanceOf(defaultOperator) - operatorWethBefore;
+
+        assertEq(lpGain0, netFee0, "owner should receive exactly the net amount collectFees() returned");
+        assertEq(lpGain1, netFee1, "owner should receive exactly the net amount collectFees() returned");
+        assertGt(platformGain0 + platformGain1, 0, "some real fee should have accrued from the trade");
+
+        // gross = owner's net + platform's cut; platform's cut must match
+        // performanceFeeBps exactly (same integer-division formula the
+        // contract itself uses).
+        uint256 gross0 = lpGain0 + platformGain0;
+        uint256 gross1 = lpGain1 + platformGain1;
+        assertEq(platformGain0, (gross0 * PERFORMANCE_FEE_BPS) / 10_000, "token0 split should match performanceFeeBps exactly");
+        assertEq(platformGain1, (gross1 * PERFORMANCE_FEE_BPS) / 10_000, "token1 split should match performanceFeeBps exactly");
+    }
+
+    function test_performanceFee_zeroBpsGivesOwnerEverything() public {
+        vm.prank(platformOwner);
+        config.setPerformanceFeeBps(0);
+
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(4000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 4_800_000_000});
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 0, 1 days, 500, 300);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        _generateTradingFees();
+
+        uint256 operatorUsdtBefore = IERC20(USDT).balanceOf(defaultOperator);
+        uint256 operatorWethBefore = IERC20(WETH).balanceOf(defaultOperator);
+
+        vm.prank(lp);
+        vault.collectFees();
+
+        assertEq(
+            IERC20(USDT).balanceOf(defaultOperator), operatorUsdtBefore, "operator should get nothing when performanceFeeBps=0"
+        );
+        assertEq(
+            IERC20(WETH).balanceOf(defaultOperator), operatorWethBefore, "operator should get nothing when performanceFeeBps=0"
+        );
+    }
+
+    function test_performanceFee_appliesOnWithdrawAll() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(4000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 4_800_000_000});
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 0, 1 days, 500, 300);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        _generateTradingFees();
+
+        uint256 operatorUsdtBefore = IERC20(USDT).balanceOf(defaultOperator);
+        uint256 operatorWethBefore = IERC20(WETH).balanceOf(defaultOperator);
+
+        vm.prank(lp);
+        vault.withdrawAll();
+
+        bool operatorGotSomething = IERC20(USDT).balanceOf(defaultOperator) > operatorUsdtBefore
+            || IERC20(WETH).balanceOf(defaultOperator) > operatorWethBefore;
+        assertTrue(operatorGotSomething, "operator should receive a performance-fee cut on withdrawAll's collected LP fees");
+    }
+
+    function test_performanceFee_appliesOnRebalance() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(4000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 0, investableAmount: 4_800_000_000});
+        vault.configureTarget(4_800_000_000, lower, upper, 5, 0, 1 hours, 500, 300);
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVault.SwapInstruction memory initSwap =
+            RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0});
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+
+        _generateTradingFees();
+
+        vm.warp(block.timestamp + 1 hours + 1);
+        (int24 lower2, int24 upper2) = _alignedRangeAroundMarket(4000);
+        RangeVault.SwapInstruction memory noSwap =
+            RangeVault.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0});
+
+        uint256 operatorUsdtBefore = IERC20(USDT).balanceOf(defaultOperator);
+        vm.prank(defaultOperator);
+        vault.rebalance(lower2, upper2, noSwap, 0, 0, 0);
+
+        // Operator gets the flat REBALANCE_FEE plus (if any token0-side LP
+        // fees accrued) a performance cut on top — the exact split ratio is
+        // already asserted precisely in test_performanceFee_splitsFeesOnCollectFees
+        // via the same _splitPerformanceFee code path; this just confirms
+        // the combined payout is at least the flat fee and the call didn't
+        // revert with the new logic in place.
+        assertGe(IERC20(USDT).balanceOf(defaultOperator) - operatorUsdtBefore, REBALANCE_FEE);
+    }
+
+    function test_setPerformanceFeeBps_revertsAboveMax() public {
+        vm.prank(platformOwner);
+        vm.expectRevert();
+        config.setPerformanceFeeBps(10_001);
+    }
+
+    function test_strangerCannotSetPerformanceFeeBps() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        config.setPerformanceFeeBps(500);
+    }
+
     function test_increasePosition_addsLiquidityToOpenPosition() public {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
-        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -579,7 +836,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 1_000_000_000});
-        vault.configureTarget(1_000_000_000, lower, upper, 5, 200_000_000, 1 days);
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 200_000_000, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -605,7 +862,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 1_000_000_000});
-        vault.configureTarget(1_000_000_000, lower, upper, 5, 50_000_000, 1 days); // cap: 50 USDT/cycle
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 50_000_000, 1 days, 500, 300); // cap: 50 USDT/cycle
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -625,7 +882,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 10_000_000, investableAmount: 1_000_000_000}); // only 10 USDT in reserve
-        vault.configureTarget(1_000_000_000, lower, upper, 5, 200_000_000, 1 days);
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 200_000_000, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 
@@ -646,7 +903,7 @@ contract RangeVaultTest is Test {
             RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 0, amountOutMinimum: 0});
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 200_000_000, investableAmount: 0});
-        vault.configureTarget(0, 0, 100, 5, 200_000_000, 1 days);
+        vault.configureTarget(0, 0, 100, 5, 200_000_000, 1 days, 500, 300);
         vm.stopPrank();
 
         vm.prank(defaultOperator);
@@ -666,7 +923,7 @@ contract RangeVaultTest is Test {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
         vm.startPrank(lp);
         vault.deposit({reserveAmount: 0, investableAmount: 1_000_000_000});
-        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days);
+        vault.configureTarget(1_000_000_000, lower, upper, 5, 0, 1 days, 500, 300);
         vault.setRiskParams(500, 0, 500);
         vm.stopPrank();
 

@@ -17,7 +17,15 @@ import {VaultFactory} from "../src/VaultFactory.sol";
 /// no default, deliberately explicit), DEFAULT_OPERATOR (the platform's
 /// keeper wallet — see PLAN.md "Los 3 roles del sistema"),
 /// REBALANCE_FEE_USDT (6 decimals, e.g. 1_000_000 = 1 USDT),
-/// MAX_DEPOSIT_USD (6 decimals, hard cap per vault while unaudited — see PLAN.md "Riesgos").
+/// MAX_DEPOSIT_USD (6 decimals, hard cap per vault while unaudited — see PLAN.md "Riesgos"),
+/// PERFORMANCE_FEE_BPS (basis points cut of LP trading fees, e.g. 1_000 = 10%).
+///
+/// NOTE if this is a re-deploy replacing an existing PlatformConfig (e.g. to
+/// pick up a new RangeVault feature via a fresh VaultFactory): this always
+/// deploys a BRAND NEW PlatformConfig too, starting fresh from these env
+/// vars/defaults rather than copying the currently-live contract's values —
+/// pass REBALANCE_FEE_USDT/MAX_DEPOSIT_USD/PERFORMANCE_FEE_BPS explicitly if
+/// you want continuity with whatever's already in production.
 ///
 /// Usage (Ledger):
 ///   forge script script/Deploy.s.sol:Deploy --rpc-url $CELO_RPC_URL \
@@ -32,11 +40,13 @@ contract Deploy is Script {
         address defaultOperator = vm.envAddress("DEFAULT_OPERATOR");
         uint256 rebalanceFee = vm.envOr("REBALANCE_FEE_USDT", uint256(1_000_000)); // 1 USDT default
         uint256 maxDepositUsd = vm.envOr("MAX_DEPOSIT_USD", uint256(1_000_000_000)); // 1,000 USDT default cap
+        uint256 performanceFeeBps = vm.envOr("PERFORMANCE_FEE_BPS", uint256(1_000)); // 10% default
 
         vm.startBroadcast();
 
-        PlatformConfig config =
-            new PlatformConfig(platformOwner, USDT, defaultOperator, rebalanceFee, maxDepositUsd);
+        PlatformConfig config = new PlatformConfig(
+            platformOwner, USDT, defaultOperator, rebalanceFee, maxDepositUsd, performanceFeeBps
+        );
 
         VaultFactory factory = new VaultFactory(address(config), POSITION_MANAGER, SWAP_ROUTER02);
 

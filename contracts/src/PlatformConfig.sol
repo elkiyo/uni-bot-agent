@@ -27,29 +27,47 @@ contract PlatformConfig is Ownable2Step {
     /// for the hackathon.
     uint256 public maxDepositUsd;
 
+    /// @notice Cut of every LP trading fee the platform takes before the rest reaches
+    /// the vault owner — applied both when rebalance() pays out accrued fees and when
+    /// the owner calls collectFees() directly (same source of money either way, so
+    /// exempting one would just be a way to dodge the other). Basis points, e.g. 1000
+    /// = 10%. Read live at payout time, same as rebalanceFee — adjustable without
+    /// touching any vault.
+    uint256 public performanceFeeBps;
+
     event RebalanceFeeUpdated(uint256 newFee);
     event FeeTokenUpdated(address newToken);
     event DefaultOperatorUpdated(address newOperator);
     event MaxDepositUsdUpdated(uint256 newMax);
+    event PerformanceFeeBpsUpdated(uint256 newFeeBps);
 
     constructor(
         address initialOwner,
         address _feeToken,
         address _defaultOperator,
         uint256 _rebalanceFee,
-        uint256 _maxDepositUsd
+        uint256 _maxDepositUsd,
+        uint256 _performanceFeeBps
     ) Ownable(initialOwner) {
         require(_feeToken != address(0), "feeToken=0");
         require(_defaultOperator != address(0), "defaultOperator=0");
+        require(_performanceFeeBps <= 10_000, "performanceFeeBps>100%");
         feeToken = _feeToken;
         defaultOperator = _defaultOperator;
         rebalanceFee = _rebalanceFee;
         maxDepositUsd = _maxDepositUsd;
+        performanceFeeBps = _performanceFeeBps;
     }
 
     function setRebalanceFee(uint256 newFee) external onlyOwner {
         rebalanceFee = newFee;
         emit RebalanceFeeUpdated(newFee);
+    }
+
+    function setPerformanceFeeBps(uint256 newFeeBps) external onlyOwner {
+        require(newFeeBps <= 10_000, "performanceFeeBps>100%");
+        performanceFeeBps = newFeeBps;
+        emit PerformanceFeeBpsUpdated(newFeeBps);
     }
 
     function setFeeToken(address newToken) external onlyOwner {

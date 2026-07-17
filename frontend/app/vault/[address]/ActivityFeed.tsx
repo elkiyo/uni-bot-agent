@@ -141,7 +141,7 @@ function describe(
       return {
         kind: "config",
         title: "Configuración del agente",
-        detail: `Rango objetivo [${args.targetTickLower}, ${args.targetTickUpper}] · máx. ${args.maxRebalances} rebalanceos · reinyección ${usdt(args.reinjectionAmount)} · periódico cada ${Number(args.periodicRebalanceInterval) / 3600}h`,
+        detail: `Rango objetivo [${args.targetTickLower}, ${args.targetTickUpper}] · máx. ${args.maxRebalances} rebalanceos · reinyección ${usdt(args.reinjectionAmount)} · periódico cada ${Number(args.periodicRebalanceInterval) / 3600}h · margen recentrado ${Number((args.recenterMarginBps as bigint) ?? 0n) / 100}% · margen techo ${Number((args.exitTopCeilingMarginBps as bigint) ?? 0n) / 100}%`,
       };
     case "RiskParamsUpdated":
       return {
@@ -168,7 +168,23 @@ function describe(
       return {
         kind: "money",
         title: "Comisiones de Uniswap pagadas al owner",
-        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} generados por la posición, enviados directo a tu wallet antes de rearmarla`,
+        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} netos generados por la posición, enviados directo a tu wallet antes de rearmarla`,
+      };
+    }
+    case "FeesCollected": {
+      const amount1 = (args.amount1 as bigint) ?? 0n;
+      return {
+        kind: "money",
+        title: "Comisiones reclamadas manualmente",
+        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} netos para vos — la posición sigue abierta, solo se cobraron las comisiones`,
+      };
+    }
+    case "PerformanceFeeCollected": {
+      const amount1 = (args.amount1 as bigint) ?? 0n;
+      return {
+        kind: "money",
+        title: "Fee de performance a la plataforma",
+        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${Number(formatUnits(amount1, 18)).toFixed(6)} WETH` : ""} — corte de plataforma sobre las comisiones de Uniswap generadas`,
       };
     }
     case "Withdrawn":

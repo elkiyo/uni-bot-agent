@@ -96,6 +96,18 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     // keeper decides the actual amount per cycle, up to this cap.
     uint256 public reinjectionAmount;
     uint256 public periodicRebalanceInterval;
+    // How far below the live price the keeper sets the new floor (D1) when
+    // rebuilding a range from scratch — out-of-range-bottom recovery, or the
+    // floor half of an out-of-range-top rebuild. Read by the off-chain keeper
+    // (rebalancer.ts), not used on-chain — stored here so it's an owner
+    // knob instead of a hardcoded constant. Basis points (500 = 5%).
+    uint256 public recenterMarginBps;
+    // How far above the live price the keeper sets the new ceiling when
+    // rebuilding after an out-of-range-top break — that break already means
+    // the position is ~100% stable, so this is deliberately a much smaller
+    // margin than recenterMarginBps. Same as above: off-chain-only, owner
+    // knob. Basis points (300 = 3%).
+    uint256 public exitTopCeilingMarginBps;
 
     // ---------------------------------------------------------------------
     // Risk params — owner-set bounds the operator must stay within
@@ -144,13 +156,17 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         int24 targetTickUpper,
         uint256 maxRebalances,
         uint256 reinjectionAmount,
-        uint256 periodicRebalanceInterval
+        uint256 periodicRebalanceInterval,
+        uint256 recenterMarginBps,
+        uint256 exitTopCeilingMarginBps
     );
     event PositionInitialized(uint256 tokenId, uint256 amount0, uint256 amount1);
     event Rebalanced(
         uint256 indexed newTokenId, int24 tickLower, int24 tickUpper, uint256 reinjectedAmount, uint256 feePaid
     );
     event LpFeesPaidToOwner(uint256 amount0, uint256 amount1);
+    event FeesCollected(uint256 amount0, uint256 amount1);
+    event PerformanceFeeCollected(uint256 amount0, uint256 amount1);
     event Withdrawn(uint256 amount0, uint256 amount1);
     event PositionIncreased(uint256 usdtAmount, uint256 used0, uint256 used1);
     event ReinjectedIntoPosition(uint256 amount, uint256 used0, uint256 used1);
@@ -314,18 +330,28 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         int24 _targetTickUpper,
         uint256 _maxRebalances,
         uint256 _reinjectionAmount,
-        uint256 _periodicRebalanceInterval
+        uint256 _periodicRebalanceInterval,
+        uint256 _recenterMarginBps,
+        uint256 _exitTopCeilingMarginBps
     ) external onlyOwner notClosed {
         targetTickLower = _targetTickLower;
         targetTickUpper = _targetTickUpper;
         maxRebalances = _maxRebalances;
         reinjectionAmount = _reinjectionAmount;
         periodicRebalanceInterval = _periodicRebalanceInterval;
+        recenterMarginBps = _recenterMarginBps;
+        exitTopCeilingMarginBps = _exitTopCeilingMarginBps;
         targetConfigured = true;
 
         emit TargetConfigured(
-            investmentAmountUsd, _targetTickLower, _targetTickUpper, _maxRebalances, _reinjectionAmount,
-            _periodicRebalanceInterval
+            investmentAmountUsd,
+            _targetTickLower,
+            _targetTickUpper,
+            _maxRebalances,
+            _reinjectionAmount,
+            _periodicRebalanceInterval,
+            _recenterMarginBps,
+            _exitTopCeilingMarginBps
         );
     }
 
@@ -474,9 +500,10 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
         uint256 lpFee0 = collected0 - removed0;
         uint256 lpFee1 = collected1 - removed1;
-        if (lpFee0 > 0) IERC20(token0).safeTransfer(owner, lpFee0);
-        if (lpFee1 > 0) IERC20(token1).safeTransfer(owner, lpFee1);
-        if (lpFee0 > 0 || lpFee1 > 0) emit LpFeesPaidToOwner(lpFee0, lpFee1);
+        (uint256 netFee0, uint256 netFee1) = _splitPerformanceFee(lpFee0, lpFee1);
+        if (netFee0 > 0) IERC20(token0).safeTransfer(owner, netFee0);
+        if (netFee1 > 0) IERC20(token1).safeTransfer(owner, netFee1);
+        if (netFee0 > 0 || netFee1 > 0) emit LpFeesPaidToOwner(netFee0, netFee1);
 
         // 2) Let the keeper rearrange the recovered (principal-only) balance
         // toward the new range's ratio.
@@ -623,6 +650,43 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     }
 
     // ---------------------------------------------------------------------
+    // Owner: collect fees — trading fees only, principal untouched
+    // ---------------------------------------------------------------------
+
+    /// @notice Collects ONLY the trading fees the open position has accrued,
+    /// leaving its liquidity (principal) completely untouched. Unlike
+    /// `withdraw()`, which only ever collects as a side effect of removing at
+    /// least some liquidity (`positionShareBps > 0`), this calls
+    /// positionManager.collect() with no prior decreaseLiquidity — Uniswap V3
+    /// only ever returns what's "owed" to a position, and without a
+    /// decreaseLiquidity call first, the only thing owed is accrued fees, so
+    /// this can never touch principal by construction. Owner-only — subject
+    /// to the same performanceFeeBps cut as rebalance()'s LpFeesPaidToOwner
+    /// (same money either way; exempting this path would just be a way to
+    /// dodge that fee by claiming manually instead) — callable regardless of
+    /// `paused`, same as withdraw()/withdrawAll(): pausing stops the
+    /// keeper's automated actions, not the owner's own claim on money
+    /// already earned.
+    function collectFees() external onlyOwner nonReentrant returns (uint256 amount0, uint256 amount1) {
+        if (positionTokenId == 0) revert NoPosition();
+
+        (uint256 collected0, uint256 collected1) = positionManager.collect(
+            INonfungiblePositionManager.CollectParams({
+                tokenId: positionTokenId,
+                recipient: address(this),
+                amount0Max: type(uint128).max,
+                amount1Max: type(uint128).max
+            })
+        );
+        (amount0, amount1) = _splitPerformanceFee(collected0, collected1);
+
+        if (amount0 > 0) IERC20(token0).safeTransfer(owner, amount0);
+        if (amount1 > 0) IERC20(token1).safeTransfer(owner, amount1);
+
+        emit FeesCollected(amount0, amount1);
+    }
+
+    // ---------------------------------------------------------------------
     // Owner: withdraw — the only path principal can ever leave the vault
     // ---------------------------------------------------------------------
 
@@ -649,8 +713,10 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         if (positionShareBps > 0 && positionTokenId != 0) {
             (,,,,,,, uint128 liquidity,,,,) = positionManager.positions(positionTokenId);
             uint128 partialLiquidity = uint128((uint256(liquidity) * positionShareBps) / 10_000);
+            uint256 removed0;
+            uint256 removed1;
             if (partialLiquidity > 0) {
-                positionManager.decreaseLiquidity(
+                (removed0, removed1) = positionManager.decreaseLiquidity(
                     INonfungiblePositionManager.DecreaseLiquidityParams({
                         tokenId: positionTokenId,
                         liquidity: partialLiquidity,
@@ -661,10 +727,10 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
                 );
             }
             // collect() always sweeps 100% of what's owed — the principal just
-            // freed above plus any accrued trading fees, which belong to owner
-            // in full regardless of positionShareBps (same as rebalance()'s
-            // LpFeesPaidToOwner logic).
-            (amount0, amount1) = positionManager.collect(
+            // freed above (never taxed, it's the owner's own capital) plus any
+            // accrued trading fees, which ARE subject to performanceFeeBps,
+            // same as everywhere else fees leave the vault.
+            (uint256 collected0, uint256 collected1) = positionManager.collect(
                 INonfungiblePositionManager.CollectParams({
                     tokenId: positionTokenId,
                     recipient: address(this),
@@ -672,6 +738,9 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
                     amount1Max: type(uint128).max
                 })
             );
+            (uint256 netFee0, uint256 netFee1) = _splitPerformanceFee(collected0 - removed0, collected1 - removed1);
+            amount0 = removed0 + netFee0;
+            amount1 = removed1 + netFee1;
             // 100% withdrawn from an existing position: the NFT is now empty,
             // so clear positionTokenId the same way withdrawAll() does —
             // otherwise it'd dangle as a reference to a zero-liquidity
@@ -698,8 +767,10 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     function withdrawAll() external onlyOwner nonReentrant {
         if (positionTokenId != 0) {
             (,,,,,,, uint128 liquidity,,,,) = positionManager.positions(positionTokenId);
+            uint256 removed0;
+            uint256 removed1;
             if (liquidity > 0) {
-                positionManager.decreaseLiquidity(
+                (removed0, removed1) = positionManager.decreaseLiquidity(
                     INonfungiblePositionManager.DecreaseLiquidityParams({
                         tokenId: positionTokenId,
                         liquidity: liquidity,
@@ -709,7 +780,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
                     })
                 );
             }
-            positionManager.collect(
+            (uint256 collected0, uint256 collected1) = positionManager.collect(
                 INonfungiblePositionManager.CollectParams({
                     tokenId: positionTokenId,
                     recipient: address(this),
@@ -717,6 +788,10 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
                     amount1Max: type(uint128).max
                 })
             );
+            // Only the fee slice (collected beyond what decreaseLiquidity just
+            // freed) is subject to performanceFeeBps — sent to `operator`
+            // immediately, so the balanceOf() reads below already land net.
+            _splitPerformanceFee(collected0 - removed0, collected1 - removed1);
             positionTokenId = 0;
         }
 
@@ -739,8 +814,10 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
         if (positionTokenId != 0) {
             (,,,,,,, uint128 liquidity,,,,) = positionManager.positions(positionTokenId);
+            uint256 removed0;
+            uint256 removed1;
             if (liquidity > 0) {
-                positionManager.decreaseLiquidity(
+                (removed0, removed1) = positionManager.decreaseLiquidity(
                     INonfungiblePositionManager.DecreaseLiquidityParams({
                         tokenId: positionTokenId,
                         liquidity: liquidity,
@@ -750,7 +827,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
                     })
                 );
             }
-            positionManager.collect(
+            (uint256 collected0, uint256 collected1) = positionManager.collect(
                 INonfungiblePositionManager.CollectParams({
                     tokenId: positionTokenId,
                     recipient: address(this),
@@ -758,6 +835,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
                     amount1Max: type(uint128).max
                 })
             );
+            _splitPerformanceFee(collected0 - removed0, collected1 - removed1);
             positionTokenId = 0;
         }
 
@@ -808,6 +886,25 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     /// out to zero liquidity and the pool's mint() reverts — confirmed against
     /// a real fork test (2026-07-15) — which must never fail the
     /// initPosition()/rebalance() it's called from, only skip the top-up.
+    /// @dev Splits accrued LP trading fees by the live `performanceFeeBps`,
+    /// sends the platform's cut to `operator`, and returns what's left for
+    /// the owner. Called from every path that realizes Uniswap trading fees
+    /// (rebalance(), collectFees(), withdraw(), withdrawAll(),
+    /// emergencyWithdrawPosition()) with ONLY the fee portion, never
+    /// principal — principal is the owner's own capital, the platform never
+    /// takes a cut of it. Read live, same as rebalanceFee, so the platform
+    /// owner can adjust it without touching any vault.
+    function _splitPerformanceFee(uint256 fee0, uint256 fee1) internal returns (uint256 net0, uint256 net1) {
+        uint256 bps = IPlatformConfig(platformConfig).performanceFeeBps();
+        uint256 platform0 = (fee0 * bps) / 10_000;
+        uint256 platform1 = (fee1 * bps) / 10_000;
+        if (platform0 > 0) IERC20(token0).safeTransfer(operator, platform0);
+        if (platform1 > 0) IERC20(token1).safeTransfer(operator, platform1);
+        if (platform0 > 0 || platform1 > 0) emit PerformanceFeeCollected(platform0, platform1);
+        net0 = fee0 - platform0;
+        net1 = fee1 - platform1;
+    }
+
     function _sweepDustIntoPosition(uint256 tokenId, uint256 leftover0, uint256 leftover1)
         internal
         returns (uint256 swept0, uint256 swept1)

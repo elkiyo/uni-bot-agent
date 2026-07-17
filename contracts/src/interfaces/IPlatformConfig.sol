@@ -9,4 +9,5 @@ interface IPlatformConfig {
     function feeToken() external view returns (address);
     function defaultOperator() external view returns (address);
     function maxDepositUsd() external view returns (uint256);
+    function performanceFeeBps() external view returns (uint256);
 }

@@ -26,6 +26,11 @@
         "name": "_maxDepositUsd",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "_performanceFeeBps",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
@@ -104,6 +109,19 @@
   },
   {
     "type": "function",
+    "name": "performanceFeeBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "rebalanceFee",
     "inputs": [],
     "outputs": [
@@ -154,6 +172,19 @@
     "inputs": [
       {
         "name": "newMax",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPerformanceFeeBps",
+    "inputs": [
+      {
+        "name": "newFeeBps",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -260,6 +291,19 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PerformanceFeeBpsUpdated",
+    "inputs": [
+      {
+        "name": "newFeeBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false

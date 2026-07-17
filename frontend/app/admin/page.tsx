@@ -34,12 +34,13 @@ export default function Admin() {
       { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "rebalanceFee" },
       { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "defaultOperator" },
       { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "maxDepositUsd" },
+      { address: PLATFORM_CONFIG_ADDRESS, abi: platformConfigAbi, functionName: "performanceFeeBps" },
       { address: FACTORY_ADDRESS, abi: vaultFactoryAbi, functionName: "vaultCount" },
     ],
     query: { enabled: Boolean(PLATFORM_CONFIG_ADDRESS && FACTORY_ADDRESS) },
   });
 
-  const [owner, rebalanceFee, defaultOperator, maxDepositUsd, vaultCount] =
+  const [owner, rebalanceFee, defaultOperator, maxDepositUsd, performanceFeeBps, vaultCount] =
     data?.map((d) => d.result) ?? [];
   const isPlatformOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
@@ -62,6 +63,8 @@ export default function Admin() {
     totalFeesUsd: number;
     totalLpFees0Usd: number;
     totalLpFees1Weth: number;
+    totalPerformanceFee0Usd: number;
+    totalPerformanceFee1Weth: number;
   } | null>(null);
 
   useEffect(() => {
@@ -75,12 +78,14 @@ export default function Admin() {
       let totalFeesRaw = 0n;
       let totalLpFees0Raw = 0n;
       let totalLpFees1Raw = 0n;
+      let totalPerformanceFee0Raw = 0n;
+      let totalPerformanceFee1Raw = 0n;
 
       for (const vault of vaultAddresses) {
         let fromBlock = FACTORY_DEPLOY_BLOCK;
         while (fromBlock <= latest) {
           const toBlock = fromBlock + MAX_RANGE > latest ? latest : fromBlock + MAX_RANGE;
-          const [rebalancedLogs, lpFeeLogs] = await Promise.all([
+          const [rebalancedLogs, lpFeeLogs, performanceFeeLogs] = await Promise.all([
             publicClient!.getContractEvents({
               address: vault,
               abi: rangeVaultAbi,
@@ -95,6 +100,13 @@ export default function Admin() {
               fromBlock,
               toBlock,
             }),
+            publicClient!.getContractEvents({
+              address: vault,
+              abi: rangeVaultAbi,
+              eventName: "PerformanceFeeCollected",
+              fromBlock,
+              toBlock,
+            }),
           ]);
           for (const log of rebalancedLogs as unknown as Array<{ args: { feePaid: bigint } }>) {
             totalRebalances += 1;
@@ -103,6 +115,10 @@ export default function Admin() {
           for (const log of lpFeeLogs as unknown as Array<{ args: { amount0: bigint; amount1: bigint } }>) {
             totalLpFees0Raw += log.args.amount0;
             totalLpFees1Raw += log.args.amount1;
+          }
+          for (const log of performanceFeeLogs as unknown as Array<{ args: { amount0: bigint; amount1: bigint } }>) {
+            totalPerformanceFee0Raw += log.args.amount0;
+            totalPerformanceFee1Raw += log.args.amount1;
           }
           fromBlock = toBlock + 1n;
         }
@@ -114,6 +130,8 @@ export default function Admin() {
           totalFeesUsd: Number(formatUnits(totalFeesRaw, 6)),
           totalLpFees0Usd: Number(formatUnits(totalLpFees0Raw, 6)),
           totalLpFees1Weth: Number(formatUnits(totalLpFees1Raw, 18)),
+          totalPerformanceFee0Usd: Number(formatUnits(totalPerformanceFee0Raw, 6)),
+          totalPerformanceFee1Weth: Number(formatUnits(totalPerformanceFee1Raw, 18)),
         });
       }
     }
@@ -232,6 +250,7 @@ export default function Admin() {
   const [newFee, setNewFee] = useState("");
   const [newOperator, setNewOperator] = useState("");
   const [newCap, setNewCap] = useState("");
+  const [newPerformanceFeePct, setNewPerformanceFeePct] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -300,12 +319,12 @@ export default function Admin() {
                 }`}
               />
               <Stat
-                label="Comisiones LP generadas"
+                label="Comisiones LP generadas (bruto)"
                 value={
                   platformStats
-                    ? `${platformStats.totalLpFees0Usd.toFixed(2)} USDT${
-                        platformStats.totalLpFees1Weth > 0
-                          ? ` + ${platformStats.totalLpFees1Weth.toFixed(6)} WETH`
+                    ? `${(platformStats.totalLpFees0Usd + platformStats.totalPerformanceFee0Usd).toFixed(2)} USDT${
+                        platformStats.totalLpFees1Weth + platformStats.totalPerformanceFee1Weth > 0
+                          ? ` + ${(platformStats.totalLpFees1Weth + platformStats.totalPerformanceFee1Weth).toFixed(6)} WETH`
                           : ""
                       }`
                     : "…"
@@ -341,13 +360,41 @@ export default function Admin() {
                 label="Consultas a uni-lab"
                 value={uniLabCalls ? `${x402Ok} ok / ${x402Failed} fallidas` : "…"}
               />
-              <Stat label="Revenue de plataforma" value={platformStats ? `$${platformStats.totalFeesUsd.toFixed(2)}` : "…"} accent />
+              <Stat
+                label="Revenue de plataforma"
+                value={
+                  platformStats
+                    ? `$${(
+                        platformStats.totalFeesUsd +
+                        platformStats.totalPerformanceFee0Usd +
+                        platformStats.totalPerformanceFee1Weth * (ethPrice ?? 0)
+                      ).toFixed(2)}`
+                    : "…"
+                }
+                accent
+              />
+              <Stat
+                label="De eso, performance fee"
+                value={
+                  platformStats
+                    ? `${platformStats.totalPerformanceFee0Usd.toFixed(2)} USDT${
+                        platformStats.totalPerformanceFee1Weth > 0
+                          ? ` + ${platformStats.totalPerformanceFee1Weth.toFixed(6)} WETH`
+                          : ""
+                      }`
+                    : "…"
+                }
+              />
             </div>
 
             <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Configuración</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat label="Fee por rebalanceo" value={`${formatUnits((rebalanceFee as bigint) ?? 0n, 6)} USDT`} />
               <Stat label="Tope por vault" value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} USDT`} />
+              <Stat
+                label="Performance fee"
+                value={`${Number((performanceFeeBps as bigint) ?? 0n) / 100}% de las comisiones LP`}
+              />
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                   Operador por defecto
@@ -428,6 +475,23 @@ export default function Admin() {
                       abi: platformConfigAbi,
                       functionName: "setMaxDepositUsd",
                       args: [parseUnits(newCap || "0", 6)],
+                    }),
+                  )
+                }
+              />
+              <AdminField
+                label="Nuevo performance fee (%, sobre comisiones LP)"
+                value={newPerformanceFeePct}
+                onChange={setNewPerformanceFeePct}
+                action="Actualizar"
+                disabled={Boolean(busy)}
+                onSubmit={() =>
+                  withTx("performanceFee", () =>
+                    writeContractAsync({
+                      address: PLATFORM_CONFIG_ADDRESS,
+                      abi: platformConfigAbi,
+                      functionName: "setPerformanceFeeBps",
+                      args: [BigInt(Math.round(Number(newPerformanceFeePct || "0") * 100))],
                     }),
                   )
                 }

@@ -88,6 +88,16 @@ export default function CreateVault() {
   const [reinjectionAmount, setReinjectionAmount] = useState("");
   const [periodicHours, setPeriodicHours] = useState("");
 
+  // Advanced / risk knobs — unlike the fields above, these DO have sensible
+  // platform defaults (same values that used to be hardcoded here), so
+  // leaving them blank is a valid choice, not an error. See RangeVault.sol
+  // for what each one actually gates.
+  const [maxSlippagePct, setMaxSlippagePct] = useState("");
+  const [minRebalanceCooldownHours, setMinRebalanceCooldownHours] = useState("");
+  const [maxRangeDeviationTicks, setMaxRangeDeviationTicks] = useState("");
+  const [recenterMarginPct, setRecenterMarginPct] = useState("");
+  const [exitTopCeilingMarginPct, setExitTopCeilingMarginPct] = useState("");
+
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const [failedAt, setFailedAt] = useState<Step | null>(null);
@@ -163,6 +173,13 @@ export default function CreateVault() {
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
+      // Blank = platform default, same values this form used to hardcode —
+      // see the field hints for what each one does.
+      const recenterMarginBps = recenterMarginPct ? BigInt(Math.round(Number(recenterMarginPct) * 100)) : 500n;
+      const exitTopCeilingMarginBps = exitTopCeilingMarginPct
+        ? BigInt(Math.round(Number(exitTopCeilingMarginPct) * 100))
+        : 300n;
+
       currentPhase = "configuring";
       setStep(currentPhase);
       const configureHash = await writeContractAsync({
@@ -176,6 +193,8 @@ export default function CreateVault() {
           BigInt(maxRebalances),
           reserve,
           BigInt(Number(periodicHours) * 3600),
+          recenterMarginBps,
+          exitTopCeilingMarginBps,
         ],
       });
       await publicClient.waitForTransactionReceipt({ hash: configureHash });
@@ -194,19 +213,21 @@ export default function CreateVault() {
       // vaults whose half-width was only 135-150 — genuinely blocked, not a
       // keeper-side estimation bug (see rebalancer.ts's own fix the same day,
       // which stopped trusting a local guess and started using uni-lab's real
-      // range — the real range still didn't fit). Fixed value instead, with
-      // enough margin that a legitimate uni-lab-driven periodic cycle should
-      // never hit it in practice; still bounded well short of Uniswap's
-      // absolute tick range, so a genuinely deranged proposal (bug or a
-      // compromised operator key) stays blocked.
+      // range — the real range still didn't fit). The three values below now
+      // come from the form (blank = the same generous defaults this used to
+      // hardcode) instead of being fixed for every vault — see field hints.
       currentPhase = "risk";
       setStep(currentPhase);
-      const MAX_RANGE_DEVIATION_TICKS = 5_000n; // ~50% price deviation tolerance
+      const maxSlippageBps = maxSlippagePct ? BigInt(Math.round(Number(maxSlippagePct) * 100)) : 500n;
+      const minRebalanceIntervalSec = minRebalanceCooldownHours
+        ? BigInt(Math.round(Number(minRebalanceCooldownHours) * 3600))
+        : 0n;
+      const maxRangeDeviationBps = maxRangeDeviationTicks ? BigInt(maxRangeDeviationTicks) : 5_000n;
       const riskHash = await writeContractAsync({
         address: vaultAddress,
         abi: rangeVaultAbi,
         functionName: "setRiskParams",
-        args: [500n, 0n, MAX_RANGE_DEVIATION_TICKS], // 5% slippage cap, no extra cooldown, generous deviation cap
+        args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
       });
       await publicClient.waitForTransactionReceipt({ hash: riskHash });
 
@@ -304,6 +325,53 @@ export default function CreateVault() {
                   onChange={setPeriodicHours}
                   placeholder="24"
                 />
+              </div>
+
+              <div className="mt-8">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                  Avanzado — dejar en blanco usa los valores por defecto de la plataforma
+                </span>
+                <div className="mt-4 grid gap-6 sm:grid-cols-2">
+                  <Field
+                    label="Slippage máximo"
+                    suffix="%"
+                    value={maxSlippagePct}
+                    onChange={setMaxSlippagePct}
+                    placeholder="5"
+                  />
+                  <Field
+                    label="Cooldown mínimo entre rebalanceos"
+                    suffix="horas"
+                    value={minRebalanceCooldownHours}
+                    onChange={setMinRebalanceCooldownHours}
+                    placeholder="0"
+                    hint="0 = sin piso además del periódico"
+                  />
+                  <Field
+                    label="Desviación máx. de rango"
+                    suffix="ticks"
+                    value={maxRangeDeviationTicks}
+                    onChange={setMaxRangeDeviationTicks}
+                    placeholder="5000"
+                    hint="Cuánto puede alejarse el precio del rango propuesto sin que el contrato lo rechace"
+                  />
+                  <Field
+                    label="Margen de recentrado"
+                    suffix="%"
+                    value={recenterMarginPct}
+                    onChange={setRecenterMarginPct}
+                    placeholder="5"
+                    hint="Piso nuevo por debajo del precio al reconstruir el rango desde cero"
+                  />
+                  <Field
+                    label="Margen del techo (salida por arriba)"
+                    suffix="%"
+                    value={exitTopCeilingMarginPct}
+                    onChange={setExitTopCeilingMarginPct}
+                    placeholder="3"
+                    hint="Techo nuevo por encima del precio al salir de rango por arriba"
+                  />
+                </div>
               </div>
 
               <button onClick={handleCreate} disabled={busy || !FACTORY_ADDRESS} className="btn-primary mt-8 w-full">
