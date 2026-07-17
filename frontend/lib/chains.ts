@@ -26,6 +26,14 @@ export interface ChainDef {
   factoryAddress: `0x${string}` | "";
   platformConfigAddress: `0x${string}` | "";
   explorerBaseUrl: string;
+  // Below this many native tokens, the admin panel warns the operator is low
+  // on gas — chain-relative, not a universal constant: 1 CELO (~$0.5-1) is a
+  // sane buffer on Celo, but 1 ETH (~$3000+) on Arbitrum would never
+  // realistically sit in a hot operator wallet and Arbitrum's gas is ~3
+  // orders of magnitude cheaper per tx anyway. Confirmed 2026-07-17: the
+  // operator's real 0.0043 ETH on Arbitrum is plenty for many rebalance
+  // cycles, but a flat "< 1" threshold flagged it as critically low.
+  lowGasThreshold: number;
 }
 
 // Verified in PLAN.md — cross-checked against Celopedia, CoinGecko, DefiLlama, and
@@ -56,6 +64,7 @@ const CELO: ChainDef = {
   factoryAddress: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS_CELO || "") as `0x${string}` | "",
   platformConfigAddress: (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS_CELO || "") as `0x${string}` | "",
   explorerBaseUrl: "https://celoscan.io",
+  lowGasThreshold: 1,
 };
 
 // Verified 2026-07-17: bytecode-checked directly on-chain (not doc-scraped),
@@ -85,6 +94,10 @@ const ARBITRUM: ChainDef = {
   factoryAddress: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   platformConfigAddress: (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   explorerBaseUrl: "https://arbiscan.io",
+  // ~$15-20 at typical ETH prices — comfortably covers dozens of rebalance
+  // cycles at Arbitrum's real gas prices (~0.04 gwei observed 2026-07-17),
+  // while still catching a genuinely empty wallet.
+  lowGasThreshold: 0.005,
 };
 
 export const CHAINS: Record<number, ChainDef> = {

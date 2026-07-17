@@ -268,7 +268,7 @@ export default function Admin() {
     args: defaultOperator ? [defaultOperator as Address] : undefined,
     query: { enabled: Boolean(defaultOperator), refetchInterval: 30_000 },
   });
-  const operatorGasLow = operatorGas !== undefined && Number(operatorGas.formatted) < 1;
+  const operatorGasLow = operatorGas !== undefined && Number(operatorGas.formatted) < chain.lowGasThreshold;
 
   const [uniLabCalls, setUniLabCalls] = useState<UniLabCallRow[] | null>(null);
   useEffect(() => {
@@ -338,8 +338,8 @@ export default function Admin() {
         {operatorGasLow && (
           <div className="glass mt-8 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
             <p className="text-sm font-medium text-negative">
-              El operador tiene menos de 1 {chain.viemChain.nativeCurrency.symbol} en {chain.name} — puede quedarse
-              sin gas para rebalancear o barrer dust en cualquier momento.
+              El operador tiene menos de {chain.lowGasThreshold} {chain.viemChain.nativeCurrency.symbol} en {chain.name} —
+              puede quedarse sin gas para rebalancear o barrer dust en cualquier momento.
             </p>
             <p className="mt-1 font-mono text-xs text-muted">
               Mandale {chain.viemChain.nativeCurrency.symbol} a {String(defaultOperator)}

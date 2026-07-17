@@ -340,7 +340,12 @@ export default function CreateVault() {
       )}
       <Header />
       <main className="section flex-1 pb-24 pt-32">
-        <span className="eyebrow">Nuevo vault</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="eyebrow">Nuevo vault</span>
+          <span className="eyebrow !border-accent/40 !text-accent">
+            Se va a crear en {chain.name}
+          </span>
+        </div>
         <h1
           className="mt-5 text-balance text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
@@ -350,6 +355,9 @@ export default function CreateVault() {
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
           Par {chain.stableSymbol}/{chain.volatileSymbol} en {chain.name}. El agente arma la posición inicial con
           estos parámetros y la rebalancea automáticamente — vos mantenés el control y la custodia.
+        </p>
+        <p className="mt-1 text-xs text-faint">
+          ¿Chain equivocada? Cambiala arriba, en el selector de red del header, antes de continuar.
         </p>
 
         {isConnected && (
@@ -390,7 +398,9 @@ export default function CreateVault() {
                       <dl className="mt-2 flex flex-col gap-1 text-xs text-muted">
                         <div className="flex justify-between">
                           <dt>Liquidez</dt>
-                          <dd className="font-mono">{p.liquidity.toString()}</dd>
+                          <dd className="font-mono" title={p.liquidity.toString()}>
+                            {Number(p.liquidity).toExponential(2)}
+                          </dd>
                         </div>
                         <div className="flex justify-between">
                           <dt>Volumen (reciente)</dt>
