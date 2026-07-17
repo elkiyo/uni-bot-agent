@@ -79,10 +79,9 @@ const ARBITRUM: ChainDef = {
   // All 4 standard tiers confirmed to exist for USDC/WETH on Arbitrum
   // 2026-07-17 (unlike Celo, which has no 1% pool for its pair).
   candidateSwapFeeTiers: [100, 500, 3000, 10000],
-  // Set once contracts/script/Deploy.s.sol has actually been run against
-  // Arbitrum — factoryAddress being "" is what gates this chain out of the
-  // keeper's tick loop and the frontend's chain selector until then.
-  factoryDeployBlock: 0n,
+  // Factory deployed 2026-07-17 — tx
+  // 0xdfe8c7337725ac0e1d0a1b3f2fede738b331ff6546daad1a4a1411ff308a4b17.
+  factoryDeployBlock: 484906602n,
   factoryAddress: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   platformConfigAddress: (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   explorerBaseUrl: "https://arbiscan.io",
