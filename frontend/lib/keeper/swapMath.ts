@@ -190,3 +190,42 @@ export function sizeRebalanceSwap(input: RebalanceSwapInput): RebalanceSwapResul
   return { token0ToToken1: false, amountIn };
 }
 
+/**
+ * Adjusts a rebalance swap so at least `feeRaw` (token0/USDT, 6 decimals)
+ * survives past it. Only still matters for vaults cloned from an
+ * implementation that predates the 2026-07-16 removal of the flat
+ * rebalanceFee — those still charge it inside rebalance() and revert with
+ * InsufficientInvestableBalance if there isn't enough token0 left after the
+ * swap (confirmed root cause of a real stuck vault in production,
+ * 2026-07-16, vault 0x721e1B69...C94C37). Vaults cloned after that removal
+ * pass feeRaw=0 here (see currentRebalanceFee's fallback in rebalancer.ts)
+ * and this is a no-op. A small deviation from the position's ideal ratio
+ * (the old fee was usually cents) is worth guaranteeing the tx doesn't
+ * revert outright on the vaults that still need it.
+ */
+export function ensureFeeCoverage(
+  swap: RebalanceSwapResult,
+  availableToken0Raw: bigint,
+  feeRaw: bigint,
+  ethPriceUsd: number,
+): RebalanceSwapResult {
+  if (feeRaw === 0n) return swap;
+
+  if (swap.token0ToToken1) {
+    // This swap sends token0 away — cap it so at least `feeRaw` remains.
+    const remaining = availableToken0Raw - swap.amountIn;
+    if (remaining >= feeRaw) return swap;
+    const shortfall = feeRaw - remaining;
+    return { ...swap, amountIn: swap.amountIn > shortfall ? swap.amountIn - shortfall : 0n };
+  }
+
+  // This swap ADDS token0 (converting token1) — only bump it if the
+  // resulting balance would still fall short, which only happens when
+  // availableToken0Raw alone is already thinner than the fee.
+  const approxOutputRaw = BigInt(Math.floor(Number(swap.amountIn) * ethPriceUsd * 1e-12));
+  const remaining = availableToken0Raw + approxOutputRaw;
+  if (remaining >= feeRaw) return swap;
+  const shortfallUsd = Number(feeRaw - remaining) * 1e-6;
+  const extraToken1Raw = BigInt(Math.ceil((shortfallUsd / ethPriceUsd) * 1e18));
+  return { ...swap, amountIn: swap.amountIn + extraToken1Raw };
+}

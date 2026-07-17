@@ -4,7 +4,7 @@ import { publicClient, operatorAccount } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
 import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "../priceMath";
-import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, targetRawRatio } from "./swapMath";
+import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeCoverage, targetRawRatio } from "./swapMath";
 import { POOL, WETH, USDT, SWAP_ROUTER02 } from "../addresses";
 import { Store } from "./store";
 import { logEvent, logUniLabCall } from "./logger";
@@ -25,6 +25,32 @@ async function tickSpacing(): Promise<number> {
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
   })) as number;
+}
+
+// Deliberately NOT the regenerated platformConfigAbi — that ABI matches the
+// CURRENT PlatformConfig source, which no longer declares rebalanceFee (see
+// PlatformConfig.sol, removed 2026-07-16). Vaults cloned before that removal
+// still point at an OLD PlatformConfig deployment that DOES have this
+// function; a minimal hand-written fragment lets viem encode the call for
+// them regardless of what the current source looks like. On a vault cloned
+// after the removal, the call reaches a real PlatformConfig contract that
+// genuinely has no such function (no fallback() either) and reverts — same
+// signal, caught the same way, by currentRebalanceFee's own fallback below.
+const legacyRebalanceFeeAbi = [
+  { type: "function", name: "rebalanceFee", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+] as const;
+
+/** Live rebalanceFee (token0/USDT, 6 decimals) — only nonzero on vaults
+ * whose PlatformConfig still has this field (see legacyRebalanceFeeAbi
+ * above). Vaults cloned after the flat fee's removal resolve to 0, making
+ * ensureFeeCoverage a no-op for them, which is correct — they have nothing
+ * left to guarantee payment for. */
+async function currentRebalanceFee(platformConfig: Address): Promise<bigint> {
+  return (
+    (await publicClient
+      .readContract({ address: platformConfig, abi: legacyRebalanceFeeAbi, functionName: "rebalanceFee" })
+      .catch(() => 0n)) as bigint
+  );
 }
 
 const GAS_SAFETY_MULTIPLIER_PCT = 130n; // 30% buffer over the current estimate, for gas-price drift between check and send
@@ -424,6 +450,7 @@ async function runRebalanceViaUniLab(
     idleInvestableUsdt,
     idleWeth,
     recenterMarginBps,
+    platformConfig,
   ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.reinjectionAmount() as Promise<bigint>, // owner's per-cycle ceiling — see RangeVault.sol
@@ -436,6 +463,7 @@ async function runRebalanceViaUniLab(
     // outright (RangeVault has no fallback()), not just "returns 0", so a
     // bare read here would break every pre-existing vault's keeper cycle.
     (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
+    vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -660,7 +688,16 @@ async function runRebalanceViaUniLab(
   // the fix for the dust bug: without a real swap here, rebalance() mints
   // with whatever ratio came out of the OLD position, leaving the mismatched
   // side unused.
-  const finalSwap = buildSwapIx(newTickLower, newTickUpper);
+  //
+  // Then guarantee the (possibly zero, on a post-removal vault) flat fee is
+  // payable — see ensureFeeCoverage's own docstring.
+  const rebalanceFee = await currentRebalanceFee(platformConfig);
+  const finalSwap = ensureFeeCoverage(
+    buildSwapIx(newTickLower, newTickUpper),
+    availableToken0Raw,
+    rebalanceFee,
+    ethPrice,
+  );
   const finalArgs = [
     newTickLower,
     newTickUpper,
@@ -719,17 +756,25 @@ async function runRebalanceViaUniLab(
  */
 async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
   const vault = vaultContract(vaultAddress);
-  const [positionTokenId, positionManager, idleInvestableUsdt, idleWeth, recenterMarginBps, exitTopCeilingMarginBps] =
-    await Promise.all([
-      vault.read.positionTokenId() as Promise<bigint>,
-      vault.read.positionManager() as Promise<Address>,
-      vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a prior cycle — see runRebalanceViaUniLab
-      publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>,
-      // Same fallback as runRebalanceViaUniLab, same reason: these two revert
-      // outright on a vault cloned from an implementation that predates them.
-      (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
-      (vault.read.exitTopCeilingMarginBps() as Promise<bigint>).catch(() => 300n),
-    ]);
+  const [
+    positionTokenId,
+    positionManager,
+    idleInvestableUsdt,
+    idleWeth,
+    recenterMarginBps,
+    exitTopCeilingMarginBps,
+    platformConfig,
+  ] = await Promise.all([
+    vault.read.positionTokenId() as Promise<bigint>,
+    vault.read.positionManager() as Promise<Address>,
+    vault.read.investableUsdt() as Promise<bigint>, // dust left idle from a prior cycle — see runRebalanceViaUniLab
+    publicClient.readContract({ address: WETH, abi: erc20Abi, functionName: "balanceOf", args: [vaultAddress] }) as Promise<bigint>,
+    // Same fallback as runRebalanceViaUniLab, same reason: these two revert
+    // outright on a vault cloned from an implementation that predates them.
+    (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
+    (vault.read.exitTopCeilingMarginBps() as Promise<bigint>).catch(() => 300n),
+    vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
+  ]);
 
   const [tick, spacing, position] = await Promise.all([
     currentTick(),
@@ -766,15 +811,23 @@ async function runRebalanceExitTop(vaultAddress: Address): Promise<void> {
 
   // Same fix as runRebalanceViaUniLab: fold in any dust already idle from a
   // prior cycle, both sides, or it never enters the swap ratio and just
-  // keeps growing.
-  const swapIx = sizeRebalanceSwap({
-    currentTick: tick,
-    newTickLower,
-    newTickUpper,
-    availableToken0Raw: BigInt(Math.floor(closedAmount0Raw)) + idleInvestableUsdt,
-    availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)) + idleWeth,
-    ethPriceUsd: ethPrice,
-  });
+  // keeps growing. Then guarantee the (possibly zero) flat fee is payable —
+  // see ensureFeeCoverage's own docstring.
+  const availableToken0Raw = BigInt(Math.floor(closedAmount0Raw)) + idleInvestableUsdt;
+  const rebalanceFee = await currentRebalanceFee(platformConfig);
+  const swapIx = ensureFeeCoverage(
+    sizeRebalanceSwap({
+      currentTick: tick,
+      newTickLower,
+      newTickUpper,
+      availableToken0Raw,
+      availableToken1Raw: BigInt(Math.floor(closedAmount1Raw)) + idleWeth,
+      ethPriceUsd: ethPrice,
+    }),
+    availableToken0Raw,
+    rebalanceFee,
+    ethPrice,
+  );
 
   const rebalanceArgs = [
     newTickLower,
