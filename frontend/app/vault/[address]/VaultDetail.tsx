@@ -94,6 +94,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
 
+  const feesUsdtStr = formatUnits(feesSummary?.totalUsdt ?? 0n, 6);
+  const feesWethRaw = feesSummary?.totalWeth ?? 0n;
+  const feesWethStr = Number(formatUnits(feesWethRaw, 18)).toFixed(6);
+  const feesUsdTotal =
+    currentTick !== undefined
+      ? Number(feesUsdtStr) + Number(formatUnits(feesWethRaw, 18)) * ethPriceFromTick(currentTick)
+      : undefined;
+
   const isOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
   );
@@ -380,12 +388,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
               <Stat
                 label="Comisiones generadas"
-                value={`${formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} USDT`}
-                hint={
-                  feesSummary && feesSummary.totalWeth > 0n
-                    ? `+ ${Number(formatUnits(feesSummary.totalWeth, 18)).toFixed(6)} WETH`
-                    : `${feesSummary?.payoutCount ?? 0} pagos recibidos`
+                value={
+                  feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} USDT`
                 }
+                hint={feesWethRaw > 0n ? `${feesUsdtStr} USDT + ${feesWethStr} WETH` : `${feesUsdtStr} USDT`}
                 accent
               />
             </div>
