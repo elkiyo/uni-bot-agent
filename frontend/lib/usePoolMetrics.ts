@@ -3,8 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { parseEventLogs, type Log } from "viem";
-import { uniswapV3PoolAbi, uniswapV3FactoryAbi } from "./contracts";
+import { uniswapV3PoolAbi, uniswapV3FactoryAbi, erc20Abi } from "./contracts";
 import { getLogsChunked } from "./getLogsChunked";
+import { ethPriceFromTick } from "./priceMath";
 import type { ChainDef } from "./chains";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
@@ -22,6 +23,7 @@ export interface PoolMetrics {
   swapCount: number;
   distinctTraders: number;
   volumeStable: number; // in the chain's stable token (USDT on Celo, USDC on Arbitrum), not always USDT
+  tvlUsd: number; // pool's actual token balances (balanceOf), not a liquidity-derived estimate
   estimatedFeeRevenueUsd: number;
   /** Fee revenue generated per unit of liquidity over the lookback window —
    * a rough proxy for what an LP actually earns per dollar staked, since raw
@@ -88,18 +90,39 @@ export function usePoolMetrics(chain: ChainDef) {
               swapCount: 0,
               distinctTraders: 0,
               volumeStable: 0,
+              tvlUsd: 0,
               estimatedFeeRevenueUsd: 0,
               feeRevenuePerLiquidity: undefined,
             };
           }
 
-          const [liquidity, slot0, rawLogs] = await Promise.all([
+          const [liquidity, slot0, rawLogs, stableBalanceRaw, volatileBalanceRaw] = await Promise.all([
             publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "liquidity" }) as Promise<bigint>,
             publicClient
               .readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "slot0" })
               .catch(() => undefined) as Promise<readonly [bigint, number, number, number, number, number, boolean] | undefined>,
             getLogsChunked(publicClient, { address: pool, fromBlock, toBlock: latestBlock }),
+            publicClient.readContract({
+              address: chain.stableToken,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [pool],
+            }) as Promise<bigint>,
+            publicClient.readContract({
+              address: chain.volatileToken,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [pool],
+            }) as Promise<bigint>,
           ]);
+
+          // TVL from the pool's REAL token balances, not a liquidity-derived
+          // estimate — exact, and consistent regardless of how concentrated
+          // that liquidity is around the current tick.
+          const tick = slot0?.[1];
+          const ethPrice = tick !== undefined ? ethPriceFromTick(tick, chain.stableIsToken0) : undefined;
+          const tvlUsd =
+            Number(stableBalanceRaw) / 1e6 + (ethPrice !== undefined ? (Number(volatileBalanceRaw) / 1e18) * ethPrice : 0);
 
           const swaps = parseEventLogs({ abi: uniswapV3PoolAbi, logs: rawLogs as Log[] }).filter(
             (l) => l.eventName === "Swap",
@@ -107,9 +130,17 @@ export function usePoolMetrics(chain: ChainDef) {
           const senders = new Set<string>();
           let volumeRaw = 0n;
           for (const s of swaps) {
-            const args = s.args as { sender: string; amount0: bigint };
+            const args = s.args as { sender: string; amount0: bigint; amount1: bigint };
             senders.add(args.sender);
-            volumeRaw += args.amount0 < 0n ? -args.amount0 : args.amount0;
+            // Which side is the 6-decimal stable leg flips per chain (WETH is
+            // token0 on Arbitrum, token1 on Celo — see chains.ts's
+            // stableIsToken0 docstring) — hardcoding amount0 here silently
+            // treated an 18-decimal WETH amount as 6-decimal stable on
+            // Arbitrum, inflating "volumen reciente" by ~1e12x (confirmed in
+            // production 2026-07-18: a real few-thousand-dollar volume showed
+            // as $39 TRILLION).
+            const stableAmount = chain.stableIsToken0 ? args.amount0 : args.amount1;
+            volumeRaw += stableAmount < 0n ? -stableAmount : stableAmount;
           }
           const volumeStable = Number(volumeRaw) / 1e6; // both USDT and USDC are 6 decimals
           const estimatedFeeRevenueUsd = (volumeStable * fee) / 1_000_000; // fee is in hundredths of a bip (3000 == 0.3%)
@@ -119,10 +150,11 @@ export function usePoolMetrics(chain: ChainDef) {
             pool,
             exists: true,
             liquidity,
-            tick: slot0?.[1],
+            tick,
             swapCount: swaps.length,
             distinctTraders: senders.size,
             volumeStable,
+            tvlUsd,
             estimatedFeeRevenueUsd,
             feeRevenuePerLiquidity: liquidity > 0n ? estimatedFeeRevenueUsd / Number(liquidity) : undefined,
           };

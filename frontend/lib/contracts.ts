@@ -63,6 +63,40 @@ export const uniswapV3PoolAbi = [
       { name: "tick", type: "int24", indexed: false },
     ],
   },
+  // Below: enough of IUniswapV3PoolState to compute a position's LIVE
+  // uncollected fees client-side (feeGrowthInside math) — see
+  // lib/positionMath.ts's uncollectedFeesRaw. positions() alone only exposes
+  // tokensOwed0/1, which is stale between mint/burn/collect calls.
+  {
+    type: "function",
+    name: "feeGrowthGlobal0X128",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "feeGrowthGlobal1X128",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "ticks",
+    stateMutability: "view",
+    inputs: [{ name: "tick", type: "int24" }],
+    outputs: [
+      { name: "liquidityGross", type: "uint128" },
+      { name: "liquidityNet", type: "int128" },
+      { name: "feeGrowthOutside0X128", type: "uint256" },
+      { name: "feeGrowthOutside1X128", type: "uint256" },
+      { name: "tickCumulativeOutside", type: "int56" },
+      { name: "secondsPerLiquidityOutsideX128", type: "uint160" },
+      { name: "secondsOutside", type: "uint32" },
+      { name: "initialized", type: "bool" },
+    ],
+  },
 ] as const;
 
 // Just enough of the Uniswap V3 Factory to look up every fee-tier pool for a

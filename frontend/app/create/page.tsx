@@ -10,6 +10,7 @@ import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { usePoolMetrics } from "@/lib/usePoolMetrics";
 import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
+import { formatUsdCompact } from "@/lib/format";
 
 type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
 
@@ -147,6 +148,7 @@ export default function CreateVault() {
   const [recenterMarginPct, setRecenterMarginPct] = useState("");
   const [exitTopCeilingMarginPct, setExitTopCeilingMarginPct] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [copiedPool, setCopiedPool] = useState<string | null>(null);
 
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -408,12 +410,9 @@ export default function CreateVault() {
                 const isSelected = p.fee === selectedFee;
                 const disabled = !p.exists || p.liquidity === 0n;
                 return (
-                  <button
+                  <div
                     key={p.fee}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => setSelectedFee(p.fee)}
-                    className={`rounded-xl border p-4 text-left transition ${
+                    className={`rounded-xl border p-4 transition ${
                       isSelected
                         ? "border-accent bg-accent/[0.08]"
                         : disabled
@@ -421,39 +420,81 @@ export default function CreateVault() {
                           : "border-hairline hover:border-accent/50"
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-sm font-semibold">{p.fee / 10_000}%</span>
-                      {isSelected && <span className="font-mono text-[10px] uppercase text-accent">Elegida</span>}
-                    </div>
-                    {disabled ? (
-                      <p className="mt-2 text-xs text-faint">Sin liquidez — no disponible</p>
-                    ) : (
-                      <dl className="mt-2 flex flex-col gap-1 text-xs text-muted">
-                        <div className="flex justify-between">
-                          <dt>Liquidez</dt>
-                          <dd className="font-mono" title={p.liquidity.toString()}>
-                            {Number(p.liquidity).toExponential(2)}
-                          </dd>
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setSelectedFee(p.fee)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-sm font-semibold">{p.fee / 10_000}%</span>
+                        {isSelected && <span className="font-mono text-[10px] uppercase text-accent">Elegida</span>}
+                      </div>
+                      {disabled ? (
+                        <p className="mt-2 text-xs text-faint">Sin liquidez — no disponible</p>
+                      ) : (
+                        <dl className="mt-2 flex flex-col gap-1 text-xs text-muted">
+                          <div className="flex justify-between">
+                            <dt>TVL</dt>
+                            <dd className="font-mono">{formatUsdCompact(p.tvlUsd)}</dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt>Liquidez</dt>
+                            <dd className="font-mono" title={p.liquidity.toString()}>
+                              {Number(p.liquidity).toExponential(2)}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt>Volumen (reciente)</dt>
+                            <dd className="font-mono">{formatUsdCompact(p.volumeStable)}</dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt>Swaps (reciente)</dt>
+                            <dd className="font-mono">{p.swapCount}</dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt>Comisión/liquidez</dt>
+                            <dd className="font-mono">
+                              {p.feeRevenuePerLiquidity !== undefined
+                                ? p.feeRevenuePerLiquidity.toExponential(2)
+                                : "—"}
+                            </dd>
+                          </div>
+                        </dl>
+                      )}
+                    </button>
+
+                    {p.exists && (
+                      <div className="mt-3 flex items-center justify-between border-t border-hairline/50 pt-3">
+                        <span className="eyebrow !px-2 !py-0.5 !text-[9px]">V3</span>
+                        <div className="flex items-center gap-2 font-mono text-[10px] text-faint">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(p.pool);
+                              setCopiedPool(p.pool);
+                              setTimeout(() => setCopiedPool((cur) => (cur === p.pool ? null : cur)), 1500);
+                            }}
+                            className="transition-colors hover:text-accent"
+                            title="Copiar dirección de la pool"
+                          >
+                            {copiedPool === p.pool
+                              ? "Copiado ✓"
+                              : `${p.pool.slice(0, 6)}…${p.pool.slice(-4)}`}
+                          </button>
+                          <a
+                            href={`${chain.explorerBaseUrl}/address/${p.pool}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="transition-colors hover:text-accent"
+                            title="Ver en el explorer"
+                          >
+                            ↗
+                          </a>
                         </div>
-                        <div className="flex justify-between">
-                          <dt>Volumen (reciente)</dt>
-                          <dd className="font-mono">${p.volumeStable.toFixed(0)}</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt>Swaps (reciente)</dt>
-                          <dd className="font-mono">{p.swapCount}</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt>Comisión/liquidez</dt>
-                          <dd className="font-mono">
-                            {p.feeRevenuePerLiquidity !== undefined
-                              ? p.feeRevenuePerLiquidity.toExponential(2)
-                              : "—"}
-                          </dd>
-                        </div>
-                      </dl>
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>

@@ -5,7 +5,7 @@ import { useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
 import { positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
-import { positionAmounts } from "@/lib/positionMath";
+import { positionAmounts, uncollectedFeesRaw } from "@/lib/positionMath";
 import type { ChainDef } from "@/lib/chains";
 
 /**
@@ -37,6 +37,38 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
     query: { refetchInterval: 15_000 },
   });
 
+  const position = reads?.[0]?.result as
+    | readonly [bigint, string, string, string, number, number, number, bigint, bigint, bigint, bigint, bigint]
+    | undefined;
+  const slot0 = reads?.[1]?.result as readonly unknown[] | undefined;
+
+  // Stage 2, gated on the position's own range being known: the extra state
+  // needed to compute LIVE uncollected fees (see positionMath.ts's
+  // uncollectedFeesRaw) — positions()'s own tokensOwed0/1 only gets
+  // checkpointed on a mint/burn/collect call, so it sits stale (often zero)
+  // between rebalances even while the position is actively earning.
+  const { data: feeReads } = useReadContracts({
+    contracts: [
+      { address: chain.pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128", chainId: chain.id },
+      { address: chain.pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128", chainId: chain.id },
+      {
+        address: chain.pool,
+        abi: uniswapV3PoolAbi,
+        functionName: "ticks",
+        args: [position?.[5] ?? 0],
+        chainId: chain.id,
+      },
+      {
+        address: chain.pool,
+        abi: uniswapV3PoolAbi,
+        functionName: "ticks",
+        args: [position?.[6] ?? 0],
+        chainId: chain.id,
+      },
+    ],
+    query: { enabled: Boolean(position), refetchInterval: 15_000 },
+  });
+
   const image = useMemo(() => {
     if (!uri) return undefined;
     try {
@@ -47,14 +79,10 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
     }
   }, [uri]);
 
-  const position = reads?.[0]?.result as
-    | readonly [bigint, string, string, string, number, number, number, bigint, bigint, bigint, bigint, bigint]
-    | undefined;
-  const slot0 = reads?.[1]?.result as readonly unknown[] | undefined;
-
   if (!position) return null;
 
-  const [, , , , , tickLower, tickUpper, liquidity, , , tokensOwed0, tokensOwed1] = position;
+  const [, , , , , tickLower, tickUpper, liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128, tokensOwed0, tokensOwed1] =
+    position;
   const currentTick = slot0 ? Number(slot0[1]) : undefined;
 
   // token1/token0 raw price rises with tick, so USD-per-ETH *falls* as the tick
@@ -82,8 +110,44 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
   const wethPct = totalValue > 0 ? (wethValue / totalValue) * 100 : 0;
   const usdtPct = totalValue > 0 ? 100 - wethPct : 0;
 
-  const tokensOwedStable = chain.stableIsToken0 ? tokensOwed0 : tokensOwed1;
-  const tokensOwedVolatile = chain.stableIsToken0 ? tokensOwed1 : tokensOwed0;
+  // feeGrowthGlobal0/1X128 + ticks(tickLower/tickUpper) — falls back to the
+  // position's own (possibly stale) tokensOwed0/1 until stage 2 loads.
+  const feeGrowthGlobal0X128 = feeReads?.[0]?.result as bigint | undefined;
+  const feeGrowthGlobal1X128 = feeReads?.[1]?.result as bigint | undefined;
+  const tickLowerData = feeReads?.[2]?.result as readonly [bigint, bigint, bigint, bigint, ...unknown[]] | undefined;
+  const tickUpperData = feeReads?.[3]?.result as readonly [bigint, bigint, bigint, bigint, ...unknown[]] | undefined;
+
+  let tokensOwed0Live = tokensOwed0;
+  let tokensOwed1Live = tokensOwed1;
+  if (
+    currentTick !== undefined &&
+    feeGrowthGlobal0X128 !== undefined &&
+    feeGrowthGlobal1X128 !== undefined &&
+    tickLowerData &&
+    tickUpperData
+  ) {
+    const live = uncollectedFeesRaw({
+      liquidity,
+      tokensOwed0,
+      tokensOwed1,
+      feeGrowthInside0LastX128,
+      feeGrowthInside1LastX128,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      tickLowerOutside0X128: tickLowerData[2],
+      tickLowerOutside1X128: tickLowerData[3],
+      tickUpperOutside0X128: tickUpperData[2],
+      tickUpperOutside1X128: tickUpperData[3],
+      currentTick,
+      tickLower,
+      tickUpper,
+    });
+    tokensOwed0Live = BigInt(Math.max(0, Math.floor(live.fees0Raw)));
+    tokensOwed1Live = BigInt(Math.max(0, Math.floor(live.fees1Raw)));
+  }
+
+  const tokensOwedStable = chain.stableIsToken0 ? tokensOwed0Live : tokensOwed1Live;
+  const tokensOwedVolatile = chain.stableIsToken0 ? tokensOwed1Live : tokensOwed0Live;
   const feesUsdtAmount = Number(formatUnits(tokensOwedStable, 6));
   const feesWethAmount = Number(formatUnits(tokensOwedVolatile, 18));
   const feesUsdtValue = feesUsdtAmount;
@@ -195,8 +259,8 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
               />
             </div>
             <p className="mt-3 text-xs text-faint">
-              Se acredita al cerrar la posición en cada rebalanceo — puede no reflejar fees
-              acumuladas desde el último evento en tiempo real.
+              Comisiones acumuladas en tiempo real, calculadas igual que lo hace Uniswap — se
+              cobran recién cuando el vault rebalancea o se retira.
             </p>
           </div>
 
