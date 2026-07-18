@@ -49,6 +49,29 @@ export interface RebalanceEvent {
   gasReimbursedUsd: number;
 }
 
+export type VaultStatus = "active" | "no_position" | "closed";
+
+export interface VaultRow {
+  address: `0x${string}`;
+  chain: ChainDef;
+  poolLabel: string;
+  pool: `0x${string}`;
+  feeTier: number;
+  createdAt: number;
+  txHash: `0x${string}` | null;
+  valueUsd: number;
+  /** Live price range [low, high] in USD/ETH terms — null when there's no
+   * open position (never initialized, or closed) to derive a range from. */
+  priceRange: readonly [number, number] | null;
+  feesUsd: number;
+  /** feesUsd as a % of the vault's current value — a coarse, non-annualized
+   * proxy for return (fees generated relative to what's deployed right now,
+   * NOT a time-weighted or annualized APY). 0 when valueUsd is 0. */
+  yieldPct: number;
+  rebalanceCount: number;
+  status: VaultStatus;
+}
+
 export interface ProtocolMetrics {
   /** True while ANY of the below is still loading — kept for callers that
    * don't need granular gating. Prefer snapshotLoading/eventsLoading/
@@ -82,6 +105,11 @@ export interface ProtocolMetrics {
    * most expensive part of this hook — one historical position+pool read
    * per past mint. Gate the Volumen card/chart on this specifically. */
   mintVolumeLoading: boolean;
+  /** One row per vault ever created, newest first — feesUsd/yieldPct need
+   * eventsLoading, valueUsd/priceRange need snapshotLoading, so this is only
+   * fully accurate once BOTH have resolved (see vaultRowsLoading). */
+  vaultRows: VaultRow[];
+  vaultRowsLoading: boolean;
 }
 
 const EMPTY_COUNTS: VaultCounts = { total: 0, withPosition: 0, closed: 0 };
@@ -251,6 +279,30 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     return map;
   }, [openPositions, positionData, currentTickByPool]);
 
+  // Live price range [low, high] per vault, in USD/ETH terms — ticks
+  // convert directly to a price via the same ethPriceFromTick used
+  // everywhere else, so this stays consistent with how the rest of the app
+  // already reads a range (e.g. VaultDetail.tsx).
+  const priceRangeByVault = useMemo(() => {
+    const map = new Map<string, readonly [number, number]>();
+    openPositions.forEach(({ chain, record }, i) => {
+      const position = positionData?.[i]?.result as
+        | readonly [bigint, string, string, string, number, number, number, bigint, bigint, bigint, bigint, bigint]
+        | undefined;
+      if (!position) return;
+      const [, , , , , tickLower, tickUpper] = position;
+      const priceAtLower = ethPriceFromTick(tickLower, chain.stableIsToken0);
+      const priceAtUpper = ethPriceFromTick(tickUpper, chain.stableIsToken0);
+      // Tick direction and price direction are inverted whenever the stable
+      // leg isn't token0 (see priceMath.ts) — sort so the pair is always
+      // [low, high] regardless of which chain this vault is on.
+      const low = Math.min(priceAtLower, priceAtUpper);
+      const high = Math.max(priceAtLower, priceAtUpper);
+      map.set(record.address, [low, high]);
+    });
+    return map;
+  }, [openPositions, positionData]);
+
   // Event aggregation: one multi-address chunked scan per chain covers every
   // vault on that chain at once.
   const eventQueries = useQueries({
@@ -275,7 +327,13 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       },
     })),
   });
-  const eventsLoading = eventQueries.some((q) => q.isLoading);
+  // Includes directoryLoading: each per-chain event query is `enabled` only
+  // once that chain's vault directory resolved (needs the vault address
+  // list first), and react-query reports a disabled query as isLoading:
+  // false — without this, a chain whose directory hasn't loaded yet would
+  // make the WHOLE flag flip false prematurely (its query never even
+  // started), showing confirmed-looking $0.00 before that chain was scanned.
+  const eventsLoading = directoryLoading || eventQueries.some((q) => q.isLoading);
 
   const mintVolumeQueries = useQueries({
     queries: chains.map((chain) => ({
@@ -290,7 +348,8 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       },
     })),
   });
-  const mintVolumeLoading = mintVolumeQueries.some((q) => q.isLoading);
+  // Same reasoning as eventsLoading above.
+  const mintVolumeLoading = directoryLoading || mintVolumeQueries.some((q) => q.isLoading);
 
   return useMemo(() => {
     const snapshotLoading = directoryLoading || ledgerLoading || positionLoading || poolLoading;
@@ -354,6 +413,9 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     let depositedTotalUsd = 0;
     const feeEvents: FeeEvent[] = [];
     const rebalanceEvents: RebalanceEvent[] = [];
+    const vaultFeesByAddress = new Map<string, number>();
+    const addFee = (address: string, usd: number) =>
+      vaultFeesByAddress.set(address.toLowerCase(), (vaultFeesByAddress.get(address.toLowerCase()) ?? 0) + usd);
 
     chains.forEach((chain, i) => {
       const { logs = [], blockTimestamps } = eventQueries[i].data ?? {};
@@ -368,12 +430,14 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
           const usd = Number(stableRaw ?? 0n) * 1e-6 + Number(volatileRaw ?? 0n) * 1e-18 * ethPrice;
           ownerFeesUsd += usd;
+          addFee(log.address, usd);
           if (ts !== undefined) feeEvents.push({ timestamp: ts, ownerUsd: usd, platformUsd: 0 });
         } else if (log.eventName === "PerformanceFeeCollected") {
           const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
           const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
           const usd = Number(stableRaw ?? 0n) * 1e-6 + Number(volatileRaw ?? 0n) * 1e-18 * ethPrice;
           platformFeesUsd += usd;
+          addFee(log.address, usd);
           if (ts !== undefined) feeEvents.push({ timestamp: ts, ownerUsd: 0, platformUsd: usd });
         } else if (log.eventName === "KeeperGasReimbursed") {
           const usd = Number(args.amountUsd ?? 0n) * 1e-6;
@@ -389,6 +453,32 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     });
 
     const mintVolumeEvents = mintVolumeQueries.flatMap((q) => q.data ?? []);
+
+    const vaultRows: VaultRow[] = ledgers
+      .map((v): VaultRow => {
+        const positionValue = v.closed ? 0 : (positionValueByVault.get(v.record.address) ?? 0);
+        const ledgerValue = v.closed ? 0 : Number(v.investableUsdt + v.reserveBalance + v.gasReserveBalance) * 1e-6;
+        const valueUsd = ledgerValue + positionValue;
+        const feesUsd = vaultFeesByAddress.get(v.record.address.toLowerCase()) ?? 0;
+        const status: VaultStatus = v.closed ? "closed" : v.positionTokenId > 0n ? "active" : "no_position";
+        return {
+          address: v.record.address,
+          chain: v.chain,
+          pool: v.record.pool,
+          feeTier: v.record.fee,
+          poolLabel: `${v.chain.stableSymbol}/${v.chain.volatileSymbol} ${(v.record.fee / 10_000).toFixed(2)}%`,
+          createdAt: v.record.createdAt,
+          txHash: v.record.txHash,
+          valueUsd,
+          priceRange: priceRangeByVault.get(v.record.address) ?? null,
+          feesUsd,
+          yieldPct: valueUsd > 0 ? (feesUsd / valueUsd) * 100 : 0,
+          rebalanceCount: Number(v.rebalanceCount),
+          status,
+        };
+      })
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const vaultRowsLoading = snapshotLoading || eventsLoading;
 
     return {
       isLoading,
@@ -410,6 +500,8 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       rebalanceEvents,
       mintVolumeEvents,
       mintVolumeLoading,
+      vaultRows,
+      vaultRowsLoading,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- eventQueries/mintVolumeQueries are fresh arrays every render; their .data is what actually matters
   }, [
@@ -422,6 +514,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     chains,
     ledgers,
     positionValueByVault,
+    priceRangeByVault,
     ethPriceByChain,
     eventQueries.map((q) => q.data).join("|"),
     mintVolumeQueries.map((q) => q.data?.length).join("|"),

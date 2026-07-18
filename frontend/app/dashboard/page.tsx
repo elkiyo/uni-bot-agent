@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import Link from "next/link";
 import {
   ResponsiveContainer,
   BarChart,
@@ -15,9 +16,9 @@ import {
   Cell,
 } from "recharts";
 import { Header } from "../components/Header";
-import { useProtocolMetrics } from "@/lib/dashboard/useProtocolMetrics";
+import { useProtocolMetrics, type VaultRow, type VaultStatus } from "@/lib/dashboard/useProtocolMetrics";
 import { bucketByTime, type Granularity } from "@/lib/dashboard/bucket";
-import { useAvailableChains } from "@/lib/useSelectedChain";
+import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
 
 const CHART_COLORS = ["#fcff52", "#4ade80", "#60a5fa", "#f472b6", "#fb923c", "#a78bfa"];
 
@@ -106,10 +107,18 @@ export default function DashboardPage() {
           <VaultStatusChart metrics={metrics} />
         </div>
 
+        <VaultHistoryTable
+          rows={metrics.vaultRows}
+          isLoading={metrics.vaultRowsLoading}
+          snapshotLoading={metrics.snapshotLoading}
+          eventsLoading={metrics.eventsLoading}
+        />
+
         <p className="mt-10 max-w-2xl font-mono text-[11px] leading-relaxed text-faint">
           TVL es un valor en vivo (ledgers + posición abierta al precio actual del pool) — no una serie histórica, para
           no multiplicar las lecturas on-chain por cada punto del gráfico. Comisiones se valoran al precio actual de
           ETH, no al precio exacto del momento de cada evento — una aproximación razonable dado el volumen.
+          Rendimiento es comisiones generadas ÷ valor actual del vault — una referencia simple, no un APY anualizado.
         </p>
       </main>
     </>
@@ -380,5 +389,146 @@ function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolM
         </BarChart>
       </ResponsiveContainer>
     </ChartShell>
+  );
+}
+
+const STATUS_LABEL: Record<VaultStatus, string> = {
+  active: "Activo",
+  no_position: "Sin posición",
+  closed: "Cerrado",
+};
+const STATUS_CLASS: Record<VaultStatus, string> = {
+  active: "bg-positive/10 text-positive",
+  no_position: "bg-white/5 text-muted",
+  closed: "bg-white/5 text-faint",
+};
+
+function formatPrice(n: number): string {
+  if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (n >= 1) return n.toFixed(2);
+  return n.toPrecision(3);
+}
+
+function formatDate(ts: number): string {
+  if (!ts) return "—";
+  return new Date(ts * 1000).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function shortHash(hash: string): string {
+  return `${hash.slice(0, 8)}…${hash.slice(-6)}`;
+}
+
+/**
+ * "Historial de vaults" — every vault ever created, across every chain, in
+ * one chronological (newest-first) list: pool pair + fee tier, protocol
+ * version, live value, range, fees generated, coarse yield, chain, creation
+ * hash. Everything vaultRows already carries from useProtocolMetrics — this
+ * component is purely presentational.
+ */
+function VaultHistoryTable({
+  rows,
+  isLoading,
+  snapshotLoading,
+  eventsLoading,
+}: {
+  rows: VaultRow[];
+  isLoading: boolean;
+  snapshotLoading: boolean;
+  eventsLoading: boolean;
+}) {
+  const { setSelectedChainId } = useSelectedChain();
+
+  return (
+    <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
+      <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+        Historial de vaults
+      </h2>
+      <p className="mt-1 text-sm text-muted">
+        Cada vault creado en el protocolo, del más reciente al más antiguo — leído directo de VaultCreated.
+      </p>
+
+      {isLoading && rows.length === 0 && (
+        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Escaneando eventos on-chain…</p>
+      )}
+      {!isLoading && rows.length === 0 && <p className="mt-8 text-sm text-muted">Todavía no se creó ningún vault.</p>}
+
+      {rows.length > 0 && (
+        <div className="mt-6 max-h-[640px] overflow-auto rounded-xl border border-hairline">
+          <table className="w-full min-w-[920px] border-collapse text-sm">
+            <thead className="sticky top-0 z-10" style={{ backgroundColor: "#0a0a0a" }}>
+              <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
+                <th className="px-4 py-3 font-normal">Fecha</th>
+                <th className="px-4 py-3 font-normal">Chain</th>
+                <th className="px-4 py-3 font-normal">Pool</th>
+                <th className="px-4 py-3 font-normal">Versión</th>
+                <th className="px-4 py-3 font-normal">Rango</th>
+                <th className="px-4 py-3 font-normal text-right">Valor</th>
+                <th className="px-4 py-3 font-normal text-right">Comisiones</th>
+                <th className="px-4 py-3 font-normal text-right">Rendimiento</th>
+                <th className="px-4 py-3 font-normal text-right">Rebalanceos</th>
+                <th className="px-4 py-3 font-normal">Estado</th>
+                <th className="px-4 py-3 font-normal">Hash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-white/[0.02]">
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{row.chain.name}</td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <Link
+                      href={`/vault/${row.address}`}
+                      onClick={() => setSelectedChainId(row.chain.id)}
+                      className="text-white/90 underline-offset-4 hover:text-accent hover:underline"
+                    >
+                      {row.poolLabel}
+                    </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-faint">Uniswap V3</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">
+                    {snapshotLoading
+                      ? "…"
+                      : row.priceRange
+                        ? `$${formatPrice(row.priceRange[0])} – $${formatPrice(row.priceRange[1])}`
+                        : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                    {snapshotLoading ? "…" : usd(row.valueUsd)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-positive">
+                    {eventsLoading ? "…" : usd(row.feesUsd)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                    {eventsLoading || snapshotLoading ? "…" : row.valueUsd > 0 ? `${row.yieldPct.toFixed(2)}%` : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                    {snapshotLoading ? "…" : row.rebalanceCount}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] ${STATUS_CLASS[row.status]}`}>
+                      {STATUS_LABEL[row.status]}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {row.txHash ? (
+                      <a
+                        href={`${row.chain.explorerBaseUrl}/tx/${row.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-[11px] text-muted underline-offset-4 hover:text-accent hover:underline"
+                      >
+                        {shortHash(row.txHash)} ↗
+                      </a>
+                    ) : (
+                      <span className="font-mono text-[11px] text-faint">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

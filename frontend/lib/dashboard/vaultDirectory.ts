@@ -10,6 +10,7 @@ export interface VaultCreationRecord {
   token1: `0x${string}`;
   fee: number;
   createdAt: number; // unix seconds
+  txHash: `0x${string}` | null;
 }
 
 /**
@@ -58,6 +59,7 @@ export async function fetchAllVaultCreations(
       token1: a.token1,
       fee: a.fee,
       createdAt: l.blockNumber !== null ? (blockTimestamps.get(l.blockNumber) ?? 0) : 0,
+      txHash: l.transactionHash,
     };
   });
 }
