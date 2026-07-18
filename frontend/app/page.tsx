@@ -55,7 +55,8 @@ export default function Home() {
               className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-white/90 sm:text-2xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Liquidez concentrada, siempre en rango — sin ceder nunca la custodia de tus fondos.
+              Liquidez concentrada en pools de Uniswap —el DEX más grande del mundo—, siempre en
+              rango, sin ceder nunca la custodia de tus fondos.
             </p>
             <p className="mt-4 max-w-xl text-base font-medium leading-relaxed text-accent">
               Ganá dinero pasivo desde el primer minuto — sin experiencia previa, con control total

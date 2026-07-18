@@ -66,16 +66,21 @@
     letter-spacing: 0.14em;
     color: var(--accent);
     font-weight: 700;
+    break-after: avoid;
   }
 
   section.doc-section {
     margin-top: 46px;
-    break-inside: avoid-page;
   }
+  /* break-after:avoid keeps a heading glued to the paragraph under it;
+     the section itself is never break-inside:avoid — it can run several
+     pages long, and holding it together forced near-empty pages whenever
+     it didn't fit what was left of the current one. */
   section.doc-section h2 {
     font-size: 22px;
     margin-top: 10px;
     line-height: 1.25;
+    break-after: avoid;
   }
   section.doc-section > p.lede {
     margin-top: 10px;
@@ -182,10 +187,19 @@
 
   /* print — portrait, mobile-readable PDF */
   @media print {
+    /* @page margin would leave the outer band unpainted white in Chrome's
+       print engine — nothing (not even html/body background) can paint
+       inside a real @page margin, so full black bleed needs margin:0 and
+       the inset done as ordinary padding instead, which Chrome DOES paint
+       on every page for the left/right sides. Top/bottom padding here only
+       lands on the very first/last page (padding isn't re-applied at each
+       mid-document page break) — the doc-section/card spacing below is what
+       keeps the breathing room reasonable at breaks in between. */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     html, body { background: #050505 !important; }
-    .doc { max-width: none; padding: 0 6mm; }
+    .doc { max-width: none; padding: 14mm 9mm; }
     a { text-decoration: none; }
-    @page { size: A4 portrait; margin: 14mm 10mm; }
+    @page { size: A4 portrait; margin: 0; }
   }
 </style>
 </head>
@@ -198,8 +212,9 @@
     Auto<span style="color:var(--accent);">Range</span>
   </h1>
   <p style="font-size:16px; color:var(--muted); margin-top:14px; line-height:1.55;">
-    Liquidez concentrada, siempre en rango — <span style="color:#fff;">sin ceder
-    nunca la custodia de tus fondos.</span>
+    Liquidez concentrada en pools de Uniswap —el DEX más grande del mundo—,
+    siempre en rango, <span style="color:#fff;">sin ceder nunca la custodia de
+    tus fondos.</span>
   </p>
   <div style="display:flex; gap:8px; margin-top:18px; flex-wrap:wrap;">
     <span class="pill">Uniswap V3</span>
