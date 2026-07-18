@@ -140,7 +140,9 @@ function describe(
       return {
         kind: "money",
         title: "Depósito del owner",
-        detail: `Invertible ${usdt(args.investableAmount)} · reserva ${usdt(args.reserveAmount)}`,
+        detail:
+          `Invertible ${usdt(args.investableAmount)} · reserva ${usdt(args.reserveAmount)}` +
+          (args.gasReserveAmount !== undefined ? ` · gas ${usdt(args.gasReserveAmount)}` : ""),
       };
     case "CreationFeeCharged":
       return {
@@ -198,6 +200,12 @@ function describe(
         detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""} — corte de plataforma sobre las comisiones de Uniswap generadas`,
       };
     }
+    case "KeeperGasReimbursed":
+      return {
+        kind: "agent",
+        title: "Reembolso de gas al operador",
+        detail: `${usdt(args.amountUsd)} — costo real de este rebalanceo, descontado del presupuesto de gas`,
+      };
     case "Withdrawn":
       return {
         kind: "money",

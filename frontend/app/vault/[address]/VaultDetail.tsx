@@ -125,6 +125,18 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const maxDepositUsd = (maxDepositUsdRaw as bigint) ?? 0n;
   const [capAlert, setCapAlert] = useState<string | null>(null);
 
+  // Separate read (not part of the shared `reads()` list above) — only
+  // RangeVaultArb has this function at all; calling it against Celo's own
+  // ABI (which lacks it entirely) would fail to encode, not just revert.
+  const { data: gasReserveBalanceRaw } = useReadContract({
+    address,
+    abi: chain.vaultAbi,
+    functionName: "gasReserveBalance",
+    chainId: chain.id,
+    query: { enabled: chain.supportsGasReserve, refetchInterval: 15_000 },
+  });
+  const gasReserveBalance = (gasReserveBalanceRaw as bigint) ?? 0n;
+
   const { data: feesSummary } = useVaultFeesSummary(address, chain);
   const { data: depositSummary } = useVaultDepositSummary(address, chain);
   const { data: tickSpacing } = useReadContract({
@@ -199,6 +211,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
   const [depInvestable, setDepInvestable] = useState("0");
   const [depReserve, setDepReserve] = useState("0");
+  const [depGasReserve, setDepGasReserve] = useState("0");
   const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
   const [cfgReinjection, setCfgReinjection] = useState("");
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
@@ -245,7 +258,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   async function handleDepositMore() {
     const investable = parseUnits(depInvestable || "0", 6);
     const reserve = parseUnits(depReserve || "0", 6);
-    const total = investable + reserve;
+    const gasReserve = chain.supportsGasReserve ? parseUnits(depGasReserve || "0", 6) : 0n;
+    const total = investable + reserve + gasReserve;
     if (total === 0n) return;
 
     // Same check RangeVault.deposit() itself makes (reserveAmount +
@@ -254,7 +268,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // even pops up for a deposit that's certain to revert on-chain.
     // Confirmed in production 2026-07-17: a user hit DepositExceedsPlatformCap
     // with no explanation, just a raw revert.
-    const currentTotal = ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n);
+    const currentTotal = ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance;
     if (maxDepositUsd > 0n && currentTotal + total > maxDepositUsd) {
       const room = maxDepositUsd > currentTotal ? maxDepositUsd - currentTotal : 0n;
       setCapAlert(
@@ -282,7 +296,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         address,
         abi: chain.vaultAbi,
         functionName: "deposit",
-        args: [reserve, investable],
+        args: chain.supportsGasReserve ? [reserve, investable, gasReserve] : [reserve, investable],
         chainId: chain.id,
       }),
     );
@@ -526,6 +540,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 value={`${formatUnits((reserveBalance as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
                 hint={`tope por ciclo: ${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
               />
+              {chain.supportsGasReserve && (
+                <Stat
+                  label="Presupuesto de gas"
+                  value={`${formatUnits(gasReserveBalance, 6)} ${chain.stableSymbol}`}
+                  hint="Se descuenta en cada rebalanceo — si llega a 0, el agente sigue operando pero no le reembolsa nada al operador"
+                />
+              )}
               <Stat
                 label="Rebalanceos"
                 value={`${rebalanceCount ?? 0} / ${maxRebalances ?? 0}`}
@@ -660,8 +681,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       Tope de la plataforma: {formatUnits(maxDepositUsd, 6)} {chain.stableSymbol} — quedan{" "}
                       {formatUnits(
                         maxDepositUsd >
-                          ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n)
-                          ? maxDepositUsd - (((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n))
+                          ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance
+                          ? maxDepositUsd -
+                              (((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance)
                           : 0n,
                         6,
                       )}{" "}
@@ -671,6 +693,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField label="Invertible" value={depInvestable} onChange={setDepInvestable} />
                     <MiniField label="Reserva" value={depReserve} onChange={setDepReserve} />
+                    {chain.supportsGasReserve && (
+                      <MiniField label="Presupuesto de gas" value={depGasReserve} onChange={setDepGasReserve} />
+                    )}
                     <button onClick={handleDepositMore} disabled={Boolean(busy)} className="btn-primary !py-3">
                       Depositar
                     </button>

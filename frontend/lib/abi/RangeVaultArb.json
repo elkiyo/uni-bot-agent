@@ -116,6 +116,11 @@
         "name": "investableAmount",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "gasReserveAmount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -150,6 +155,19 @@
         "name": "",
         "type": "uint24",
         "internalType": "uint24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "gasReserveBalance",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -934,6 +952,12 @@
       },
       {
         "name": "reserveAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "gasReserveAmount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

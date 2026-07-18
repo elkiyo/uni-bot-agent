@@ -56,7 +56,7 @@ function signatureStepsFor(
     {
       key: "depositing",
       title: "Depositar",
-      desc: `Transfiere el ${stableSymbol} real al vault, repartido en capital invertible y reserva de reinyección.`,
+      desc: `Transfiere el ${stableSymbol} real al vault, repartido entre las reservas que configuraste arriba.`,
     },
   ];
 }
@@ -130,6 +130,12 @@ export default function CreateVault() {
   const [maxRebalances, setMaxRebalances] = useState("");
   const [reinjectionAmount, setReinjectionAmount] = useState("");
   const [periodicHours, setPeriodicHours] = useState("");
+  // Only meaningful on chains whose vault has a dedicated gasReserveBalance
+  // ledger (RangeVaultArb — see chains.ts's supportsGasReserve) — optional,
+  // blank = 0: the keeper gas reimbursement never blocks a rebalance even
+  // with zero budget (see RangeVaultArb.sol), it just reimburses nothing
+  // until the owner tops this up.
+  const [gasReserveAmount, setGasReserveAmount] = useState("");
 
   // Advanced / risk knobs — unlike the fields above, these DO have sensible
   // platform defaults (same values that used to be hardcoded here), so
@@ -150,7 +156,10 @@ export default function CreateVault() {
   const maxPricePlaceholder = currentPrice !== undefined ? (currentPrice * 1.1).toFixed(2) : "1960.66";
 
   const totalUsdt =
-    (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0) + Number(formatUnits(creationFeeUsdt, 6));
+    (parseFloat(investAmount) || 0) +
+    (parseFloat(reinjectionAmount) || 0) +
+    (chain.supportsGasReserve ? parseFloat(gasReserveAmount) || 0 : 0) +
+    Number(formatUnits(creationFeeUsdt, 6));
   const lowerPreview = parseFloat(minPrice) || undefined;
   const upperPreview = parseFloat(maxPrice) || undefined;
 
@@ -171,11 +180,14 @@ export default function CreateVault() {
     // it here so the wallet never even pops up for a deposit that's certain
     // to revert on-chain. Confirmed in production 2026-07-17: a user hit
     // DepositExceedsPlatformCap with no explanation, just a raw revert.
-    const requestedTotalUsd = (parseFloat(investAmount) || 0) + (parseFloat(reinjectionAmount) || 0);
+    const requestedTotalUsd =
+      (parseFloat(investAmount) || 0) +
+      (parseFloat(reinjectionAmount) || 0) +
+      (chain.supportsGasReserve ? parseFloat(gasReserveAmount) || 0 : 0);
     if (maxDepositUsd !== 0n && requestedTotalUsd > Number(formatUnits(maxDepositUsd, 6))) {
       setCapAlert(
         `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol}. ` +
-          `Estás pidiendo ${requestedTotalUsd.toFixed(2)} ${chain.stableSymbol} entre capital invertible y reserva — reducí el monto.`,
+          `Estás pidiendo ${requestedTotalUsd.toFixed(2)} ${chain.stableSymbol} entre capital invertible, reserva y presupuesto de gas — reducí el monto.`,
       );
       return;
     }
@@ -236,7 +248,8 @@ export default function CreateVault() {
 
       const investable = parseUnits(investAmount, 6);
       const reserve = parseUnits(reinjectionAmount, 6);
-      const total = investable + reserve;
+      const gasReserve = chain.supportsGasReserve ? parseUnits(gasReserveAmount || "0", 6) : 0n;
+      const total = investable + reserve + gasReserve;
 
       currentPhase = "approving";
       setStep(currentPhase);
@@ -318,7 +331,11 @@ export default function CreateVault() {
         address: vaultAddress,
         abi: chain.vaultAbi,
         functionName: "deposit",
-        args: [reserve, investable],
+        // RangeVaultArb's deposit() takes a 3rd gasReserveAmount arg that the
+        // original RangeVault.sol doesn't have — chain.vaultAbi already
+        // reflects whichever contract this chain actually runs (see
+        // chains.ts), so the arg count has to match it exactly.
+        args: chain.supportsGasReserve ? [reserve, investable, gasReserve] : [reserve, investable],
         chainId: chain.id,
       });
       await publicClient.waitForTransactionReceipt({ hash: depositHash });
@@ -499,6 +516,16 @@ export default function CreateVault() {
                   onChange={setPeriodicHours}
                   placeholder="24"
                 />
+                {chain.supportsGasReserve && (
+                  <Field
+                    label="Presupuesto de gas para el agente"
+                    suffix={chain.stableSymbol}
+                    value={gasReserveAmount}
+                    onChange={setGasReserveAmount}
+                    placeholder="5"
+                    hint="Le reembolsa al operador el gas real de cada rebalanceo — opcional, dejar en blanco es 0. Si se agota, el agente sigue rebalanceando igual, solo deja de cobrar hasta que deposites más."
+                  />
+                )}
               </div>
 
               <div className="mt-8">
@@ -603,6 +630,9 @@ export default function CreateVault() {
                   <div className="my-1 border-t border-hairline" />
                   <SummaryRow k="Capital invertible" v={`${investAmount || "0"} ${chain.stableSymbol}`} />
                   <SummaryRow k="Reserva de reinyección" v={`${reinjectionAmount || "0"} ${chain.stableSymbol}`} />
+                  {chain.supportsGasReserve && (
+                    <SummaryRow k="Presupuesto de gas" v={`${gasReserveAmount || "0"} ${chain.stableSymbol}`} />
+                  )}
                   {creationFeeUsdt > 0n && (
                     <SummaryRow
                       k="Fee de creación (una vez)"

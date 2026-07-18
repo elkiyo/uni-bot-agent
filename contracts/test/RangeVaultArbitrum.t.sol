@@ -88,9 +88,10 @@ contract RangeVaultArbitrumTest is Test {
         (lower, upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        vault.deposit({reserveAmount: 50_000_000, investableAmount: 950_000_000}); // 50 + 950 USDC
+        // 50 reserve + 945 investable + 5 gas budget = 1,000 USDC
+        vault.deposit({reserveAmount: 50_000_000, investableAmount: 945_000_000, gasReserveAmount: 5_000_000});
         vault.configureTarget({
-            investmentAmountUsd: 950_000_000,
+            investmentAmountUsd: 945_000_000,
             _targetTickLower: lower,
             _targetTickUpper: upper,
             _maxRebalances: 5,
@@ -126,7 +127,7 @@ contract RangeVaultArbitrumTest is Test {
         // (reverts) or land absurdly large (WETH's 18-decimal used-amount
         // masquerading as 6-decimal USDC) — bounding it against the original
         // investable amount catches both failure modes.
-        assertLt(vault.investableUsdt(), 950_000_000, "leftover dust must be less than what went in");
+        assertLt(vault.investableUsdt(), 945_000_000, "leftover dust must be less than what went in");
 
         // --- rebalance, forced by the periodic trigger ---
         vm.warp(block.timestamp + 1 days + 1);
@@ -139,7 +140,7 @@ contract RangeVaultArbitrumTest is Test {
         assertGt(newTokenId, 0);
         assertEq(vault.rebalanceCount(), 1);
         assertEq(vault.reserveBalance(), 40_000_000, "reserve should drop by the reinjectAmount the keeper chose");
-        assertLt(vault.investableUsdt(), 950_000_000, "post-rebalance dust must stay sane, not WETH-scaled");
+        assertLt(vault.investableUsdt(), 945_000_000, "post-rebalance dust must stay sane, not WETH-scaled");
 
         // --- withdraw: everything comes back to the LP ---
         uint256 lpUsdcBefore = IERC20(USDC).balanceOf(lp);
@@ -161,17 +162,29 @@ contract RangeVaultArbitrumTest is Test {
         uint256 lpUsdcBefore = IERC20(USDC).balanceOf(lp);
         uint256 lpWethBefore = IERC20(WETH).balanceOf(lp);
         vm.prank(lp);
-        vault.deposit({reserveAmount: 0, investableAmount: 100_000_000});
+        vault.deposit({reserveAmount: 0, investableAmount: 100_000_000, gasReserveAmount: 0});
         assertEq(IERC20(USDC).balanceOf(lp), lpUsdcBefore - 100_000_000, "deposit must pull USDC (the stable leg)");
         assertEq(IERC20(WETH).balanceOf(lp), lpWethBefore, "deposit must never touch WETH");
     }
 
+    function test_deposit_topsUpDedicatedGasReserve() public {
+        vm.prank(lp);
+        vault.deposit({reserveAmount: 10_000_000, investableAmount: 20_000_000, gasReserveAmount: 7_000_000});
+        assertEq(vault.gasReserveBalance(), 7_000_000, "gasReserveAmount must land in its own dedicated ledger");
+        assertEq(vault.investableUsdt(), 20_000_000);
+        assertEq(vault.reserveBalance(), 10_000_000);
+    }
+
     // ---------------------------------------------------------------------
-    // Keeper gas reimbursement — metered from the real tx, not a flat amount
+    // Keeper gas reimbursement — metered from the real tx, drawn ONLY from
+    // the dedicated gasReserveBalance budget, never a flat amount
     // ---------------------------------------------------------------------
 
     function test_keeperGasReimbursement_paysOperatorAPlausibleRealAmount() public {
         _openPosition();
+        uint256 gasReserveBefore = vault.gasReserveBalance();
+        uint256 investableBefore = vault.investableUsdt();
+
         vm.warp(block.timestamp + 1 days + 1);
         (int24 lower2, int24 upper2) = _alignedRangeAroundMarket(2000);
         RangeVaultArb.SwapInstruction memory noSwap =
@@ -189,21 +202,28 @@ contract RangeVaultArbitrumTest is Test {
         // hardcoding gas usage figures that could drift as the contract changes.
         assertGt(reimbursed, 0, "operator should be reimbursed something for a real rebalance");
         assertLt(reimbursed, 5_000_000, "reimbursement implausibly high for one rebalance's real gas cost (>$5)");
+
+        // Drawn ONLY from gasReserveBalance — investableUsdt (deployed into the
+        // position) must be completely untouched by the reimbursement itself.
+        assertEq(vault.gasReserveBalance(), gasReserveBefore - reimbursed, "reimbursement must debit gasReserveBalance exactly");
+        assertLe(
+            investableBefore > vault.investableUsdt() ? investableBefore - vault.investableUsdt() : 0,
+            investableBefore,
+            "sanity: investableUsdt change (from re-minting) shouldn't underflow"
+        );
     }
 
     /// Mirrors the exact production bug that killed the OLD flat rebalanceFee: a
-    /// vault whose investable balance can't cover the reimbursement must still
-    /// complete its rebalance, just reimbursing less (or nothing) — never revert.
-    function test_keeperGasReimbursement_neverRevertsWhenVaultCantAfford() public {
+    /// vault whose gas budget can't cover the reimbursement must still complete
+    /// its rebalance, just reimbursing less (or nothing) — never revert.
+    function test_keeperGasReimbursement_neverRevertsWhenBudgetIsEmpty() public {
         (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
 
         vm.startPrank(lp);
-        // Deposit just enough to mint a tiny position with ~nothing left as
-        // investable dust afterward — the vault genuinely can't cover any real
-        // gas reimbursement this cycle.
-        vault.deposit({reserveAmount: 0, investableAmount: 2_000_000}); // 2 USDC
+        // Zero gas budget — deliberately never funded.
+        vault.deposit({reserveAmount: 0, investableAmount: 100_000_000, gasReserveAmount: 0});
         vault.configureTarget({
-            investmentAmountUsd: 2_000_000,
+            investmentAmountUsd: 100_000_000,
             _targetTickLower: lower,
             _targetTickUpper: upper,
             _maxRebalances: 5,
@@ -216,7 +236,7 @@ contract RangeVaultArbitrumTest is Test {
         vm.stopPrank();
 
         RangeVaultArb.SwapInstruction memory initSwap =
-            RangeVaultArb.SwapInstruction({token0ToToken1: false, amountIn: 1_000_000, amountOutMinimum: 0, fee: 500});
+            RangeVaultArb.SwapInstruction({token0ToToken1: false, amountIn: 50_000_000, amountOutMinimum: 0, fee: 500});
         vm.prank(defaultOperator);
         vault.initPosition(initSwap, 0, 0);
 
@@ -225,10 +245,15 @@ contract RangeVaultArbitrumTest is Test {
         RangeVaultArb.SwapInstruction memory noSwap =
             RangeVaultArb.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 500});
 
-        // Must NOT revert even though investableUsdt is ~0 going in.
+        uint256 operatorUsdcBefore = IERC20(USDC).balanceOf(defaultOperator);
+
+        // Must NOT revert even though gasReserveBalance is zero going in.
         vm.prank(defaultOperator);
         uint256 newTokenId = vault.rebalance(lower2, upper2, noSwap, 0, 0, 0);
-        assertGt(newTokenId, 0, "rebalance must still succeed even when the vault can't cover any gas reimbursement");
-        assertEq(vault.investableUsdt(), 0, "reimbursement must be capped to (not exceed) whatever was available");
+        assertGt(newTokenId, 0, "rebalance must still succeed with an empty gas budget");
+        assertEq(vault.gasReserveBalance(), 0, "budget was already empty and must stay at exactly zero, never negative");
+        assertEq(
+            IERC20(USDC).balanceOf(defaultOperator), operatorUsdcBefore, "operator gets zero reimbursement, not a shortfall from investableUsdt"
+        );
     }
 }

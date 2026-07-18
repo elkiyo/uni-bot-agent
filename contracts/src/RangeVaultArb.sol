@@ -88,12 +88,22 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
     address public operator;
 
     // ---------------------------------------------------------------------
-    // Ledgers — both are carved out of the same stable-leg balance but must
-    // never be spent on each other's behalf (see PLAN.md "Nota de contabilidad").
+    // Ledgers — all three are carved out of the same stable-leg balance but
+    // must never be spent on each other's behalf (see PLAN.md "Nota de
+    // contabilidad").
     // ---------------------------------------------------------------------
 
     uint256 public investableUsdt; // capital not yet deployed into a position
     uint256 public reserveBalance; // capital available for the keeper to reinject into a position, over time
+    // Dedicated, owner-funded budget for rebalance()'s keeper gas
+    // reimbursement (see that function's own comment) — deliberately
+    // separate from investableUsdt so the owner can see exactly how much
+    // runway is left to pay the keeper's real gas cost, independent of
+    // capital actually deployed into the position. Reimbursement draws
+    // ONLY from here, never spills into investableUsdt/reserveBalance —
+    // once this hits zero, rebalance() simply stops reimbursing (still
+    // succeeds, see that function's own docs) until the owner tops it up.
+    uint256 public gasReserveBalance;
 
     // Set on the vault's first successful deposit() — gates PlatformConfig's
     // one-time creationFeeUsdt so it's charged exactly once per vault, ever,
@@ -174,7 +184,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
     // Events
     // ---------------------------------------------------------------------
 
-    event Deposited(uint256 investableAmount, uint256 reserveAmount);
+    event Deposited(uint256 investableAmount, uint256 reserveAmount, uint256 gasReserveAmount);
     event CreationFeeCharged(uint256 amount);
     event TargetConfigured(
         uint256 investmentAmountUsd,
@@ -273,15 +283,22 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
     // Owner: capital + configuration
     // ---------------------------------------------------------------------
 
-    /// @notice Deposit the stable leg only. Split across the two ledgers by the
-    /// owner. On the vault's FIRST deposit only, also pulls PlatformConfig's
-    /// one-time creationFeeUsdt on top (never carved out of
-    /// reserveAmount/investableAmount) and forwards it straight to the
+    /// @notice Deposit the stable leg only. Split across the three ledgers by
+    /// the owner — gasReserveAmount tops up the dedicated keeper-gas budget
+    /// (see gasReserveBalance/rebalance()), independent of capital actually
+    /// deployed into the position. On the vault's FIRST deposit only, also
+    /// pulls PlatformConfig's one-time creationFeeUsdt on top (never carved
+    /// out of any of the three amounts) and forwards it straight to the
     /// platform's treasury.
-    function deposit(uint256 reserveAmount, uint256 investableAmount) external onlyOwner notClosed nonReentrant {
-        uint256 total = reserveAmount + investableAmount;
+    function deposit(uint256 reserveAmount, uint256 investableAmount, uint256 gasReserveAmount)
+        external
+        onlyOwner
+        notClosed
+        nonReentrant
+    {
+        uint256 total = reserveAmount + investableAmount + gasReserveAmount;
         uint256 cap = IPlatformConfig(platformConfig).maxDepositUsd();
-        uint256 currentTotal = reserveBalance + investableUsdt;
+        uint256 currentTotal = reserveBalance + investableUsdt + gasReserveBalance;
         if (cap != 0 && currentTotal + total > cap) revert DepositExceedsPlatformCap();
 
         uint256 creationFee;
@@ -299,8 +316,9 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
         reserveBalance += reserveAmount;
         investableUsdt += investableAmount;
+        gasReserveBalance += gasReserveAmount;
 
-        emit Deposited(investableAmount, reserveAmount);
+        emit Deposited(investableAmount, reserveAmount, gasReserveAmount);
     }
 
     /// @notice Tops up the CURRENTLY OPEN position immediately, instead of
@@ -614,18 +632,19 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         // multiplier comfortably covers real priority-fee spikes without
         // trusting the operator's number outright).
         //
-        // Capped to whatever's actually available in investableUsdt (checked
-        // BEFORE transferring, per the reserve/idle-capital split this vault
-        // already enforces everywhere else) so it can NEVER revert the
-        // rebalance — a vault too thin to cover it just reimburses less (or
-        // nothing) this cycle; the owner can always deposit more to keep the
-        // keeper funded (see deposit()).
+        // Draws ONLY from gasReserveBalance — the owner's dedicated,
+        // visible gas budget (see that field's own docstring) — never from
+        // investableUsdt/reserveBalance. Capped to whatever's actually in
+        // there (checked BEFORE transferring) so it can NEVER revert the
+        // rebalance: a depleted budget just means zero reimbursement this
+        // cycle, not a blocked mint; the owner can always deposit more to
+        // keep the keeper funded (see deposit()).
         uint256 effectiveGasPrice = tx.gasprice < block.basefee * 3 ? tx.gasprice : block.basefee * 3;
         uint256 gasUsed = gasStart - gasleft() + GAS_REIMBURSEMENT_OVERHEAD;
         uint256 gasCostUsd = _nativeWeiToStableRaw(gasUsed * effectiveGasPrice);
-        uint256 gasReimbursed = gasCostUsd < investableUsdt ? gasCostUsd : investableUsdt;
+        uint256 gasReimbursed = gasCostUsd < gasReserveBalance ? gasCostUsd : gasReserveBalance;
         if (gasReimbursed > 0) {
-            investableUsdt -= gasReimbursed;
+            gasReserveBalance -= gasReimbursed;
             IERC20(_stableAddr()).safeTransfer(operator, gasReimbursed);
             emit KeeperGasReimbursed(gasReimbursed, gasUsed, effectiveGasPrice);
         }
@@ -759,7 +778,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
     // ---------------------------------------------------------------------
 
     /// @notice Withdraws from the open position and from the vault's idle
-    /// funds (investableUsdt + reserveBalance) INDEPENDENTLY — `positionShareBps`
+    /// funds (investableUsdt + reserveBalance + gasReserveBalance) INDEPENDENTLY — `positionShareBps`
     /// controls how much of the live position's liquidity to pull,
     /// `fundsShareBps` controls how much of the idle ledgers to pull. Either
     /// can be 0 (skip that pool of capital entirely) or 10_000 (all of it),
@@ -813,14 +832,16 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
         uint256 investableShare = (investableUsdt * fundsShareBps) / 10_000;
         uint256 reserveShare = (reserveBalance * fundsShareBps) / 10_000;
+        uint256 gasReserveShare = (gasReserveBalance * fundsShareBps) / 10_000;
         investableUsdt -= investableShare;
         reserveBalance -= reserveShare;
+        gasReserveBalance -= gasReserveShare;
 
-        // investableShare/reserveShare are stable-denominated ledger amounts, not
-        // necessarily token0 — route them to whichever real token is actually the
-        // stable leg before combining with amount0/amount1 (recovered directly from
-        // the position, already in real token0/token1 terms).
-        (uint256 ledger0, uint256 ledger1) = _toToken01(investableShare + reserveShare, 0);
+        // investableShare/reserveShare/gasReserveShare are stable-denominated
+        // ledger amounts, not necessarily token0 — route them to whichever real
+        // token is actually the stable leg before combining with amount0/amount1
+        // (recovered directly from the position, already in real token0/token1 terms).
+        (uint256 ledger0, uint256 ledger1) = _toToken01(investableShare + reserveShare + gasReserveShare, 0);
         uint256 total0 = amount0 + ledger0;
         uint256 total1 = amount1 + ledger1;
 
@@ -867,6 +888,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         uint256 amount1 = IERC20(token1).balanceOf(address(this));
         investableUsdt = 0;
         reserveBalance = 0;
+        gasReserveBalance = 0;
 
         if (amount0 > 0) IERC20(token0).safeTransfer(owner, amount0);
         if (amount1 > 0) IERC20(token1).safeTransfer(owner, amount1);
@@ -911,6 +933,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         uint256 amount1 = IERC20(token1).balanceOf(address(this));
         investableUsdt = 0;
         reserveBalance = 0;
+        gasReserveBalance = 0;
 
         if (amount0 > 0) IERC20(token0).safeTransfer(owner, amount0);
         if (amount1 > 0) IERC20(token1).safeTransfer(owner, amount1);
@@ -929,7 +952,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
     function closeVault() external onlyOwner {
         if (closed) revert VaultClosed();
         if (
-            positionTokenId != 0 || investableUsdt != 0 || reserveBalance != 0
+            positionTokenId != 0 || investableUsdt != 0 || reserveBalance != 0 || gasReserveBalance != 0
                 || IERC20(token0).balanceOf(address(this)) != 0 || IERC20(token1).balanceOf(address(this)) != 0
         ) {
             revert VaultNotEmpty();

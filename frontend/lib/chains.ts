@@ -59,6 +59,12 @@ export interface ChainDef {
   // the chain it's actually targeting instead of importing rangeVaultAbi directly.
   vaultAbi: Abi;
   factoryAbi: Abi;
+  // Only RangeVaultArb has the dedicated gasReserveBalance ledger + 3-arg
+  // deposit() — RangeVault.sol (Celo) still takes deposit(reserveAmount,
+  // investableAmount), 2 args, no separate gas budget. Gates the extra
+  // field in /create and VaultDetail.tsx so the deposit() call encodes the
+  // right argument count for whichever contract this chain actually runs.
+  supportsGasReserve: boolean;
 }
 
 // Verified in PLAN.md — cross-checked against Celopedia, CoinGecko, DefiLlama, and
@@ -96,6 +102,7 @@ const CELO: ChainDef = {
   stableIsToken0: computeStableIsToken0(CELO_STABLE, CELO_VOLATILE),
   vaultAbi: rangeVaultAbi,
   factoryAbi: vaultFactoryAbi,
+  supportsGasReserve: false,
 };
 
 // Verified 2026-07-17: bytecode-checked directly on-chain (not doc-scraped),
@@ -135,6 +142,7 @@ const ARBITRUM: ChainDef = {
   stableIsToken0: computeStableIsToken0(ARBITRUM_STABLE, ARBITRUM_VOLATILE),
   vaultAbi: rangeVaultArbAbi,
   factoryAbi: vaultFactoryArbAbi,
+  supportsGasReserve: true,
 };
 
 export const CHAINS: Record<number, ChainDef> = {
