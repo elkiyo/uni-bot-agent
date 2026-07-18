@@ -33,65 +33,100 @@ export default function Home() {
       <Header />
       <main className="section flex-1 pb-24 pt-32">
         {/* Hero */}
-        <div className="max-w-3xl">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="eyebrow">Uniswap V3 · {chain.name} Mainnet</span>
-            <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-60" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-positive" />
+        <div className="grid items-center gap-10 lg:grid-cols-[1fr_320px]">
+          <div className="max-w-3xl">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="eyebrow">Uniswap V3 · {chain.name} Mainnet</span>
+              <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-positive" />
+                </span>
+                En producción, con fondos reales
               </span>
-              En producción, con fondos reales
-            </span>
-          </div>
-          <h1
-            className="mt-6 text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            Liquidez concentrada,{" "}
-            <span className="text-accent">gestionada por un agente</span> — sin ceder la
-            custodia.
-          </h1>
-          <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
-            Depositás <span className="text-white/80">{chain.stableSymbol}</span> — un solo token. El
-            agente arma y rebalancea tu posición en el pool {chain.stableSymbol}/{chain.volatileSymbol} por vos.{" "}
-            <span className="text-white/80">Solo vos podés retirar los fondos</span>: el
-            operador únicamente rebalancea, dentro de los límites que vos configurás.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/create" className="btn-primary !px-6 !py-3">
-              Crear vault
-            </Link>
-            <Link href="/vaults" className="btn-secondary !px-6 !py-3">
-              Ver mis vaults
-            </Link>
+            </div>
+            <h1
+              className="mt-6 text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Liquidez concentrada,{" "}
+              <span className="text-accent">siempre en rango</span> — sin ceder la
+              custodia.
+            </h1>
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
+              Depositás <span className="text-white/80">{chain.stableSymbol}</span> — un solo token. Un
+              agente arma y rebalancea tu posición en el pool {chain.stableSymbol}/{chain.volatileSymbol} por vos,
+              corriendo el rango junto con el precio.{" "}
+              <span className="text-white/80">Solo vos podés retirar los fondos</span>: el
+              operador únicamente rebalancea, dentro de los límites que vos configurás.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/create" className="btn-primary !px-6 !py-3">
+                Crear vault
+              </Link>
+              <Link href="/vaults" className="btn-secondary !px-6 !py-3">
+                Ver mis vaults
+              </Link>
+            </div>
+
+            {/* Live snapshot */}
+            <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4 rounded-2xl border border-hairline bg-white/[0.02] px-6 py-4">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Precio ETH</p>
+                <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
+                  {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
+                </p>
+              </div>
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Vaults creados</p>
+                <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
+                  {vaultCount !== undefined ? String(vaultCount) : "…"}
+                </p>
+              </div>
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Pool</p>
+                <p className="mt-1 font-mono text-lg text-white/90">
+                  {chain.stableSymbol}/{chain.volatileSymbol} · {chain.feeTier / 10_000}%
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* Live snapshot */}
-          <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4 rounded-2xl border border-hairline bg-white/[0.02] px-6 py-4">
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Precio ETH</p>
-              <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
-                {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
-              </p>
+          {/* Range visual — the actual product idea, at a glance */}
+          <div className="glass hidden rounded-2xl p-6 lg:block">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
+              Rango ilustrativo · ±5%
+            </span>
+            <p
+              className="mt-2 text-2xl font-semibold tabular-nums text-white/90"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
+            </p>
+            <p className="mt-0.5 text-xs text-muted">
+              Precio actual · {chain.stableSymbol}/{chain.volatileSymbol}
+            </p>
+
+            <div className="relative mt-6 h-1.5 rounded-full bg-white/10">
+              <div className="absolute inset-y-0 left-[10%] right-[10%] rounded-full bg-accent/25" />
+              <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_12px_rgba(252,255,82,0.55)]" />
             </div>
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Vaults creados</p>
-              <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
-                {vaultCount !== undefined ? String(vaultCount) : "…"}
-              </p>
+            <div className="mt-2.5 flex items-center justify-between font-mono text-[11px] text-faint">
+              <span>{ethPrice !== undefined ? `$${(ethPrice * 0.95).toFixed(0)}` : "…"}</span>
+              <span className="text-accent">en rango</span>
+              <span>{ethPrice !== undefined ? `$${(ethPrice * 1.05).toFixed(0)}` : "…"}</span>
             </div>
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Pool</p>
-              <p className="mt-1 font-mono text-lg text-white/90">
-                {chain.stableSymbol}/{chain.volatileSymbol} · {chain.feeTier / 10_000}%
-              </p>
-            </div>
+
+            <p className="mt-6 text-xs leading-relaxed text-muted">
+              Cuando el precio se acerca a un borde, el agente cierra la posición y
+              rearma el rango centrado en el nuevo precio — sin que vos tengas que
+              hacer nada.
+            </p>
           </div>
         </div>
 
         {/* How it works */}
-        <div className="mt-20 grid gap-4 sm:grid-cols-3">
+        <div className="mt-20 flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-0">
           {[
             {
               n: "01",
@@ -108,21 +143,28 @@ export default function Home() {
               t: "Solo vos retirás",
               d: "withdrawAll() siempre paga al owner. El operador no puede tocar el principal, y podés revocarlo o pausar el vault cuando quieras.",
             },
-          ].map(({ n, t, d }) => (
-            <div key={n} className="glass rounded-2xl p-5">
-              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
-                {n}
-              </span>
-              <h3 className="mt-3 text-lg font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-                {t}
-              </h3>
-              <p className="mt-2 text-base leading-relaxed text-muted">{d}</p>
+          ].map(({ n, t, d }, i, arr) => (
+            <div key={n} className="flex flex-1 items-stretch">
+              <div className="glass flex-1 rounded-2xl p-5">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+                  {n}
+                </span>
+                <h3 className="mt-3 text-lg font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+                  {t}
+                </h3>
+                <p className="mt-2 text-base leading-relaxed text-muted">{d}</p>
+              </div>
+              {i < arr.length - 1 && (
+                <div className="hidden w-10 shrink-0 items-center justify-center text-faint lg:flex">
+                  →
+                </div>
+              )}
             </div>
           ))}
         </div>
 
         {/* Cómo decide el agente */}
-        <div className="mt-20">
+        <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
           <span className="eyebrow">El agente</span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
@@ -135,7 +177,7 @@ export default function Home() {
             discreción humana de por medio, todo verificable on-chain.
           </p>
 
-          <ol className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <ol className="mt-8 flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-0">
             {[
               {
                 n: "1",
@@ -157,13 +199,20 @@ export default function Home() {
                 t: "¿Rompió el rango?",
                 d: "Compara el precio actual contra los límites de la posición abierta. Fuera por abajo o por arriba, cada caso arma un rango nuevo distinto.",
               },
-            ].map(({ n, t, d }) => (
-              <li key={n} className="glass rounded-2xl p-5">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
-                  Paso {n}
-                </span>
-                <h3 className="mt-3 text-base font-semibold text-white/90">{t}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
+            ].map(({ n, t, d }, i, arr) => (
+              <li key={n} className="flex flex-1 items-stretch">
+                <div className="glass flex-1 rounded-2xl p-5" style={{ backgroundColor: "#0a0a0a" }}>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+                    Paso {n}
+                  </span>
+                  <h3 className="mt-3 text-base font-semibold text-white/90">{t}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
+                </div>
+                {i < arr.length - 1 && (
+                  <div className="hidden w-8 shrink-0 items-center justify-center text-faint lg:flex">
+                    →
+                  </div>
+                )}
               </li>
             ))}
           </ol>
@@ -257,7 +306,7 @@ export default function Home() {
         </div>
 
         {/* Garantías no-custodiales */}
-        <div className="mt-20">
+        <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
           <span className="eyebrow">Sin custodia</span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
@@ -285,7 +334,7 @@ export default function Home() {
                 d: "emergencyWithdrawPosition() fuerza el cierre de la posición y te devuelve todo, incluso si el operador dejó de responder.",
               },
             ].map(({ t, d }) => (
-              <div key={t} className="glass rounded-2xl p-5">
+              <div key={t} className="glass rounded-2xl p-5" style={{ backgroundColor: "#0a0a0a" }}>
                 <h3 className="text-base font-semibold text-white/90">{t}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
               </div>

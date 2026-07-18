@@ -25,11 +25,11 @@ export function Header() {
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2.5">
             <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent font-mono text-sm font-bold text-background">
-              U
+              A
             </span>
             <span className="flex flex-col leading-none">
               <span className="text-[12.5px] font-semibold tracking-tight text-white">
-                UniAgent
+                AutoRange
               </span>
               <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted">
                 Vaults multichain
