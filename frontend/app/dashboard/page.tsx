@@ -418,32 +418,36 @@ function shortHash(hash: string): string {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`;
 }
 
-function TableSelect({
-  label,
+/**
+ * A <th> that IS its own filter: the visible header text is the select's
+ * currently chosen option, so picking a value replaces the column name with
+ * what's now being filtered on — no separate filter toolbar needed. The
+ * first option (value "all") is always the plain column name.
+ */
+function FilterHeader({
   value,
   onChange,
   options,
 }: {
-  label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
 }) {
+  const active = value !== "all";
   return (
-    <label className="flex items-center gap-1.5 rounded-full border border-hairline px-3 py-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">{label}</span>
+    <th className="px-4 py-3 font-normal text-left">
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent font-mono text-[11px] uppercase tracking-[0.08em] text-white/90 outline-none"
+        className={`cursor-pointer bg-transparent font-mono text-[10px] uppercase tracking-[0.12em] outline-none ${active ? "text-accent" : "text-faint"}`}
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-background text-white">
+          <option key={o.value} value={o.value} className="bg-background normal-case text-white">
             {o.label}
           </option>
         ))}
       </select>
-    </label>
+    </th>
   );
 }
 
@@ -501,19 +505,22 @@ function VaultHistoryTable({
 }) {
   const { setSelectedChainId } = useSelectedChain();
   const [statusFilter, setStatusFilter] = useState<VaultStatus | "all">("all");
-  const [chainFilter, setChainFilter] = useState<number | "all">("all");
+  const [chainFilter, setChainFilter] = useState<string>("all");
+  const [poolFilter, setPoolFilter] = useState<string>("all");
   const [versionFilter, setVersionFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const chainOptions = [...new Map(rows.map((r) => [r.chain.id, r.chain])).values()];
+  const chainOptions = [...new Map(rows.map((r) => [String(r.chain.id), r.chain.name])).entries()];
+  const poolOptions = [...new Set(rows.map((r) => r.poolLabel))];
   // Every vault runs Uniswap V3 today — kept as a real filter (not hardcoded
   // to one option) so a future protocol version shows up here automatically.
   const versionOptions = ["Uniswap V3"];
 
   const filteredRows = rows
     .filter((r) => statusFilter === "all" || r.status === statusFilter)
-    .filter((r) => chainFilter === "all" || r.chain.id === chainFilter)
+    .filter((r) => chainFilter === "all" || String(r.chain.id) === chainFilter)
+    .filter((r) => poolFilter === "all" || r.poolLabel === poolFilter)
     .filter(() => versionFilter === "all" || versionFilter === "Uniswap V3")
     .sort((a, b) => (sortDir === "desc" ? b[sortKey] - a[sortKey] : a[sortKey] - b[sortKey]));
 
@@ -528,39 +535,13 @@ function VaultHistoryTable({
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            Historial de vaults
-          </h2>
-          <p className="mt-1 text-sm text-muted">
-            Cada vault creado en el protocolo, del más reciente al más antiguo — leído directo de VaultCreated.
-          </p>
-        </div>
-
-        {rows.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <TableSelect
-              label="Estado"
-              value={statusFilter}
-              onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
-              options={[{ value: "all", label: "Todos" }, ...(["active", "no_position", "closed"] as VaultStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] }))]}
-            />
-            <TableSelect
-              label="Chain"
-              value={String(chainFilter)}
-              onChange={(v) => setChainFilter(v === "all" ? "all" : Number(v))}
-              options={[{ value: "all", label: "Todas" }, ...chainOptions.map((c) => ({ value: String(c.id), label: c.name }))]}
-            />
-            <TableSelect
-              label="Versión"
-              value={versionFilter}
-              onChange={setVersionFilter}
-              options={[{ value: "all", label: "Todas" }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
-            />
-          </div>
-        )}
-      </div>
+      <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+        Historial de vaults
+      </h2>
+      <p className="mt-1 text-sm text-muted">
+        Cada vault creado en el protocolo, del más reciente al más antiguo — leído directo de VaultCreated. Filtrá
+        directo desde el encabezado de Chain, Pool, Versión o Estado.
+      </p>
 
       {isLoading && rows.length === 0 && (
         <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Escaneando eventos on-chain…</p>
@@ -576,15 +557,34 @@ function VaultHistoryTable({
             <thead className="sticky top-0 z-10" style={{ backgroundColor: "#0a0a0a" }}>
               <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
                 <SortableHeader column={SORTABLE_COLUMNS[0]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                <th className="px-4 py-3 font-normal">Chain</th>
-                <th className="px-4 py-3 font-normal">Pool</th>
-                <th className="px-4 py-3 font-normal">Versión</th>
+                <FilterHeader
+                  value={chainFilter}
+                  onChange={setChainFilter}
+                  options={[{ value: "all", label: "Chain" }, ...chainOptions.map(([id, name]) => ({ value: id, label: name }))]}
+                />
+                <FilterHeader
+                  value={poolFilter}
+                  onChange={setPoolFilter}
+                  options={[{ value: "all", label: "Pool" }, ...poolOptions.map((p) => ({ value: p, label: p }))]}
+                />
+                <FilterHeader
+                  value={versionFilter}
+                  onChange={setVersionFilter}
+                  options={[{ value: "all", label: "Versión" }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
+                />
                 <th className="px-4 py-3 font-normal">Rango</th>
                 <SortableHeader column={SORTABLE_COLUMNS[1]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[2]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <th className="px-4 py-3 font-normal text-right">Rebalanceos</th>
-                <th className="px-4 py-3 font-normal">Estado</th>
+                <FilterHeader
+                  value={statusFilter}
+                  onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
+                  options={[
+                    { value: "all", label: "Estado" },
+                    ...(["active", "no_position", "closed"] as VaultStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+                  ]}
+                />
                 <th className="px-4 py-3 font-normal">Hash</th>
               </tr>
             </thead>
