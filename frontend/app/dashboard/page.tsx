@@ -418,6 +418,60 @@ function shortHash(hash: string): string {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`;
 }
 
+function TableSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <label className="flex items-center gap-1.5 rounded-full border border-hairline px-3 py-1.5">
+      <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-transparent font-mono text-[11px] uppercase tracking-[0.08em] text-white/90 outline-none"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value} className="bg-background text-white">
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SortableHeader({
+  column,
+  sortKey,
+  sortDir,
+  onClick,
+}: {
+  column: { key: SortKey; label: string; align: "left" | "right" };
+  sortKey: SortKey;
+  sortDir: "asc" | "desc";
+  onClick: (key: SortKey) => void;
+}) {
+  const active = sortKey === column.key;
+  return (
+    <th className={`px-4 py-3 font-normal ${column.align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        onClick={() => onClick(column.key)}
+        className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors hover:text-white ${active ? "text-accent" : "text-faint"}`}
+      >
+        {column.label}
+        <span className="text-[9px]">{active ? (sortDir === "desc" ? "▼" : "▲") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
 /**
  * "Historial de vaults" — every vault ever created, across every chain, in
  * one chronological (newest-first) list: pool pair + fee tier, protocol
@@ -425,6 +479,15 @@ function shortHash(hash: string): string {
  * hash. Everything vaultRows already carries from useProtocolMetrics — this
  * component is purely presentational.
  */
+type SortKey = "createdAt" | "valueUsd" | "feesUsd" | "yieldPct";
+
+const SORTABLE_COLUMNS: { key: SortKey; label: string; align: "left" | "right" }[] = [
+  { key: "createdAt", label: "Fecha", align: "left" },
+  { key: "valueUsd", label: "Valor", align: "right" },
+  { key: "feesUsd", label: "Comisiones", align: "right" },
+  { key: "yieldPct", label: "Rendimiento", align: "right" },
+];
+
 function VaultHistoryTable({
   rows,
   isLoading,
@@ -437,41 +500,96 @@ function VaultHistoryTable({
   eventsLoading: boolean;
 }) {
   const { setSelectedChainId } = useSelectedChain();
+  const [statusFilter, setStatusFilter] = useState<VaultStatus | "all">("all");
+  const [chainFilter, setChainFilter] = useState<number | "all">("all");
+  const [versionFilter, setVersionFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const chainOptions = [...new Map(rows.map((r) => [r.chain.id, r.chain])).values()];
+  // Every vault runs Uniswap V3 today — kept as a real filter (not hardcoded
+  // to one option) so a future protocol version shows up here automatically.
+  const versionOptions = ["Uniswap V3"];
+
+  const filteredRows = rows
+    .filter((r) => statusFilter === "all" || r.status === statusFilter)
+    .filter((r) => chainFilter === "all" || r.chain.id === chainFilter)
+    .filter(() => versionFilter === "all" || versionFilter === "Uniswap V3")
+    .sort((a, b) => (sortDir === "desc" ? b[sortKey] - a[sortKey] : a[sortKey] - b[sortKey]));
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-        Historial de vaults
-      </h2>
-      <p className="mt-1 text-sm text-muted">
-        Cada vault creado en el protocolo, del más reciente al más antiguo — leído directo de VaultCreated.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+            Historial de vaults
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            Cada vault creado en el protocolo, del más reciente al más antiguo — leído directo de VaultCreated.
+          </p>
+        </div>
+
+        {rows.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <TableSelect
+              label="Estado"
+              value={statusFilter}
+              onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
+              options={[{ value: "all", label: "Todos" }, ...(["active", "no_position", "closed"] as VaultStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] }))]}
+            />
+            <TableSelect
+              label="Chain"
+              value={String(chainFilter)}
+              onChange={(v) => setChainFilter(v === "all" ? "all" : Number(v))}
+              options={[{ value: "all", label: "Todas" }, ...chainOptions.map((c) => ({ value: String(c.id), label: c.name }))]}
+            />
+            <TableSelect
+              label="Versión"
+              value={versionFilter}
+              onChange={setVersionFilter}
+              options={[{ value: "all", label: "Todas" }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
+            />
+          </div>
+        )}
+      </div>
 
       {isLoading && rows.length === 0 && (
         <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Escaneando eventos on-chain…</p>
       )}
       {!isLoading && rows.length === 0 && <p className="mt-8 text-sm text-muted">Todavía no se creó ningún vault.</p>}
+      {rows.length > 0 && filteredRows.length === 0 && (
+        <p className="mt-8 text-sm text-muted">Ningún vault coincide con estos filtros.</p>
+      )}
 
-      {rows.length > 0 && (
+      {filteredRows.length > 0 && (
         <div className="mt-6 max-h-[640px] overflow-auto rounded-xl border border-hairline">
           <table className="w-full min-w-[920px] border-collapse text-sm">
             <thead className="sticky top-0 z-10" style={{ backgroundColor: "#0a0a0a" }}>
               <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
-                <th className="px-4 py-3 font-normal">Fecha</th>
+                <SortableHeader column={SORTABLE_COLUMNS[0]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <th className="px-4 py-3 font-normal">Chain</th>
                 <th className="px-4 py-3 font-normal">Pool</th>
                 <th className="px-4 py-3 font-normal">Versión</th>
                 <th className="px-4 py-3 font-normal">Rango</th>
-                <th className="px-4 py-3 font-normal text-right">Valor</th>
-                <th className="px-4 py-3 font-normal text-right">Comisiones</th>
-                <th className="px-4 py-3 font-normal text-right">Rendimiento</th>
+                <SortableHeader column={SORTABLE_COLUMNS[1]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortableHeader column={SORTABLE_COLUMNS[2]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <th className="px-4 py-3 font-normal text-right">Rebalanceos</th>
                 <th className="px-4 py-3 font-normal">Estado</th>
                 <th className="px-4 py-3 font-normal">Hash</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-white/[0.02]">
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt)}</td>
                   <td className="whitespace-nowrap px-4 py-3">{row.chain.name}</td>
