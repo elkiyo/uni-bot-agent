@@ -3,44 +3,18 @@
 import { useEffect, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient } from "wagmi";
-import { positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
-import { ethPriceFromTick } from "@/lib/priceMath";
-import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
+import { fetchMintVolumeEvents, type MintVolumeEvent } from "@/lib/dashboard/mintVolume";
 import type { ChainDef } from "@/lib/chains";
 
 type Granularity = "day" | "week" | "month" | "year";
-
-interface VolumeEvent {
-  timestamp: number; // seconds
-  usd: number;
-}
-
-type PositionTuple = readonly [
-  bigint,
-  Address,
-  Address,
-  Address,
-  number,
-  number,
-  number,
-  bigint,
-  bigint,
-  bigint,
-  bigint,
-  bigint,
-];
+type VolumeEvent = MintVolumeEvent;
 
 /**
  * "Volumen movido por el agente" — the USD value of every position the
- * agent built, one entry per initPosition()/rebalance() (each mints a fresh
- * position). Rebalanced doesn't carry amount0/amount1 directly (only
- * reinjectedAmount), so this reads the resulting position's
- * liquidity AND the pool's tick AS OF THAT EVENT'S OWN BLOCK (not now — a
- * position rebalanced again since would read back as empty otherwise) to
- * reconstruct its value at mint time. Needs an RPC that still has that
- * historical state; forno.celo.org has held up for the ranges tested here,
- * but any block it can't serve is just skipped rather than failing the
- * whole chart.
+ * agent built for this vault list, one entry per initPosition()/rebalance()
+ * (each mints a fresh position). See lib/dashboard/mintVolume.ts (shared
+ * with the protocol-wide dashboard) for how each mint's value is
+ * reconstructed as of its own block.
  */
 export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address[]; chain: ChainDef }) {
   const publicClient = usePublicClient({ chainId: chain.id });
@@ -51,83 +25,12 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
     if (!publicClient || vaultAddresses.length === 0) return;
     let cancelled = false;
 
-    async function scan() {
-      const latest = await publicClient!.getBlockNumber();
-      const MAX_RANGE = 5_000n;
-      const mints: { tokenId: bigint; blockNumber: bigint }[] = [];
+    fetchMintVolumeEvents(publicClient, chain, vaultAddresses)
+      .then((results) => {
+        if (!cancelled) setEvents(results);
+      })
+      .catch((err) => console.error("volume chart scan failed", err));
 
-      for (const vault of vaultAddresses) {
-        let fromBlock = chain.factoryDeployBlock;
-        while (fromBlock <= latest) {
-          const toBlock = fromBlock + MAX_RANGE > latest ? latest : fromBlock + MAX_RANGE;
-          const [initLogs, rebalLogs] = await Promise.all([
-            publicClient!.getContractEvents({
-              address: vault,
-              abi: chain.vaultAbi,
-              eventName: "PositionInitialized",
-              fromBlock,
-              toBlock,
-            }),
-            publicClient!.getContractEvents({
-              address: vault,
-              abi: chain.vaultAbi,
-              eventName: "Rebalanced",
-              fromBlock,
-              toBlock,
-            }),
-          ]);
-          for (const log of initLogs as unknown as Array<{ args: { tokenId: bigint }; blockNumber: bigint }>) {
-            mints.push({ tokenId: log.args.tokenId, blockNumber: log.blockNumber });
-          }
-          for (const log of rebalLogs as unknown as Array<{ args: { newTokenId: bigint }; blockNumber: bigint }>) {
-            mints.push({ tokenId: log.args.newTokenId, blockNumber: log.blockNumber });
-          }
-          fromBlock = toBlock + 1n;
-        }
-      }
-
-      const results = await Promise.all(
-        mints.map(async ({ tokenId, blockNumber }): Promise<VolumeEvent | null> => {
-          try {
-            const [position, slot0, block] = await Promise.all([
-              publicClient!.readContract({
-                address: chain.positionManager,
-                abi: positionManagerAbi,
-                functionName: "positions",
-                args: [tokenId],
-                blockNumber,
-              }) as Promise<PositionTuple>,
-              publicClient!.readContract({
-                address: chain.pool,
-                abi: uniswapV3PoolAbi,
-                functionName: "slot0",
-                blockNumber,
-              }) as Promise<readonly [bigint, number, number, number, number, number, boolean]>,
-              publicClient!.getBlock({ blockNumber }),
-            ]);
-            const [, , , , , tickLower, tickUpper, liquidity] = position;
-            const currentTick = Number(slot0[1]);
-            const ethPrice = ethPriceFromTick(currentTick, chain.stableIsToken0);
-            const { amount0Raw, amount1Raw } = estimatePositionAmounts({
-              liquidity,
-              currentTick,
-              tickLower,
-              tickUpper,
-            });
-            const stableRaw = chain.stableIsToken0 ? amount0Raw : amount1Raw;
-            const volatileRaw = chain.stableIsToken0 ? amount1Raw : amount0Raw;
-            const usd = stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
-            return { timestamp: Number(block.timestamp), usd };
-          } catch {
-            return null; // RPC couldn't serve this historical block — skip, don't fail the chart
-          }
-        }),
-      );
-
-      if (!cancelled) setEvents(results.filter((e): e is VolumeEvent => e !== null));
-    }
-
-    scan().catch((err) => console.error("volume chart scan failed", err));
     return () => {
       cancelled = true;
     };

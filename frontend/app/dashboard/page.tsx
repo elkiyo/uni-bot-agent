@@ -1,0 +1,384 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  AreaChart,
+  Area,
+  Cell,
+} from "recharts";
+import { Header } from "../components/Header";
+import { useProtocolMetrics } from "@/lib/dashboard/useProtocolMetrics";
+import { bucketByTime, type Granularity } from "@/lib/dashboard/bucket";
+import { useAvailableChains } from "@/lib/useSelectedChain";
+
+const CHART_COLORS = ["#fcff52", "#4ade80", "#60a5fa", "#f472b6", "#fb923c", "#a78bfa"];
+
+const GRANULARITY_LABELS: Record<Granularity, string> = {
+  day: "Diario",
+  week: "Semanal",
+  month: "Mensual",
+  year: "Anual",
+};
+
+function usd(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`;
+  return `$${n.toFixed(n < 10 ? 2 : 0)}`;
+}
+
+export default function DashboardPage() {
+  const chains = useAvailableChains();
+  const [chainFilter, setChainFilter] = useState<number | "all">("all");
+  const [granularity, setGranularity] = useState<Granularity>("day");
+  const metrics = useProtocolMetrics(chainFilter);
+
+  return (
+    <>
+      <Header />
+      <main className="section flex-1 pb-24 pt-32">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <span className="eyebrow">Protocolo</span>
+            <h1
+              className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Dashboard
+            </h1>
+            <p className="mt-2 max-w-xl text-sm text-muted">
+              Estado del protocolo en tiempo real — leído directo de la cadena, sin backend intermediario.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-positive" />
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">en vivo</span>
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-wrap gap-1.5 rounded-full border border-hairline p-1" style={{ width: "fit-content" }}>
+          <ChainTab label="Todas" active={chainFilter === "all"} onClick={() => setChainFilter("all")} />
+          {chains.map((c) => (
+            <ChainTab key={c.id} label={c.name} active={chainFilter === c.id} onClick={() => setChainFilter(c.id)} />
+          ))}
+        </div>
+
+        <StatGrid metrics={metrics} />
+
+        {metrics.poolTypes.length > 0 && <PoolTypeChart poolTypes={metrics.poolTypes} />}
+
+        <div className="mt-10 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold tracking-tight text-white/90" style={{ fontFamily: "var(--font-display)" }}>
+            Series históricas
+          </h2>
+          <div className="flex gap-1.5 rounded-full border border-hairline p-1">
+            {(Object.keys(GRANULARITY_LABELS) as Granularity[]).map((g) => (
+              <button
+                key={g}
+                onClick={() => setGranularity(g)}
+                className={
+                  granularity === g
+                    ? "rounded-full bg-accent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
+                    : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
+                }
+              >
+                {GRANULARITY_LABELS[g]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <VolumeSeriesChart events={metrics.mintVolumeEvents} granularity={granularity} isLoading={metrics.mintVolumeLoading} />
+          <FeesSeriesChart events={metrics.feeEvents} granularity={granularity} isLoading={metrics.eventsLoading} />
+          <RebalanceSeriesChart events={metrics.rebalanceEvents} granularity={granularity} isLoading={metrics.eventsLoading} />
+          <VaultStatusChart metrics={metrics} />
+        </div>
+
+        <p className="mt-10 max-w-2xl font-mono text-[11px] leading-relaxed text-faint">
+          TVL es un valor en vivo (ledgers + posición abierta al precio actual del pool) — no una serie histórica, para
+          no multiplicar las lecturas on-chain por cada punto del gráfico. Comisiones se valoran al precio actual de
+          ETH, no al precio exacto del momento de cada evento — una aproximación razonable dado el volumen.
+        </p>
+      </main>
+    </>
+  );
+}
+
+function ChainTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        active
+          ? "rounded-full bg-accent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
+          : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+function Stat({ label, value, accent, sub }: { label: string; value: string; accent?: boolean; sub?: string }) {
+  return (
+    <div className={accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"}>
+      <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
+      <p
+        className={`mt-2 text-2xl font-semibold tabular-nums ${accent ? "text-accent" : "text-white/90"}`}
+        style={{ fontFamily: "var(--font-display)" }}
+      >
+        {value}
+      </p>
+      {sub && <p className="mt-1 font-mono text-[11px] text-faint">{sub}</p>}
+    </div>
+  );
+}
+
+function StatGrid({ metrics }: { metrics: ReturnType<typeof useProtocolMetrics> }) {
+  const chainBreakdown = (byChain: Record<number, number>, format: (n: number) => string = usd) =>
+    metrics.chains.map((c) => `${c.name}: ${format(byChain[c.id] ?? 0)}`).join(" · ");
+
+  const mintVolumeTotal = metrics.mintVolumeEvents.reduce((sum, e) => sum + e.usd, 0);
+
+  return (
+    <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Stat
+        label="TVL"
+        value={metrics.snapshotLoading ? "…" : usd(metrics.tvlUsd)}
+        accent
+        sub={chainBreakdown(metrics.tvlByChain)}
+      />
+      <Stat
+        label="Volumen movido"
+        value={metrics.mintVolumeLoading ? "…" : usd(mintVolumeTotal)}
+        sub="Valor de cada posición armada"
+      />
+      <Stat
+        label="Vaults activos"
+        value={metrics.snapshotLoading ? "…" : String(metrics.vaultCounts.withPosition)}
+        sub={`${metrics.vaultCounts.total} creados · ${metrics.vaultCounts.closed} cerrados`}
+      />
+      <Stat
+        label="Rebalanceos"
+        value={metrics.snapshotLoading ? "…" : String(metrics.rebalanceCount)}
+        sub={chainBreakdown(metrics.rebalanceCountByChain, String)}
+      />
+      <Stat
+        label="Comisiones al owner"
+        value={metrics.eventsLoading ? "…" : usd(metrics.ownerFeesUsd)}
+        sub="Neto, ya descontado el fee de plataforma"
+      />
+      <Stat
+        label="Ingresos de plataforma"
+        value={metrics.eventsLoading ? "…" : usd(metrics.platformFeesUsd)}
+        sub="Performance fee"
+      />
+      <Stat
+        label="Gas reembolsado al agente"
+        value={metrics.eventsLoading ? "…" : usd(metrics.gasReimbursedUsd)}
+        sub="Solo Arbitrum — costo real medido on-chain"
+      />
+      <Stat
+        label="Capital depositado histórico"
+        value={metrics.eventsLoading ? "…" : usd(metrics.depositedTotalUsd)}
+        sub="Suma de todos los Deposited"
+      />
+    </div>
+  );
+}
+
+function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocolMetrics>["poolTypes"] }) {
+  const data = poolTypes.map((p) => ({ label: p.label, tvl: Number(p.tvlUsd.toFixed(2)), vaults: p.vaultCount }));
+  return (
+    <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
+      <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+        TVL por tipo de pool
+      </h2>
+      <p className="mt-1 text-sm text-muted">Par + fee tier + chain — dónde está realmente el capital.</p>
+      <div className="mt-6" style={{ width: "100%", height: 280 }}>
+        <ResponsiveContainer minWidth={200} minHeight={200}>
+          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
+            <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
+            <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
+            <Tooltip
+              contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+              formatter={(value: unknown) => [usd(Number(value)), "TVL"]}
+            />
+            <Bar dataKey="tvl" radius={[6, 6, 0, 0]}>
+              {data.map((_, i) => (
+                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function ChartShell({ title, subtitle, isLoading, empty, children }: {
+  title: string;
+  subtitle: string;
+  isLoading: boolean;
+  empty: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="glass rounded-2xl p-6 sm:p-8">
+      <h3 className="text-base font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+        {title}
+      </h3>
+      <p className="mt-1 text-sm text-muted">{subtitle}</p>
+      {isLoading && (
+        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Escaneando eventos on-chain…</p>
+      )}
+      {!isLoading && empty && <p className="mt-8 text-sm text-muted">Todavía no hay datos para graficar.</p>}
+      {!isLoading && !empty && <div className="mt-6" style={{ width: "100%", height: 240 }}>{children}</div>}
+    </div>
+  );
+}
+
+function VolumeSeriesChart({
+  events,
+  granularity,
+  isLoading,
+}: {
+  events: { timestamp: number; usd: number }[];
+  granularity: Granularity;
+  isLoading: boolean;
+}) {
+  const data = bucketByTime(events, (e) => e.timestamp, (e) => e.usd, granularity).map((b) => ({
+    label: b.label,
+    value: Number(b.value.toFixed(2)),
+  }));
+  return (
+    <ChartShell title="Volumen" subtitle="Valor de cada posición armada por el agente" isLoading={isLoading} empty={data.length === 0}>
+      <ResponsiveContainer minWidth={200} minHeight={200}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
+          <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
+          <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
+          <Tooltip
+            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            formatter={(value: unknown) => [usd(Number(value)), "Volumen"]}
+          />
+          <Bar dataKey="value" fill="#fcff52" radius={[6, 6, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+}
+
+function FeesSeriesChart({
+  events,
+  granularity,
+  isLoading,
+}: {
+  events: { timestamp: number; ownerUsd: number; platformUsd: number }[];
+  granularity: Granularity;
+  isLoading: boolean;
+}) {
+  const owner = bucketByTime(events, (e) => e.timestamp, (e) => e.ownerUsd, granularity);
+  const platform = bucketByTime(events, (e) => e.timestamp, (e) => e.platformUsd, granularity);
+  const labels = [...new Set([...owner.map((b) => b.label), ...platform.map((b) => b.label)])];
+  const ownerMap = new Map(owner.map((b) => [b.label, b.value]));
+  const platformMap = new Map(platform.map((b) => [b.label, b.value]));
+  const data = labels.map((label) => ({
+    label,
+    owner: Number((ownerMap.get(label) ?? 0).toFixed(2)),
+    platform: Number((platformMap.get(label) ?? 0).toFixed(2)),
+  }));
+
+  return (
+    <ChartShell title="Comisiones" subtitle="Owner (neto) vs. plataforma (performance fee)" isLoading={isLoading} empty={data.length === 0}>
+      <ResponsiveContainer minWidth={200} minHeight={200}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
+          <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
+          <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
+          <Tooltip
+            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            formatter={(value: unknown, name: unknown) => [usd(Number(value)), name === "owner" ? "Owner" : "Plataforma"]}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="owner" stackId="fees" fill="#4ade80" radius={[0, 0, 0, 0]} />
+          <Bar dataKey="platform" stackId="fees" fill="#60a5fa" radius={[6, 6, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+}
+
+function RebalanceSeriesChart({
+  events,
+  granularity,
+  isLoading,
+}: {
+  events: { timestamp: number; gasReimbursedUsd: number }[];
+  granularity: Granularity;
+  isLoading: boolean;
+}) {
+  const data = bucketByTime(events, (e) => e.timestamp, () => 1, granularity).map((b) => ({
+    label: b.label,
+    count: b.count,
+  }));
+  return (
+    <ChartShell title="Rebalanceos" subtitle="Cantidad de rebalanceos ejecutados por el agente" isLoading={isLoading} empty={data.length === 0}>
+      <ResponsiveContainer minWidth={200} minHeight={200}>
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
+          <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
+          <YAxis stroke="#71717a" fontSize={11} tickLine={false} allowDecimals={false} />
+          <Tooltip
+            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            formatter={(value: unknown) => [Number(value), "Rebalanceos"]}
+          />
+          <Area type="monotone" dataKey="count" stroke="#fcff52" fill="#fcff52" fillOpacity={0.25} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+}
+
+function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolMetrics> }) {
+  const data = metrics.chains.map((c) => {
+    const counts = metrics.vaultCountsByChain[c.id] ?? { total: 0, withPosition: 0, closed: 0 };
+    return {
+      label: c.name,
+      activos: counts.withPosition,
+      sinPosicion: counts.total - counts.withPosition - counts.closed,
+      cerrados: counts.closed,
+    };
+  });
+  const empty = data.every((d) => d.activos + d.sinPosicion + d.cerrados === 0);
+
+  return (
+    <ChartShell title="Vaults por estado" subtitle="Con posición abierta / creados sin posición / cerrados, por chain" isLoading={metrics.snapshotLoading} empty={empty}>
+      <ResponsiveContainer minWidth={200} minHeight={200}>
+        <BarChart data={data} layout="vertical" margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
+          <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} allowDecimals={false} />
+          <YAxis type="category" dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} width={70} />
+          <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="activos" stackId="status" fill="#4ade80" name="Con posición" />
+          <Bar dataKey="sinPosicion" stackId="status" fill="#71717a" name="Sin posición" />
+          <Bar dataKey="cerrados" stackId="status" fill="#3f3f46" name="Cerrados" radius={[0, 6, 6, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartShell>
+  );
+}

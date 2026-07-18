@@ -129,9 +129,12 @@ const ARBITRUM: ChainDef = {
   // All 4 standard tiers confirmed to exist for USDC/WETH on Arbitrum
   // 2026-07-17 (unlike Celo, which has no 1% pool for its pair).
   candidateSwapFeeTiers: [100, 500, 3000, 10000],
-  // Factory deployed 2026-07-17 — tx
-  // 0xdfe8c7337725ac0e1d0a1b3f2fede738b331ff6546daad1a4a1411ff308a4b17.
-  factoryDeployBlock: 484906602n,
+  // Factory deployed 2026-07-18 — replaces the earlier 2026-07-17 factory
+  // after the gasReserveBalance mint-accounting fix (see RangeVaultArb.sol's
+  // _reimburseKeeperGas()); the 3 vaults built on the old factory were all
+  // withdrawn/closed before this redeploy, so nothing from before this block
+  // is relevant to scan for.
+  factoryDeployBlock: 485000685n,
   factoryAddress: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   platformConfigAddress: (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   explorerBaseUrl: "https://arbiscan.io",
