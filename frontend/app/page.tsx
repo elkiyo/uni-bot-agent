@@ -49,10 +49,18 @@ export default function Home() {
               className="mt-6 text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Liquidez concentrada,{" "}
-              <span className="text-accent">siempre en rango</span> — sin ceder
-              nunca la custodia de tus fondos.
+              Auto<span className="text-accent">Range</span>
             </h1>
+            <p
+              className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-white/90 sm:text-2xl"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Liquidez concentrada, siempre en rango — sin ceder nunca la custodia de tus fondos.
+            </p>
+            <p className="mt-4 max-w-xl text-base font-medium leading-relaxed text-accent">
+              Ganá dinero pasivo desde el primer minuto — sin experiencia previa, con control total
+              sobre tus fondos.
+            </p>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
               Depositás <span className="text-white/80">{chain.stableSymbol}</span> — un solo token. Un
               agente arma y rebalancea tu posición en el pool {chain.stableSymbol}/{chain.volatileSymbol} por vos,
