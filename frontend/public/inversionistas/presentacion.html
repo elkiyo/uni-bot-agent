@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AutoRange — Presentación para inversionistas</title>
+<style>
+  :root {
+    --background: #050505;
+    --panel: #0a0a0a;
+    --foreground: #ffffff;
+    --accent: #fcff52;
+    --accent-soft: #fff7a8;
+    --hairline: #1b1b1b;
+    --muted: #a1a1aa;
+    --faint: #71717a;
+    --positive: #4ade80;
+    --negative: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1, h2, h3, .display {
+    font-family: "Inter Tight", "Inter", -apple-system, system-ui, sans-serif;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  a { color: inherit; }
+
+  /* ---------- deck shell ---------- */
+  .deck {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+    padding: 28px 0 80px;
+  }
+  .slide {
+    position: relative;
+    width: 1280px;
+    max-width: calc(100vw - 24px);
+    aspect-ratio: 16 / 9;
+    background: radial-gradient(1200px 500px at 85% -10%, rgba(252,255,82,0.06), transparent 60%), var(--background);
+    border: 1px solid var(--hairline);
+    border-radius: 18px;
+    overflow: hidden;
+    padding: 56px 64px;
+    display: flex;
+    flex-direction: column;
+  }
+  @media (max-width: 860px) {
+    .slide { padding: 34px 30px; border-radius: 12px; }
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 9999px;
+    border: 1px solid var(--hairline);
+    background: rgba(255,255,255,0.025);
+    padding: 6px 14px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    width: fit-content;
+  }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .slide-foot {
+    position: absolute;
+    left: 64px; right: 64px; bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  @media (max-width: 860px) {
+    .slide-foot { left: 30px; right: 30px; }
+  }
+
+  .glass {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--hairline);
+    border-radius: 16px;
+  }
+
+  .accent { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+  .positive { color: var(--positive); }
+
+  .kicker {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .num-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: rgba(252,255,82,0.06);
+    color: var(--accent);
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+
+  /* utility grids */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 860px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+
+  /* print */
+  @media print {
+    html, body { background: #050505 !important; }
+    .deck { padding: 0; gap: 0; }
+    .slide {
+      width: 1280px;
+      height: 720px;
+      max-width: none;
+      aspect-ratio: unset;
+      border-radius: 0;
+      border: none;
+      page-break-after: always;
+      break-after: page;
+    }
+    .nav-hint { display: none !important; }
+    @page { size: 1280px 720px; margin: 0; }
+  }
+
+  .nav-hint {
+    position: fixed;
+    bottom: 18px; left: 50%;
+    transform: translateX(-50%);
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--faint);
+    background: rgba(10,10,10,0.85);
+    border: 1px solid var(--hairline);
+    padding: 8px 16px;
+    border-radius: 9999px;
+    z-index: 50;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* small helpers */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 9999px;
+    border: 1px solid var(--hairline);
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .check {
+    color: var(--positive);
+    font-weight: 700;
+  }
+
+  /* ---------- comparison bar chart (slide: ejemplo numérico) ---------- */
+  .bar-track {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    width: 100%;
+    background: rgba(255,255,255,0.03);
+    border-radius: 4px;
+  }
+  .bar-seg {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 12px;
+    transition: filter 0.15s ease;
+    cursor: default;
+  }
+  .bar-seg:last-child {
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+  }
+  .bar-seg:hover, .bar-seg:focus-visible {
+    filter: brightness(1.14);
+    outline: none;
+  }
+  .bar-seg-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0a0a0a;
+    white-space: nowrap;
+  }
+  .cross {
+    color: var(--negative);
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- 1. PORTADA -->
+  <section class="slide">
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <div class="eyebrow"><span class="dot"></span> Presentación para inversionistas</div>
+      <h1 class="display" style="font-size:76px; margin-top:28px; line-height:1.02;">
+        Auto<span class="accent">Range</span>
+      </h1>
+      <p style="font-size:22px; color:var(--muted); max-width:640px; margin-top:22px; line-height:1.5;">
+        Liquidez concentrada, siempre en rango — <span style="color:#fff;">sin ceder nunca
+        la custodia de tus fondos.</span>
+      </p>
+      <div style="display:flex; gap:10px; margin-top:32px; flex-wrap:wrap;">
+        <span class="pill">Uniswap V3</span>
+        <span class="pill">Celo · Arbitrum</span>
+        <span class="pill"><span class="dot" style="background:var(--positive);"></span> En producción, con fondos reales</span>
+      </div>
+    </div>
+    <div class="slide-foot">
+      <span>AutoRange</span>
+      <span>01 / 16</span>
+    </div>
+  </section>
+
+  <!-- 2. EL PROBLEMA -->
+  <section class="slide">
+    <div class="kicker">El problema</div>
+    <h2 class="display" style="font-size:38px; margin-top:14px; max-width:820px;">
+      Proveer liquidez es una de las formas más rentables de ganar en cripto —
+      y una de las más difíciles de operar bien.
+    </h2>
+    <div class="grid-2" style="margin-top:auto; gap:20px;">
+      <div class="glass" style="padding:24px;">
+        <div class="kicker" style="color:var(--muted);">Cómo funcionaba antes</div>
+        <p style="margin-top:10px; font-size:15px; line-height:1.6; color:var(--muted);">
+          Un proveedor de liquidez tradicional reparte su dinero en <b style="color:#fff;">todo
+          el rango de precios posible</b> — de cero a infinito. Es simple, pero
+          ineficiente: la mayor parte de ese dinero nunca se usa, porque el precio
+          real rara vez visita esas zonas.
+        </p>
+      </div>
+      <div class="glass" style="padding:24px; border-color:rgba(252,255,82,0.25);">
+        <div class="kicker">La alternativa moderna</div>
+        <p style="margin-top:10px; font-size:15px; line-height:1.6; color:var(--muted);">
+          Uniswap V3 permite <b style="color:#fff;">concentrar</b> ese dinero solo en la
+          franja de precio donde el mercado realmente opera hoy — se gana mucho
+          más por cada dólar puesto. El costo: si el precio se sale de esa franja,
+          hay que <b style="color:#fff;">mover el rango a mano</b>, todo el tiempo, o se
+          deja de ganar por completo.
+        </p>
+      </div>
+    </div>
+    <p style="margin-top:20px; font-size:15px; color:var(--faint); max-width:760px;">
+      Mantener esa gestión activa exige vigilancia constante y conocimiento
+      técnico. La mayoría de la gente no tiene ni el tiempo ni el expertise —
+      y delegarlo, hasta ahora, casi siempre significaba entregarle el control
+      del dinero a un tercero.
+    </p>
+    <div class="slide-foot"><span>AutoRange</span><span>02 / 16</span></div>
+  </section>
+
+  <!-- 3. LA SOLUCIÓN -->
+  <section class="slide">
+    <div class="kicker">La solución</div>
+    <h2 class="display" style="font-size:38px; margin-top:14px; max-width:800px;">
+      AutoRange automatiza esa gestión activa —
+      sin que nunca entregues el control de tu dinero.
+    </h2>
+    <div class="grid-3" style="margin-top:44px;">
+      <div class="glass" style="padding:22px;">
+        <div class="num-badge">1</div>
+        <h3 style="font-size:17px; margin-top:14px; color:#fff;">Depositás un solo token</h3>
+        <p style="margin-top:8px; font-size:14px; color:var(--muted); line-height:1.55;">
+          Una stablecoin (dólar digital). No necesitás tener de antemano la
+          otra mitad del par.
+        </p>
+      </div>
+      <div class="glass" style="padding:22px; border-color:rgba(252,255,82,0.25);">
+        <div class="num-badge">2</div>
+        <h3 style="font-size:17px; margin-top:14px; color:#fff;">Un agente automatizado opera por vos</h3>
+        <p style="margin-top:8px; font-size:14px; color:var(--muted); line-height:1.55;">
+          Arma la posición y la reacomoda cuando el precio se mueve — sin
+          intervención humana discrecional.
+        </p>
+      </div>
+      <div class="glass" style="padding:22px;">
+        <div class="num-badge">3</div>
+        <h3 style="font-size:17px; margin-top:14px; color:#fff;">Solo vos retirás</h3>
+        <p style="margin-top:8px; font-size:14px; color:var(--muted); line-height:1.55;">
+          En cualquier momento, a tu propia billetera. Nadie más puede
+          recibir ese dinero — está escrito en el contrato.
+        </p>
+      </div>
+    </div>
+    <p style="margin-top:auto; font-size:14px; color:var(--faint); max-width:700px;">
+      Esta presentación explica, sin jerga técnica, cómo funciona cada una de
+      estas tres piezas — y por qué la número 3 es una garantía verificable,
+      no una promesa de confianza.
+    </p>
+    <div class="slide-foot"><span>AutoRange</span><span>03 / 16</span></div>
+  </section>
+
+  <!-- 4. QUÉ ES UN DEX / UNISWAP -->
+  <section class="slide">
+    <div class="kicker">Conceptos base · 1 de 2</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">¿Qué es un DEX, y qué es Uniswap?</h2>
+    <div class="grid-2" style="margin-top:32px; gap:20px; flex:1;">
+      <div class="glass" style="padding:24px;">
+        <h3 style="font-size:16px; color:var(--accent);">Un DEX (exchange descentralizado)</h3>
+        <p style="margin-top:10px; font-size:15px; line-height:1.65; color:var(--muted);">
+          Es un mercado para intercambiar monedas digitales que corre
+          <b style="color:#fff;"> 100% en código público</b>, sin una empresa en el
+          medio que guarde el dinero de nadie. Nadie puede congelar una cuenta,
+          nadie tiene un botón de administrador sobre tus fondos: las reglas
+          de intercambio están fijas en un contrato que cualquiera puede leer.
+        </p>
+      </div>
+      <div class="glass" style="padding:24px;">
+        <h3 style="font-size:16px; color:var(--accent);">Uniswap</h3>
+        <p style="margin-top:10px; font-size:15px; line-height:1.65; color:var(--muted);">
+          Es el DEX más grande y con más historial del mundo — operando desde
+          2018, usado por traders minoristas y fondos institucionales por igual.
+          <b style="color:#fff;"> AutoRange no crea su propio exchange ni su propio
+          "pool" a medida</b>: usa directamente los contratos oficiales y
+          verificados de Uniswap V3, los mismos que usa cualquier otra persona.
+        </p>
+      </div>
+    </div>
+    <p style="margin-top:14px; font-size:13px; color:var(--faint);">
+      Traducción simple: el "banco" donde vive tu liquidez no lo construimos
+      nosotros ni lo controlamos nosotros — es la infraestructura pública más
+      probada del sector.
+    </p>
+    <div class="slide-foot"><span>AutoRange</span><span>04 / 16</span></div>
+  </section>
+
+  <!-- 5. QUÉ ES UNA POOL / LIQUIDEZ CONCENTRADA -->
+  <section class="slide">
+    <div class="kicker">Conceptos base · 2 de 2</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">¿Qué es una "pool", y qué es liquidez concentrada?</h2>
+    <div class="grid-2" style="margin-top:28px; gap:20px;">
+      <div class="glass" style="padding:22px;">
+        <h3 style="font-size:16px; color:var(--accent);">La pool</h3>
+        <p style="margin-top:10px; font-size:14.5px; line-height:1.6; color:var(--muted);">
+          Pensala como una <b style="color:#fff;">alcancía compartida</b> de dos monedas
+          (por ejemplo, dólares y ETH). Cualquiera puede comprar o vender contra
+          esa alcancía, pagando una pequeña comisión — que se reparte entre
+          todas las personas que pusieron dinero ahí.
+        </p>
+      </div>
+      <div class="glass" style="padding:22px; border-color:rgba(252,255,82,0.25);">
+        <h3 style="font-size:16px; color:var(--accent);">Liquidez concentrada</h3>
+        <p style="margin-top:10px; font-size:14.5px; line-height:1.6; color:var(--muted);">
+          En vez de repartir tu dinero en cualquier precio imaginable, lo
+          concentrás en la <b style="color:#fff;">franja donde el mercado realmente
+          está operando ahora</b> — como prestar dinero solo a la tasa donde sabés
+          que hay demanda real, en vez de ofrecerlo a cualquier tasa. Ganás
+          mucho más por cada dólar puesto.
+        </p>
+      </div>
+    </div>
+    <div class="glass" style="margin-top:20px; padding:22px; flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <p style="font-size:14.5px; line-height:1.6; color:var(--muted);">
+        <b style="color:#fff;">El costo de esa ventaja:</b> si el precio real se corre
+        fuera de tu franja, tu dinero deja de ganar comisiones por completo,
+        aunque sigue estando ahí. Alguien tiene que "mover" el rango, todo el
+        tiempo, para seguir cobrando. <span style="color:var(--accent);">Eso —
+        exactamente eso — es lo que el agente de AutoRange hace por vos,
+        automáticamente.</span>
+      </p>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>05 / 16</span></div>
+  </section>
+
+  <!-- 6. EN QUÉ POOLS OPERAMOS -->
+  <section class="slide">
+    <div class="kicker">Dónde opera el dinero</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">Pools públicas, reales, con liquidez real</h2>
+    <p style="margin-top:12px; font-size:15px; color:var(--muted); max-width:760px; line-height:1.6;">
+      No son pools de prueba armadas para una demo. Cada vault de AutoRange
+      mintea su posición directamente en una pool pública de Uniswap V3 que ya
+      opera en la red principal — compartiendo esa misma liquidez con
+      cualquier otro trader o fondo del mundo.
+    </p>
+    <div class="grid-2" style="margin-top:26px; gap:20px;">
+      <div class="glass" style="padding:24px;">
+        <div class="eyebrow" style="margin-bottom:12px;">Red · Celo</div>
+        <div style="font-size:24px; font-weight:600;">USDT <span class="faint">/</span> WETH</div>
+        <div class="mono" style="margin-top:8px; font-size:13px; color:var(--muted);">Comisión de la pool: 0.3%</div>
+        <p style="margin-top:14px; font-size:13px; color:var(--faint); line-height:1.55;">
+          Depósito en USDT — dólar digital nativo de Celo. El agente convierte
+          la porción necesaria a WETH (ETH puenteado) solo al armar o
+          reacomodar la posición.
+        </p>
+      </div>
+      <div class="glass" style="padding:24px;">
+        <div class="eyebrow" style="margin-bottom:12px;">Red · Arbitrum</div>
+        <div style="font-size:24px; font-weight:600;">USDC <span class="faint">/</span> WETH</div>
+        <div class="mono" style="margin-top:8px; font-size:13px; color:var(--muted);">Comisión de la pool: 0.05%</div>
+        <p style="margin-top:14px; font-size:13px; color:var(--faint); line-height:1.55;">
+          La pool con más liquidez real disponible para este par en Arbitrum —
+          verificada on-chain antes de operar ahí, no elegida por conveniencia.
+        </p>
+      </div>
+    </div>
+    <div style="margin-top:auto; display:flex; gap:10px; flex-wrap:wrap;">
+      <span class="pill"><span class="dot" style="background:var(--positive);"></span> Contratos oficiales de Uniswap V3, verificados</span>
+      <span class="pill">Sin wrappers propios</span>
+      <span class="pill">Compartida con otros LPs</span>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>06 / 16</span></div>
+  </section>
+
+  <!-- 7. CÓMO FUNCIONA PASO A PASO -->
+  <section class="slide">
+    <div class="kicker">El producto</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">Cómo funciona, paso a paso</h2>
+    <div style="margin-top:26px; display:flex; flex-direction:column; gap:14px; flex:1; justify-content:center;">
+      <div class="glass" style="padding:18px 22px; display:flex; gap:18px; align-items:flex-start;">
+        <div class="num-badge">1</div>
+        <div>
+          <h3 style="font-size:15.5px; color:#fff;">Depositás</h3>
+          <p style="margin-top:4px; font-size:14px; color:var(--muted); line-height:1.5;">
+            Transferís tu stablecoin al vault — el contrato que es tuyo y
+            solo tuyo. Ni siquiera ahí interviene todavía el agente.
+          </p>
+        </div>
+      </div>
+      <div class="glass" style="padding:18px 22px; display:flex; gap:18px; align-items:flex-start;">
+        <div class="num-badge">2</div>
+        <div>
+          <h3 style="font-size:15.5px; color:#fff;">El agente arma la posición</h3>
+          <p style="margin-top:4px; font-size:14px; color:var(--muted); line-height:1.5;">
+            Convierte la porción necesaria y la deposita en la pool de
+            Uniswap V3, dentro del rango de precio que vos definiste al crear
+            el vault.
+          </p>
+        </div>
+      </div>
+      <div class="glass" style="padding:18px 22px; display:flex; gap:18px; align-items:flex-start; border-color:rgba(252,255,82,0.25);">
+        <div class="num-badge">3</div>
+        <div>
+          <h3 style="font-size:15.5px; color:#fff;">El agente vigila y reacomoda</h3>
+          <p style="margin-top:4px; font-size:14px; color:var(--muted); line-height:1.5;">
+            Revisa el precio cada pocos minutos. Si se sale del rango — o pasa
+            el tiempo que configuraste — cierra la posición vieja y arma una
+            nueva, centrada en el precio actual. Sin que hagas nada.
+          </p>
+        </div>
+      </div>
+      <div class="glass" style="padding:18px 22px; display:flex; gap:18px; align-items:flex-start;">
+        <div class="num-badge">4</div>
+        <div>
+          <h3 style="font-size:15.5px; color:#fff;">Retirás cuando quieras</h3>
+          <p style="margin-top:4px; font-size:14px; color:var(--muted); line-height:1.5;">
+            Un solo llamado y el contrato cierra tu posición y te devuelve
+            todo — a tu propia billetera, sin pedirle permiso a nadie.
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>07 / 16</span></div>
+  </section>
+
+  <!-- 8. SEGURIDAD A NIVEL DE PROTOCOLO -->
+  <section class="slide">
+    <div class="kicker">Seguridad · nivel protocolo</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">La arquitectura del contrato, explicada simple</h2>
+    <div class="grid-2" style="margin-top:26px; gap:18px; flex:1;">
+      <div class="glass" style="padding:20px;">
+        <h3 style="font-size:15px; color:var(--accent);">Un contrato por persona</h3>
+        <p style="margin-top:8px; font-size:13.5px; color:var(--muted); line-height:1.55;">
+          Cada usuario tiene su propio "vault" aislado — no es un fondo común.
+          Lo que le pasa al vault de otra persona no te afecta a vos.
+        </p>
+      </div>
+      <div class="glass" style="padding:20px;">
+        <h3 style="font-size:15px; color:var(--accent);">Solo dos roles posibles</h3>
+        <p style="margin-top:8px; font-size:13.5px; color:var(--muted); line-height:1.55;">
+          "Dueño" (vos) y "operador" (el agente). Están separados por código,
+          no por confianza — cada uno solo puede hacer lo que el contrato le
+          permite, sin excepción.
+        </p>
+      </div>
+      <div class="glass" style="padding:20px;">
+        <h3 style="font-size:15px; color:var(--accent);">Componentes de seguridad probados</h3>
+        <p style="margin-top:8px; font-size:13.5px; color:var(--muted); line-height:1.55;">
+          Las protecciones de base (contra ataques de reentrada, manejo seguro
+          de tokens) usan OpenZeppelin — la librería de seguridad más usada y
+          auditada del sector. No reinventamos esa parte.
+        </p>
+      </div>
+      <div class="glass" style="padding:20px; border-color:rgba(74,222,128,0.3);">
+        <h3 style="font-size:15px; color:var(--positive);">Ya en producción, con dinero real</h3>
+        <p style="margin-top:8px; font-size:13.5px; color:var(--muted); line-height:1.55;">
+          No es un prototipo de laboratorio: está operando ahora mismo en dos
+          redes (Celo y Arbitrum), con contratos desplegados y verificables
+          públicamente por cualquiera.
+        </p>
+      </div>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>08 / 16</span></div>
+  </section>
+
+  <!-- 9. UN CONTRATO POR USUARIO (DIFERENCIADOR) -->
+  <section class="slide">
+    <div class="kicker">Lo que nos diferencia</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px; max-width:820px;">
+      Un contrato nuevo por usuario — nunca un fondo compartido
+    </h2>
+    <p style="margin-top:12px; font-size:15px; color:var(--muted); max-width:760px; line-height:1.6;">
+      Cuando creás un vault en AutoRange no estás abriendo una fila en una
+      base de datos, ni comprando una porción de un pool común: se despliega
+      un <b style="color:#fff;">contrato inteligente nuevo, exclusivo para vos</b>.
+      Tu dinero, tu posición y tu historial viven ahí — y en ningún otro
+      lugar.
+    </p>
+    <div class="grid-2" style="margin-top:22px; gap:18px; flex:1;">
+      <div class="glass" style="padding:22px;">
+        <h3 style="font-size:15px; color:var(--muted);">Cómo operan muchos gestores DeFi</h3>
+        <p style="margin-top:10px; font-size:13.5px; color:var(--muted); line-height:1.6;">
+          Un solo contrato "vault" reúne el dinero de <i>todos</i> los usuarios
+          en el mismo lugar. Es más simple de operar, pero un error de
+          configuración o un exploit contra ese contrato compromete a
+          <b style="color:#fff;">todos los depositantes al mismo tiempo</b> —
+          el riesgo de una sola persona se convierte en el riesgo de todos.
+        </p>
+      </div>
+      <div class="glass" style="padding:22px; border-color:rgba(252,255,82,0.3);">
+        <h3 style="font-size:15px; color:var(--accent);">Cómo opera AutoRange</h3>
+        <p style="margin-top:10px; font-size:13.5px; color:var(--muted); line-height:1.6;">
+          Cada usuario recibe <b style="color:#fff;">su propio contrato</b>,
+          aislado del resto. No existe un balance compartido ni una lógica que
+          junte fondos de distintos dueños en tiempo de ejecución — un
+          problema en un vault queda <b style="color:#fff;">contenido a ese
+          vault</b>, nunca se propaga al dinero de otro usuario.
+        </p>
+      </div>
+    </div>
+    <div class="glass" style="margin-top:18px; padding:20px;">
+      <p style="font-size:13.5px; color:var(--muted); line-height:1.6;">
+        Ese aislamiento no es solo una decisión de diseño: desplegar un
+        contrato nuevo por usuario tiene un costo real de infraestructura,
+        que se cubre con un <b style="color:#fff;">cargo único de creación de
+        vault — 1 USD, cobrado una sola vez, en el primer depósito</b> —
+        separado por completo del performance fee, que solo aplica sobre
+        ganancias (ver modelo de negocio).
+      </p>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>09 / 16</span></div>
+  </section>
+
+  <!-- 10. POR QUÉ NADIE PUEDE ROBAR TUS FONDOS -->
+  <section class="slide">
+    <div class="kicker">La pregunta clave</div>
+    <h2 class="display" style="font-size:36px; margin-top:14px; max-width:820px;">
+      ¿Por qué nadie —ni el agente, ni la plataforma— puede robarte los fondos?
+    </h2>
+    <div style="margin-top:22px; display:grid; grid-template-columns:1fr 1fr; gap:12px; flex:1;">
+      <div class="glass" style="padding:16px 18px;">
+        <div style="font-size:13px; color:var(--accent); font-weight:600;">1. El retiro solo tiene un destino posible: vos</div>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          La función de retiro no recibe "a quién mandar el dinero" como
+          parámetro. Siempre paga al dueño del vault. No existe combinación
+          que redirija ese dinero a otra dirección.
+        </p>
+      </div>
+      <div class="glass" style="padding:16px 18px;">
+        <div style="font-size:13px; color:var(--accent); font-weight:600;">2. El agente solo puede trabajar, nunca cobrar tu capital</div>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Solo puede armar o reacomodar la posición. Ninguna de esas acciones
+          mueve un dólar tuyo fuera del contrato — el dinero y la posición se
+          quedan siempre adentro.
+        </p>
+      </div>
+      <div class="glass" style="padding:16px 18px;">
+        <div style="font-size:13px; color:var(--accent); font-weight:600;">3. El agente no puede inventar el rango</div>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Cada rango que propone se valida automáticamente contra los límites
+          que vos configuraste. Si se sale, la operación simplemente falla.
+        </p>
+      </div>
+      <div class="glass" style="padding:16px 18px;">
+        <div style="font-size:13px; color:var(--accent); font-weight:600;">4. Interruptor de apagado inmediato</div>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Podés pausar o revocar al agente vos mismo, en cualquier momento,
+          sin depender de que nadie responda.
+        </p>
+      </div>
+      <div class="glass" style="padding:16px 18px;">
+        <div style="font-size:13px; color:var(--accent); font-weight:600;">5. Salida de emergencia sin depender del agente</div>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Si el agente dejara de responder, hay una función que vos mismo
+          llamás para forzar el cierre y recuperar todo.
+        </p>
+      </div>
+      <div class="glass" style="padding:16px 18px;">
+        <div style="font-size:13px; color:var(--accent); font-weight:600;">6. La comisión es sobre ganancias, nunca sobre tu capital</div>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          La plataforma cobra un <b style="color:#fff;">10% (performance fee)</b> —
+          pero solo sobre las comisiones de trading que tu posición ya ganó
+          como proveedor de liquidez, nunca sobre el capital que depositaste.
+          Se cobra en el momento en que retirás esas ganancias, o cuando el
+          agente reacomoda la posición. Este porcentaje puede ajustarse con
+          el tiempo por decisión de la gobernanza de la plataforma.
+        </p>
+      </div>
+    </div>
+    <p style="margin-top:14px; font-size:12px; color:var(--faint);">
+      Todo esto no es una política ni una promesa — está escrito en el código
+      del contrato, es público, y cualquiera puede verificarlo on-chain.
+    </p>
+    <div class="slide-foot"><span>AutoRange</span><span>10 / 16</span></div>
+  </section>
+
+  <!-- 11. SEGURIDAD A NIVEL USUARIO -->
+  <section class="slide">
+    <div class="kicker">Seguridad · nivel usuario</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">Tu billetera, tus llaves — nosotros nunca las tocamos</h2>
+    <p style="margin-top:12px; font-size:15px; color:var(--muted); max-width:760px; line-height:1.6;">
+      El modelo de custodia de AutoRange depende de un solo hecho: la única
+      llave que puede sacar dinero de tu vault es tu propia billetera. Ni
+      siquiera el equipo que construye la plataforma puede moverlo. Por eso,
+      cuidar tu billetera personal es la otra mitad de la ecuación de
+      seguridad.
+    </p>
+    <div class="grid-2" style="margin-top:22px; gap:16px; flex:1;">
+      <div class="glass" style="padding:18px;">
+        <div class="check">✓</div>
+        <h3 style="font-size:14px; margin-top:6px; color:#fff;">Guardá tu frase semilla offline</h3>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Nunca la escribas en un chat, correo o formulario. Nadie legítimo
+          —tampoco nosotros— te la va a pedir jamás.
+        </p>
+      </div>
+      <div class="glass" style="padding:18px;">
+        <div class="check">✓</div>
+        <h3 style="font-size:14px; margin-top:6px; color:#fff;">Verificá siempre la URL</h3>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Los sitios falsos ("phishing") son la forma más común de robo en
+          cripto — no una falla del protocolo, sino del navegador.
+        </p>
+      </div>
+      <div class="glass" style="padding:18px;">
+        <div class="check">✓</div>
+        <h3 style="font-size:14px; margin-top:6px; color:#fff;">Revisá qué estás firmando</h3>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Tu billetera te muestra qué contrato y qué acción estás aprobando
+          antes de confirmar — vale la pena leerlo, siempre.
+        </p>
+      </div>
+      <div class="glass" style="padding:18px;">
+        <div class="check">✓</div>
+        <h3 style="font-size:14px; margin-top:6px; color:#fff;">Usá el kill switch si dudás</h3>
+        <p style="margin-top:6px; font-size:12.5px; color:var(--muted); line-height:1.5;">
+          Ante cualquier duda, podés pausar tu vault o retirar de emergencia
+          vos mismo, sin esperar a nadie.
+        </p>
+      </div>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>11 / 16</span></div>
+  </section>
+
+  <!-- 12. MODELO DE NEGOCIO -->
+  <section class="slide">
+    <div class="kicker">Modelo de negocio</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">¿De dónde sale el ingreso de la plataforma?</h2>
+    <div class="grid-3" style="margin-top:24px; gap:16px;">
+      <div class="glass" style="padding:20px;">
+        <h3 style="font-size:15px; color:var(--accent);">Cargo de creación: 1 USD, una vez por vault</h3>
+        <p style="margin-top:10px; font-size:13px; line-height:1.55; color:var(--muted);">
+          Se cobra una sola vez, en el primer depósito, y financia el costo
+          real de desplegar un contrato propio e independiente para ese
+          usuario — la base del aislamiento de seguridad de todo el
+          protocolo (ver slide anterior).
+        </p>
+      </div>
+      <div class="glass" style="padding:20px; border-color:rgba(252,255,82,0.25);">
+        <h3 style="font-size:15px; color:var(--accent);">Performance fee: 10% de las ganancias, no del capital</h3>
+        <p style="margin-top:10px; font-size:13px; line-height:1.55; color:var(--muted);">
+          Un <b style="color:#fff;">10% sobre las comisiones de trading (LP fees)</b>
+          que la posición efectivamente generó — <b style="color:#fff;">nunca
+          sobre el dinero depositado.</b> Se cobra cuando el agente reacomoda
+          la posición, o cuando el usuario retira sus ganancias.
+        </p>
+      </div>
+      <div class="glass" style="padding:20px;">
+        <h3 style="font-size:15px; color:var(--accent);">Ingreso alineado con el rendimiento real</h3>
+        <p style="margin-top:10px; font-size:13px; line-height:1.55; color:var(--muted);">
+          Más vaults activos y más volumen operado significan más comisiones
+          de trading generadas — y más ingreso para la plataforma. Si el
+          usuario no gana, la plataforma tampoco cobra performance fee.
+        </p>
+      </div>
+    </div>
+    <div class="glass" style="margin-top:18px; padding:22px;">
+      <p style="font-size:14px; color:var(--muted); line-height:1.6;">
+        <b style="color:#fff;">Por qué el modelo no-custodial ayuda a crecer:</b>
+        al no pedirle a nadie que entregue el control de su dinero, la barrera
+        de confianza para sumar nuevos usuarios es mucho más baja — y la
+        misma arquitectura ya probada permite expandirse a redes y pools
+        nuevas sin rediseñar el producto (Celo → Arbitrum ya es prueba de eso).
+        Tanto el cargo de creación como el 10% de performance fee son los
+        valores actuales configurados por la plataforma —
+        <b style="color:#fff;">no son fijos para siempre</b>: pueden ajustarse
+        con el tiempo por decisión de la gobernanza, igual para todos los
+        vaults existentes.
+      </p>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>12 / 16</span></div>
+  </section>
+
+  <!-- 13. EJEMPLO NUMÉRICO REAL -->
+  <section class="slide">
+    <div class="kicker">Ejemplo real, con números</div>
+    <h2 class="display" style="font-size:30px; margin-top:14px; max-width:840px;">
+      Mismo pool, mismas comisiones ganadas — lo que cambia es el reparto
+    </h2>
+    <p style="margin-top:10px; font-size:13px; color:var(--muted); max-width:840px; line-height:1.55;">
+      Un LP deposita <b style="color:#fff;">$10,000</b> en un pool de Uniswap V3.
+      En un período dado, esa posición genera <b style="color:#fff;">$1,000 en
+      comisiones de trading</b> — 10% de rentabilidad bruta sobre el capital.
+      Ese resultado es el mismo en los dos escenarios de abajo: la diferencia
+      no es cuánto gana el pool, es quién se queda con cuánto.
+    </p>
+
+    <div style="margin-top:8px; display:flex; gap:18px; align-items:center;">
+      <span style="display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);">
+        <span style="width:10px;height:10px;border-radius:3px;background:#b08f14;display:inline-block;"></span>
+        Para vos (el inversor)
+      </span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);">
+        <span style="width:10px;height:10px;border-radius:3px;background:#8b7cf6;display:inline-block;"></span>
+        Para AutoRange (performance fee)
+      </span>
+    </div>
+
+    <div style="margin-top:20px; display:flex; flex-direction:column; gap:22px; flex:1; justify-content:center;">
+      <div>
+        <div style="font-size:12.5px; color:var(--muted); margin-bottom:7px;">
+          <b style="color:#fff;">Sin AutoRange</b> — gestión manual: tenés que ser
+          experto y dedicarle tiempo todos los días
+        </div>
+        <div class="bar-track" style="height:30px;">
+          <div
+            class="bar-seg"
+            style="width:100%; background:#b08f14;"
+            tabindex="0"
+            role="img"
+            aria-label="Inversor: 1,000 dólares, 10 por ciento, 100 por ciento de las comisiones ganadas"
+            title="Inversor: $1,000 · 10% — 100% de las comisiones ganadas"
+          >
+            <span class="bar-seg-label">$1,000 · 10%</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:12.5px; color:var(--muted); margin-bottom:7px;">
+          <b style="color:#fff;">Con AutoRange</b> — automático: sin experiencia
+          previa, sin dedicarle tiempo
+        </div>
+        <div class="bar-track" style="height:30px;">
+          <div
+            class="bar-seg"
+            style="flex-grow:900; background:#b08f14;"
+            tabindex="0"
+            role="img"
+            aria-label="Inversor: 900 dólares, 9 por ciento neto"
+            title="Vos: $900 · 9% neto"
+          >
+            <span class="bar-seg-label">$900 · 9%</span>
+          </div>
+          <div
+            class="bar-seg"
+            style="flex-grow:100; background:#8b7cf6; justify-content:center; padding-right:0;"
+            tabindex="0"
+            role="img"
+            aria-label="AutoRange: 100 dólares, 1 por ciento, performance fee del 10 por ciento sobre lo ganado"
+            title="AutoRange: $100 · 1% — performance fee (10% de lo ganado, nunca del capital)"
+          ></div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:6px;">
+          <span style="font-size:11px; color:var(--faint);">
+            ↑ el tramo violeta = $100 · 1% para AutoRange (10% de lo ganado — nunca del capital)
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass" style="margin-top:6px; padding:16px 20px;">
+      <p style="font-size:12.5px; color:var(--muted); line-height:1.55;">
+        <b style="color:#fff;">Lo que cambia no es cuánto gana el pool — es cuánto
+        trabajo te cuesta a vos ganarlo.</b> Con AutoRange cedés 1 punto
+        porcentual de rentabilidad bruta (10% → 9% neto), pero no necesitás
+        vigilar el precio, saber calcular rangos, ni tener experiencia
+        operando Uniswap V3 — el agente lo hace todo, todo el tiempo, por vos.
+      </p>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>13 / 16</span></div>
+  </section>
+
+  <!-- 14. DÓNDE ESTAMOS HOY (renumbered) -->
+  <section class="slide">
+    <div class="kicker">Estado actual</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">Dónde estamos hoy</h2>
+    <div class="grid-3" style="margin-top:28px;">
+      <div class="glass" style="padding:22px;">
+        <div class="pill" style="border-color:rgba(74,222,128,0.35); margin-bottom:10px;"><span class="dot" style="background:var(--positive);"></span> En vivo</div>
+        <h3 style="font-size:15px; color:#fff;">Producción, dos redes</h3>
+        <p style="margin-top:8px; font-size:13px; color:var(--muted); line-height:1.5;">
+          Operando con fondos reales en Celo y Arbitrum, no en un entorno de
+          prueba.
+        </p>
+      </div>
+      <div class="glass" style="padding:22px;">
+        <div class="pill" style="margin-bottom:10px;">Verificable</div>
+        <h3 style="font-size:15px; color:#fff;">Contratos públicos</h3>
+        <p style="margin-top:8px; font-size:13px; color:var(--muted); line-height:1.5;">
+          Direcciones desplegadas y auditables por cualquiera, en el
+          explorador de cada red.
+        </p>
+      </div>
+      <div class="glass" style="padding:22px;">
+        <div class="pill" style="margin-bottom:10px;">Multi-cadena</div>
+        <h3 style="font-size:15px; color:#fff;">Arquitectura ya probada</h3>
+        <p style="margin-top:8px; font-size:13px; color:var(--muted); line-height:1.5;">
+          Sumar una red nueva no exige rediseñar el producto — ya se hizo
+          una vez, con éxito.
+        </p>
+      </div>
+    </div>
+    <div style="margin-top:auto;">
+      <div class="kicker" style="color:var(--muted);">Próximos pasos</div>
+      <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+        <span class="pill">Sumar más redes y pools</span>
+        <span class="pill">Auditoría externa formal de los contratos</span>
+        <span class="pill">Más parámetros configurables para el usuario</span>
+      </div>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>14 / 16</span></div>
+  </section>
+
+  <!-- 15. RESUMEN -->
+  <section class="slide">
+    <div class="kicker">En resumen</div>
+    <h2 class="display" style="font-size:34px; margin-top:14px;">Todo lo que necesitás recordar</h2>
+    <div style="margin-top:24px; display:flex; flex-direction:column; gap:12px; flex:1; justify-content:center;">
+      <div class="glass" style="padding:16px 20px; display:flex; align-items:center; gap:14px;">
+        <span class="check">✓</span>
+        <span style="font-size:14.5px; color:var(--muted);">Opera sobre <b style="color:#fff;">Uniswap V3</b>, la infraestructura de intercambio más probada del sector — no un exchange propio.</span>
+      </div>
+      <div class="glass" style="padding:16px 20px; display:flex; align-items:center; gap:14px;">
+        <span class="check">✓</span>
+        <span style="font-size:14.5px; color:var(--muted);">Usa pools públicas y reales: <b style="color:#fff;">USDT/WETH en Celo, USDC/WETH en Arbitrum</b>.</span>
+      </div>
+      <div class="glass" style="padding:16px 20px; display:flex; align-items:center; gap:14px;">
+        <span class="check">✓</span>
+        <span style="font-size:14.5px; color:var(--muted);">Un agente automatizado hace el trabajo activo de mantener la posición <b style="color:#fff;">siempre en rango</b>.</span>
+      </div>
+      <div class="glass" style="padding:16px 20px; display:flex; align-items:center; gap:14px;">
+        <span class="check">✓</span>
+        <span style="font-size:14.5px; color:var(--muted);"><b style="color:#fff;">El retiro solo te paga a vos</b> — es una garantía de código, no de confianza.</span>
+      </div>
+      <div class="glass" style="padding:16px 20px; display:flex; align-items:center; gap:14px;">
+        <span class="check">✓</span>
+        <span style="font-size:14.5px; color:var(--muted);">Cada usuario tiene <b style="color:#fff;">su propio contrato aislado</b> — nunca un fondo compartido entre todos los usuarios.</span>
+      </div>
+      <div class="glass" style="padding:16px 20px; display:flex; align-items:center; gap:14px;">
+        <span class="check">✓</span>
+        <span style="font-size:14.5px; color:var(--muted);">Ya está <b style="color:#fff;">en producción, con fondos reales</b>, en dos redes distintas.</span>
+      </div>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>15 / 16</span></div>
+  </section>
+
+  <!-- 16. CIERRE -->
+  <section class="slide">
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:flex-start;">
+      <h2 class="display" style="font-size:48px;">Gracias.</h2>
+      <p style="margin-top:16px; font-size:18px; color:var(--muted); max-width:600px; line-height:1.6;">
+        AutoRange — liquidez concentrada, siempre en rango, siempre bajo tu
+        control.
+      </p>
+      <div style="margin-top:28px; display:flex; gap:10px; flex-wrap:wrap;">
+        <span class="pill">Uniswap V3</span>
+        <span class="pill">Celo · Arbitrum</span>
+        <span class="pill"><span class="dot" style="background:var(--positive);"></span> En producción</span>
+      </div>
+    </div>
+    <div class="slide-foot"><span>AutoRange</span><span>16 / 16</span></div>
+  </section>
+
+</div>
+
+<div class="nav-hint">usá scroll o las flechas ↑ ↓ para navegar</div>
+
+<script>
+  // Simple keyboard navigation between slides (screen view only).
+  document.addEventListener('keydown', (e) => {
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const y = window.scrollY + 10;
+    let idx = slides.findIndex(s => s.offsetTop > y) - 1;
+    if (idx < -1) idx = -1;
+    if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault();
+      const next = slides[Math.min(idx + 1, slides.length - 1)];
+      next && next.scrollIntoView({ behavior: 'smooth' });
+    } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault();
+      const prev = slides[Math.max(idx - 1, 0)];
+      prev && prev.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+</script>
+
+</body>
+</html>

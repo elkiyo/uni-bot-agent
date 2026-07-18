@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AutoRange — Presentación para inversionistas (versión móvil)</title>
+<style>
+  :root {
+    --background: #050505;
+    --foreground: #ffffff;
+    --accent: #fcff52;
+    --hairline: #1b1b1b;
+    --muted: #a1a1aa;
+    --faint: #71717a;
+    --positive: #4ade80;
+    --gold: #b08f14;
+    --violet: #8b7cf6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .display {
+    font-family: "Inter Tight", "Inter", -apple-system, system-ui, sans-serif;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  a { color: inherit; }
+
+  .doc {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 36px 20px 90px;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 9999px;
+    border: 1px solid var(--hairline);
+    background: rgba(255,255,255,0.025);
+    padding: 5px 12px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+  .glass {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .kicker {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  section.doc-section {
+    margin-top: 46px;
+    break-inside: avoid-page;
+  }
+  section.doc-section h2 {
+    font-size: 22px;
+    margin-top: 10px;
+    line-height: 1.25;
+  }
+  section.doc-section > p.lede {
+    margin-top: 10px;
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--muted);
+  }
+
+  .card {
+    padding: 16px 18px;
+    margin-top: 12px;
+  }
+  .card h3 {
+    font-size: 14.5px;
+    color: var(--accent);
+  }
+  .card p {
+    margin-top: 7px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .card p b { color: #fff; }
+
+  .num-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    border: 1px solid var(--hairline);
+    background: rgba(252,255,82,0.06);
+    color: var(--accent);
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .step-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-top: 12px;
+  }
+  .step-row .step-body h3 {
+    font-size: 14px;
+    color: #fff;
+    font-family: "Inter Tight", sans-serif;
+    font-weight: 600;
+  }
+  .step-row .step-body p {
+    margin-top: 4px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 9999px;
+    border: 1px solid var(--hairline);
+    padding: 4px 11px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .check { color: var(--positive); font-weight: 700; }
+
+  /* comparison bar chart, reused from the desktop deck */
+  .bar-track {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    width: 100%;
+    background: rgba(255,255,255,0.03);
+    border-radius: 4px;
+  }
+  .bar-seg {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 10px;
+  }
+  .bar-seg:last-child {
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+  }
+  .bar-seg-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0a0a0a;
+    white-space: nowrap;
+  }
+
+  hr.rule {
+    border: none;
+    border-top: 1px solid var(--hairline);
+    margin: 44px 0;
+  }
+
+  /* print — portrait, mobile-readable PDF */
+  @media print {
+    html, body { background: #050505 !important; }
+    .doc { max-width: none; padding: 0 6mm; }
+    a { text-decoration: none; }
+    @page { size: A4 portrait; margin: 14mm 10mm; }
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- PORTADA -->
+  <div class="eyebrow"><span class="dot"></span> Presentación para inversionistas · versión móvil</div>
+  <h1 class="display" style="font-size:42px; margin-top:20px; line-height:1.05;">
+    Auto<span style="color:var(--accent);">Range</span>
+  </h1>
+  <p style="font-size:16px; color:var(--muted); margin-top:14px; line-height:1.55;">
+    Liquidez concentrada, siempre en rango — <span style="color:#fff;">sin ceder
+    nunca la custodia de tus fondos.</span>
+  </p>
+  <div style="display:flex; gap:8px; margin-top:18px; flex-wrap:wrap;">
+    <span class="pill">Uniswap V3</span>
+    <span class="pill">Celo · Arbitrum</span>
+    <span class="pill"><span class="dot" style="background:var(--positive);"></span> En producción, con fondos reales</span>
+  </div>
+
+  <hr class="rule" />
+
+  <!-- 1. EL PROBLEMA -->
+  <section class="doc-section">
+    <div class="kicker">El problema</div>
+    <h2>Proveer liquidez es una de las formas más rentables de ganar en cripto — y una de las más difíciles de operar bien</h2>
+    <p class="lede">
+      Un proveedor de liquidez tradicional reparte su dinero en todo el rango de
+      precios posible — de cero a infinito. Es simple, pero ineficiente: la
+      mayor parte de ese dinero nunca se usa.
+    </p>
+    <div class="glass card" style="border-color:rgba(252,255,82,0.2);">
+      <h3>La alternativa moderna</h3>
+      <p>
+        Uniswap V3 permite <b>concentrar</b> ese dinero solo en la franja de
+        precio donde el mercado realmente opera hoy — se gana mucho más por
+        cada dólar puesto. El costo: si el precio se sale de esa franja, hay
+        que <b>mover el rango a mano</b>, todo el tiempo, o se deja de ganar
+        por completo.
+      </p>
+    </div>
+    <p class="lede">
+      Mantener esa gestión activa exige vigilancia constante y conocimiento
+      técnico. La mayoría de la gente no tiene ni el tiempo ni el expertise —
+      y delegarlo, hasta ahora, casi siempre significaba entregarle el
+      control del dinero a un tercero.
+    </p>
+  </section>
+
+  <!-- 2. LA SOLUCIÓN -->
+  <section class="doc-section">
+    <div class="kicker">La solución</div>
+    <h2>AutoRange automatiza esa gestión activa — sin que nunca entregues el control de tu dinero</h2>
+    <div class="step-row">
+      <div class="num-badge">1</div>
+      <div class="step-body">
+        <h3>Depositás un solo token</h3>
+        <p>Una stablecoin (dólar digital). No necesitás tener de antemano la otra mitad del par.</p>
+      </div>
+    </div>
+    <div class="step-row">
+      <div class="num-badge">2</div>
+      <div class="step-body">
+        <h3>Un agente automatizado opera por vos</h3>
+        <p>Arma la posición y la reacomoda cuando el precio se mueve — sin intervención humana discrecional.</p>
+      </div>
+    </div>
+    <div class="step-row">
+      <div class="num-badge">3</div>
+      <div class="step-body">
+        <h3>Solo vos retirás</h3>
+        <p>En cualquier momento, a tu propia billetera. Nadie más puede recibir ese dinero — está escrito en el contrato.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. QUÉ ES UN DEX -->
+  <section class="doc-section">
+    <div class="kicker">Conceptos base · 1 de 2</div>
+    <h2>¿Qué es un DEX, y qué es Uniswap?</h2>
+    <div class="glass card">
+      <h3>Un DEX (exchange descentralizado)</h3>
+      <p>
+        Es un mercado para intercambiar monedas digitales que corre 100% en
+        código público, sin una empresa en el medio que guarde el dinero de
+        nadie. Nadie puede congelar una cuenta, nadie tiene un botón de
+        administrador sobre tus fondos.
+      </p>
+    </div>
+    <div class="glass card">
+      <h3>Uniswap</h3>
+      <p>
+        Es el DEX más grande y con más historial del mundo — operando desde
+        2018. <b>AutoRange no crea su propio exchange ni su propio
+        &quot;pool&quot; a medida</b>: usa directamente los contratos
+        oficiales y verificados de Uniswap V3, los mismos que usa cualquier
+        otra persona.
+      </p>
+    </div>
+  </section>
+
+  <!-- 4. QUÉ ES UNA POOL -->
+  <section class="doc-section">
+    <div class="kicker">Conceptos base · 2 de 2</div>
+    <h2>¿Qué es una &quot;pool&quot;, y qué es liquidez concentrada?</h2>
+    <div class="glass card">
+      <h3>La pool</h3>
+      <p>
+        Pensala como una <b>alcancía compartida</b> de dos monedas (por
+        ejemplo, dólares y ETH). Cualquiera puede comprar o vender contra esa
+        alcancía, pagando una pequeña comisión — que se reparte entre todas
+        las personas que pusieron dinero ahí.
+      </p>
+    </div>
+    <div class="glass card" style="border-color:rgba(252,255,82,0.2);">
+      <h3>Liquidez concentrada</h3>
+      <p>
+        En vez de repartir tu dinero en cualquier precio imaginable, lo
+        concentrás en la franja donde el mercado realmente está operando
+        ahora. Ganás mucho más por cada dólar puesto — pero si el precio se
+        corre fuera de tu franja, tu dinero deja de ganar comisiones por
+        completo, aunque sigue estando ahí.
+        <span style="color:var(--accent);"> Mover ese rango, todo el tiempo, es
+        exactamente lo que el agente de AutoRange hace por vos,
+        automáticamente.</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- 5. POOLS REALES -->
+  <section class="doc-section">
+    <div class="kicker">Dónde opera el dinero</div>
+    <h2>Pools públicas, reales, con liquidez real</h2>
+    <p class="lede">
+      No son pools de prueba armadas para una demo. Cada vault mintea su
+      posición directamente en una pool pública de Uniswap V3 que ya opera en
+      la red principal — compartiendo esa misma liquidez con cualquier otro
+      trader o fondo del mundo.
+    </p>
+    <div class="glass card">
+      <div class="eyebrow" style="margin-bottom:8px;">Red · Celo</div>
+      <div style="font-size:19px; font-weight:600;">USDT / WETH</div>
+      <div style="margin-top:5px; font-size:12px; color:var(--muted); font-family:ui-monospace,monospace;">Comisión de la pool: 0.3%</div>
+    </div>
+    <div class="glass card">
+      <div class="eyebrow" style="margin-bottom:8px;">Red · Arbitrum</div>
+      <div style="font-size:19px; font-weight:600;">USDC / WETH</div>
+      <div style="margin-top:5px; font-size:12px; color:var(--muted); font-family:ui-monospace,monospace;">Comisión de la pool: 0.05%</div>
+    </div>
+    <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
+      <span class="pill"><span class="dot" style="background:var(--positive);"></span> Contratos oficiales de Uniswap V3</span>
+      <span class="pill">Sin wrappers propios</span>
+    </div>
+  </section>
+
+  <!-- 6. CÓMO FUNCIONA -->
+  <section class="doc-section">
+    <div class="kicker">El producto</div>
+    <h2>Cómo funciona, paso a paso</h2>
+    <div class="step-row">
+      <div class="num-badge">1</div>
+      <div class="step-body"><h3>Depositás</h3><p>Transferís tu stablecoin al vault — el contrato que es tuyo y solo tuyo.</p></div>
+    </div>
+    <div class="step-row">
+      <div class="num-badge">2</div>
+      <div class="step-body"><h3>El agente arma la posición</h3><p>Convierte la porción necesaria y la deposita en la pool de Uniswap V3, dentro del rango que vos definiste.</p></div>
+    </div>
+    <div class="step-row">
+      <div class="num-badge">3</div>
+      <div class="step-body"><h3>El agente vigila y reacomoda</h3><p>Revisa el precio cada pocos minutos. Si se sale del rango — o pasa el tiempo configurado — arma una nueva posición centrada en el precio actual.</p></div>
+    </div>
+    <div class="step-row">
+      <div class="num-badge">4</div>
+      <div class="step-body"><h3>Retirás cuando quieras</h3><p>Un solo llamado y el contrato te devuelve todo — a tu propia billetera, sin pedirle permiso a nadie.</p></div>
+    </div>
+  </section>
+
+  <!-- 7. SEGURIDAD PROTOCOLO -->
+  <section class="doc-section">
+    <div class="kicker">Seguridad · nivel protocolo</div>
+    <h2>La arquitectura del contrato, explicada simple</h2>
+    <div class="glass card">
+      <h3>Un contrato por persona</h3>
+      <p>Cada usuario tiene su propio &quot;vault&quot; aislado — no es un fondo común. Lo que le pasa al vault de otra persona no te afecta a vos.</p>
+    </div>
+    <div class="glass card">
+      <h3>Solo dos roles posibles</h3>
+      <p>&quot;Dueño&quot; (vos) y &quot;operador&quot; (el agente). Separados por código, no por confianza.</p>
+    </div>
+    <div class="glass card">
+      <h3>Componentes de seguridad probados</h3>
+      <p>Las protecciones de base usan OpenZeppelin — la librería de seguridad más usada y auditada del sector.</p>
+    </div>
+    <div class="glass card" style="border-color:rgba(74,222,128,0.3);">
+      <h3 style="color:var(--positive);">Ya en producción, con dinero real</h3>
+      <p>Operando ahora mismo en dos redes (Celo y Arbitrum), con contratos desplegados y verificables por cualquiera.</p>
+    </div>
+  </section>
+
+  <!-- 8. UN CONTRATO POR USUARIO -->
+  <section class="doc-section">
+    <div class="kicker">Lo que nos diferencia</div>
+    <h2>Un contrato nuevo por usuario — nunca un fondo compartido</h2>
+    <p class="lede">
+      Cuando creás un vault en AutoRange no estás abriendo una fila en una
+      base de datos, ni comprando una porción de un pool común: se despliega
+      un <b style="color:#fff;">contrato inteligente nuevo, exclusivo para
+      vos</b>. Tu dinero, tu posición y tu historial viven ahí — y en ningún
+      otro lugar.
+    </p>
+    <div class="glass card">
+      <h3 style="color:var(--muted);">Cómo operan muchos gestores DeFi</h3>
+      <p>Un solo contrato &quot;vault&quot; reúne el dinero de todos los usuarios en el mismo lugar. Un bug o exploit contra ese contrato compromete a <b>todos los depositantes al mismo tiempo.</b></p>
+    </div>
+    <div class="glass card" style="border-color:rgba(252,255,82,0.25);">
+      <h3>Cómo opera AutoRange</h3>
+      <p>Cada usuario recibe <b>su propio contrato</b>, aislado del resto. Un problema en un vault queda <b>contenido a ese vault</b>, nunca se propaga al dinero de otro usuario.</p>
+    </div>
+    <p class="lede">
+      Ese aislamiento tiene un costo real de infraestructura, que se cubre
+      con un <b style="color:#fff;">cargo único de creación de vault — 1 USD,
+      cobrado una sola vez, en el primer depósito</b> — separado por completo
+      del performance fee.
+    </p>
+  </section>
+
+  <!-- 9. POR QUÉ NADIE PUEDE ROBAR -->
+  <section class="doc-section">
+    <div class="kicker">La pregunta clave</div>
+    <h2>¿Por qué nadie —ni el agente, ni la plataforma— puede robarte los fondos?</h2>
+    <div class="glass card">
+      <h3>1. El retiro solo tiene un destino posible: vos</h3>
+      <p>La función de retiro siempre paga al dueño del vault. No existe combinación que redirija ese dinero a otra dirección.</p>
+    </div>
+    <div class="glass card">
+      <h3>2. El agente solo puede trabajar, nunca cobrar tu capital</h3>
+      <p>Solo puede armar o reacomodar la posición. El dinero y la posición se quedan siempre adentro del contrato.</p>
+    </div>
+    <div class="glass card">
+      <h3>3. El agente no puede inventar el rango</h3>
+      <p>Cada rango que propone se valida contra los límites que vos configuraste. Si se sale, la operación falla.</p>
+    </div>
+    <div class="glass card">
+      <h3>4. Interruptor de apagado inmediato</h3>
+      <p>Podés pausar o revocar al agente vos mismo, en cualquier momento.</p>
+    </div>
+    <div class="glass card">
+      <h3>5. Salida de emergencia sin depender del agente</h3>
+      <p>Si el agente dejara de responder, hay una función que vos mismo llamás para forzar el cierre y recuperar todo.</p>
+    </div>
+    <div class="glass card">
+      <h3>6. La comisión es sobre ganancias, nunca sobre tu capital</h3>
+      <p>La plataforma cobra un <b>10% (performance fee)</b> solo sobre las comisiones de trading ya ganadas — nunca sobre el capital depositado. Ajustable con el tiempo por decisión de la gobernanza.</p>
+    </div>
+    <p style="margin-top:14px; font-size:11.5px; color:var(--faint);">
+      Todo esto no es una política ni una promesa — está escrito en el código del contrato, es público, y cualquiera puede verificarlo on-chain.
+    </p>
+  </section>
+
+  <!-- 10. SEGURIDAD USUARIO -->
+  <section class="doc-section">
+    <div class="kicker">Seguridad · nivel usuario</div>
+    <h2>Tu billetera, tus llaves — nosotros nunca las tocamos</h2>
+    <p class="lede">
+      La única llave que puede sacar dinero de tu vault es tu propia
+      billetera. Ni siquiera el equipo que construye la plataforma puede
+      moverlo.
+    </p>
+    <div class="glass card"><h3><span class="check">✓</span> Guardá tu frase semilla offline</h3><p>Nadie legítimo —tampoco nosotros— te la va a pedir jamás.</p></div>
+    <div class="glass card"><h3><span class="check">✓</span> Verificá siempre la URL</h3><p>El phishing es la forma más común de robo en cripto — no una falla del protocolo.</p></div>
+    <div class="glass card"><h3><span class="check">✓</span> Revisá qué estás firmando</h3><p>Tu billetera te muestra qué contrato y qué acción estás aprobando — vale la pena leerlo.</p></div>
+    <div class="glass card"><h3><span class="check">✓</span> Usá el kill switch si dudás</h3><p>Podés pausar tu vault o retirar de emergencia vos mismo, sin esperar a nadie.</p></div>
+  </section>
+
+  <!-- 11. MODELO DE NEGOCIO -->
+  <section class="doc-section">
+    <div class="kicker">Modelo de negocio</div>
+    <h2>¿De dónde sale el ingreso de la plataforma?</h2>
+    <div class="glass card">
+      <h3>Cargo de creación: 1 USD, una vez por vault</h3>
+      <p>Se cobra una sola vez, en el primer depósito, y financia el costo real de desplegar un contrato propio e independiente para ese usuario.</p>
+    </div>
+    <div class="glass card" style="border-color:rgba(252,255,82,0.2);">
+      <h3>Performance fee: 10% de las ganancias, no del capital</h3>
+      <p>Un 10% sobre las comisiones de trading que la posición efectivamente generó — nunca sobre el dinero depositado.</p>
+    </div>
+    <div class="glass card">
+      <h3>Ingreso alineado con el rendimiento real</h3>
+      <p>Si el usuario no gana, la plataforma tampoco cobra performance fee. Sin cobros por depositar ni por retirar.</p>
+    </div>
+    <p class="lede">
+      Tanto el cargo de creación como el 10% de performance fee son los
+      valores actuales configurados por la plataforma —
+      <b style="color:#fff;"> no son fijos para siempre</b>: pueden ajustarse
+      con el tiempo por decisión de la gobernanza, igual para todos los
+      vaults existentes.
+    </p>
+  </section>
+
+  <!-- 12. EJEMPLO NUMÉRICO -->
+  <section class="doc-section">
+    <div class="kicker">Ejemplo real, con números</div>
+    <h2>Mismo pool, mismas comisiones ganadas — lo que cambia es el reparto</h2>
+    <p class="lede">
+      Un LP deposita <b style="color:#fff;">$10,000</b> en un pool de Uniswap
+      V3. En un período dado, esa posición genera <b style="color:#fff;">$1,000
+      en comisiones de trading</b> — 10% de rentabilidad bruta. Ese resultado
+      es el mismo en los dos escenarios de abajo: la diferencia no es cuánto
+      gana el pool, es quién se queda con cuánto.
+    </p>
+
+    <div style="margin-top:10px; display:flex; gap:16px; flex-wrap:wrap;">
+      <span style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);">
+        <span style="width:9px;height:9px;border-radius:3px;background:var(--gold);display:inline-block;"></span>
+        Para vos (el inversor)
+      </span>
+      <span style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);">
+        <span style="width:9px;height:9px;border-radius:3px;background:var(--violet);display:inline-block;"></span>
+        Para AutoRange (performance fee)
+      </span>
+    </div>
+
+    <div style="margin-top:20px;">
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:6px;">
+        <b style="color:#fff;">Sin AutoRange</b> — gestión manual: hay que ser experto y dedicarle tiempo todos los días
+      </div>
+      <div class="bar-track" style="height:32px;">
+        <div class="bar-seg" style="width:100%; background:var(--gold);">
+          <span class="bar-seg-label">$1,000 · 10%</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;">
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:6px;">
+        <b style="color:#fff;">Con AutoRange</b> — automático: sin experiencia previa, sin dedicarle tiempo
+      </div>
+      <div class="bar-track" style="height:32px;">
+        <div class="bar-seg" style="flex-grow:900; background:var(--gold);">
+          <span class="bar-seg-label">$900 · 9%</span>
+        </div>
+        <div class="bar-seg" style="flex-grow:100; background:var(--violet); justify-content:center; padding-right:0;"></div>
+      </div>
+      <div style="margin-top:6px; font-size:11px; color:var(--faint); text-align:right;">
+        ↑ el tramo violeta = $100 · 1% para AutoRange (10% de lo ganado)
+      </div>
+    </div>
+
+    <div class="glass card" style="margin-top:18px;">
+      <p>
+        <b style="color:#fff;">Lo que cambia no es cuánto gana el pool — es
+        cuánto trabajo te cuesta a vos ganarlo.</b> Con AutoRange cedés 1
+        punto porcentual de rentabilidad bruta (10% → 9% neto), pero no
+        necesitás vigilar el precio, saber calcular rangos, ni tener
+        experiencia operando Uniswap V3.
+      </p>
+    </div>
+  </section>
+
+  <!-- 13. DÓNDE ESTAMOS HOY -->
+  <section class="doc-section">
+    <div class="kicker">Estado actual</div>
+    <h2>Dónde estamos hoy</h2>
+    <div class="glass card">
+      <div class="pill" style="border-color:rgba(74,222,128,0.35); margin-bottom:8px;"><span class="dot" style="background:var(--positive);"></span> En vivo</div>
+      <h3 style="color:#fff;">Producción, dos redes</h3>
+      <p>Operando con fondos reales en Celo y Arbitrum, no en un entorno de prueba.</p>
+    </div>
+    <div class="glass card">
+      <div class="pill" style="margin-bottom:8px;">Verificable</div>
+      <h3 style="color:#fff;">Contratos públicos</h3>
+      <p>Direcciones desplegadas y auditables por cualquiera, en el explorador de cada red.</p>
+    </div>
+    <div class="glass card">
+      <div class="pill" style="margin-bottom:8px;">Multi-cadena</div>
+      <h3 style="color:#fff;">Arquitectura ya probada</h3>
+      <p>Sumar una red nueva no exige rediseñar el producto — ya se hizo una vez, con éxito.</p>
+    </div>
+    <p style="margin-top:14px; font-size:12.5px; color:var(--muted);"><b style="color:#fff;">Próximos pasos:</b> sumar más redes y pools, auditoría externa formal, más parámetros configurables.</p>
+  </section>
+
+  <!-- 14. RESUMEN -->
+  <section class="doc-section">
+    <div class="kicker">En resumen</div>
+    <h2>Todo lo que necesitás recordar</h2>
+    <div class="glass card" style="display:flex; gap:10px; align-items:flex-start;">
+      <span class="check">✓</span>
+      <p style="margin:0;">Opera sobre <b>Uniswap V3</b>, la infraestructura de intercambio más probada del sector.</p>
+    </div>
+    <div class="glass card" style="display:flex; gap:10px; align-items:flex-start;">
+      <span class="check">✓</span>
+      <p style="margin:0;">Usa pools públicas y reales: <b>USDT/WETH en Celo, USDC/WETH en Arbitrum</b>.</p>
+    </div>
+    <div class="glass card" style="display:flex; gap:10px; align-items:flex-start;">
+      <span class="check">✓</span>
+      <p style="margin:0;">Un agente automatizado mantiene la posición <b>siempre en rango</b>.</p>
+    </div>
+    <div class="glass card" style="display:flex; gap:10px; align-items:flex-start;">
+      <span class="check">✓</span>
+      <p style="margin:0;"><b>El retiro solo te paga a vos</b> — garantía de código, no de confianza.</p>
+    </div>
+    <div class="glass card" style="display:flex; gap:10px; align-items:flex-start;">
+      <span class="check">✓</span>
+      <p style="margin:0;">Cada usuario tiene <b>su propio contrato aislado</b> — nunca un fondo compartido.</p>
+    </div>
+    <div class="glass card" style="display:flex; gap:10px; align-items:flex-start;">
+      <span class="check">✓</span>
+      <p style="margin:0;">Ya está <b>en producción, con fondos reales</b>, en dos redes distintas.</p>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- CIERRE -->
+  <div>
+    <h2 class="display" style="font-size:32px;">Gracias.</h2>
+    <p style="margin-top:12px; font-size:15px; color:var(--muted); line-height:1.6;">
+      AutoRange — liquidez concentrada, siempre en rango, siempre bajo tu control.
+    </p>
+    <div style="margin-top:18px; display:flex; gap:8px; flex-wrap:wrap;">
+      <span class="pill">Uniswap V3</span>
+      <span class="pill">Celo · Arbitrum</span>
+      <span class="pill"><span class="dot" style="background:var(--positive);"></span> En producción</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

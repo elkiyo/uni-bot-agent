@@ -12,6 +12,7 @@ const links = [
 
 const resourceLinks = [
   { href: "/recursos", label: "Guías" },
+  { href: "/recursos/inversionistas", label: "Para inversionistas" },
   { href: "/docs", label: "Doc" },
   { href: "/admin", label: "Operaciones" },
 ];

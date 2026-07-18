@@ -50,8 +50,8 @@ export default function Home() {
               style={{ fontFamily: "var(--font-display)" }}
             >
               Liquidez concentrada,{" "}
-              <span className="text-accent">siempre en rango</span> — sin ceder la
-              custodia.
+              <span className="text-accent">siempre en rango</span> — sin ceder
+              nunca la custodia de tus fondos.
             </h1>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
               Depositás <span className="text-white/80">{chain.stableSymbol}</span> — un solo token. Un
@@ -305,6 +305,40 @@ export default function Home() {
           </p>
         </div>
 
+        {/* Un contrato por usuario */}
+        <div className="mt-20">
+          <span className="eyebrow">Arquitectura</span>
+          <h2
+            className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Un contrato nuevo por usuario — nunca un fondo compartido
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+            Cuando creás un vault, se despliega un contrato exclusivo para vos — no es una fila en una
+            base de datos ni una porción de un pool común. Tu dinero, tu posición y tu historial viven
+            ahí, y en ningún otro lugar.
+          </p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="glass rounded-2xl p-5">
+              <h3 className="text-sm font-semibold text-muted">Cómo operan muchos gestores DeFi</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                Un solo contrato reúne el dinero de todos los usuarios en el mismo lugar. Un bug o
+                exploit ahí compromete a{" "}
+                <span className="text-white/80">todos los depositantes al mismo tiempo.</span>
+              </p>
+            </div>
+            <div className="glass rounded-2xl p-5" style={{ borderColor: "rgba(252,255,82,0.25)" }}>
+              <h3 className="text-sm font-semibold text-accent">Cómo opera AutoRange</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                Cada usuario tiene su propio contrato, aislado del resto. Un problema en un vault{" "}
+                <span className="text-white/80">queda contenido a ese vault</span> — nunca se propaga
+                al dinero de otro usuario.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Garantías no-custodiales */}
         <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
           <span className="eyebrow">Sin custodia</span>
@@ -342,6 +376,66 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Modelo de ingresos, con ejemplo numérico */}
+        <div className="mt-20">
+          <span className="eyebrow">Modelo de ingresos</span>
+          <h2
+            className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Comisión solo sobre lo que ganás — nunca sobre tu capital
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+            Un ejemplo real: si tu posición genera $1,000 en comisiones de trading sobre $10,000
+            depositados (10% de rentabilidad bruta), la plataforma cobra un{" "}
+            <span className="text-white/80">10% performance fee</span> solo sobre esa ganancia — nunca
+            sobre el capital. Mismo pool, mismas comisiones ganadas: lo único que cambia es el reparto.
+          </p>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="glass rounded-2xl p-5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+                Sin AutoRange · gestión manual experta
+              </p>
+              <div className="mt-3 flex h-8 overflow-hidden rounded-md bg-white/[0.03]">
+                <div
+                  className="flex w-full items-center justify-end rounded-md pr-3"
+                  style={{ backgroundColor: "#b08f14" }}
+                >
+                  <span className="font-mono text-xs font-semibold text-[#0a0a0a]">$1,000 · 10%</span>
+                </div>
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+                Con AutoRange · automático, sin experiencia
+              </p>
+              <div className="mt-3 flex h-8 gap-0.5 overflow-hidden rounded-md bg-white/[0.03]">
+                <div
+                  className="flex items-center justify-end rounded-l-md pr-3"
+                  style={{ backgroundColor: "#b08f14", flexGrow: 900 }}
+                >
+                  <span className="font-mono text-xs font-semibold text-[#0a0a0a]">$900 · 9%</span>
+                </div>
+                <div
+                  className="flex items-center justify-center rounded-r-md"
+                  style={{ backgroundColor: "#8b7cf6", flexGrow: 100 }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-faint">
+                Tramo violeta = $100 · 1% para AutoRange (10% de lo ganado, nunca del capital)
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-4 max-w-2xl text-xs leading-relaxed text-faint">
+            Además, cada vault nuevo paga un cargo único de creación (1 USD, una sola vez) que cubre el
+            costo de desplegar un contrato propio e independiente para ese usuario. Ambos valores son
+            ajustables con el tiempo por decisión de la gobernanza de la plataforma — nunca fijos para
+            siempre.
+          </p>
+        </div>
+
         {/* Closing CTA */}
         <div className="mt-20 flex flex-wrap items-center gap-4 border-t border-hairline pt-10">
           <Link href="/create" className="btn-primary !px-6 !py-3">
@@ -349,6 +443,9 @@ export default function Home() {
           </Link>
           <Link href="/recursos" className="btn-secondary !px-6 !py-3">
             Cómo decide el agente
+          </Link>
+          <Link href="/recursos/inversionistas" className="btn-secondary !px-6 !py-3">
+            Presentación para inversionistas
           </Link>
         </div>
       </main>
