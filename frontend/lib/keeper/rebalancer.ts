@@ -641,17 +641,30 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
 }
 
 /**
- * B1 for uni-lab: the TOTAL USD capital ever committed to this vault's LP
- * position — the original investment plus every reinjection since, on
- * either path (inside a rebalance() cycle, or a standalone
- * reinjectIntoPosition() top-up). Has to be read from on-chain events: the
- * contract never persists investmentAmountUsd anywhere, it only appears once
- * in the TargetConfigured event at configure time (see PLAN.md). Only the
- * FIRST TargetConfigured counts as real capital — VaultDetail.tsx's
- * reconfigure flow resends a later TargetConfigured with investableUsdt (the
- * vault's idle balance at that moment) in that same field, not a new
- * deposit, so treating "latest wins" would silently replace the real
- * investment with an unrelated idle-balance snapshot.
+ * B1 for uni-lab: the TOTAL USD capital the owner has ever put into this
+ * vault — summed directly from every Deposited event's (investableAmount +
+ * reserveAmount), which always carries the real, checked amount actually
+ * pulled from the owner's wallet. Reinjections (Rebalanced.reinjectedAmount,
+ * ReinjectedIntoPosition.amount) are NOT added on top — they move money
+ * that's already inside reserveBalance (and already counted here) into the
+ * position, not new capital, so summing them too would double-count it.
+ *
+ * Deliberately NOT TargetConfigured.investmentAmountUsd (the previous
+ * source): that field is purely informational — nothing on-chain enforces
+ * it matches the real deposit — and VaultDetail.tsx's reconfigure flow
+ * resends a LATER TargetConfigured with investableUsdt (the vault's idle
+ * balance at that moment) in that same field, not a new deposit, which is
+ * why only the first occurrence was ever trusted. Confirmed in production
+ * 2026-07-18 (vault 0x43cb13B9...972703e): that first TargetConfigured
+ * carried investmentAmountUsd=0 (a real on-chain data bug from whatever
+ * created the vault, immutable now), silently sending B1=0 to uni-lab.xyz on
+ * every rebalance attempt despite a real 420 USDT deposit sitting in the
+ * vault — uni-lab's own API docs list "input combination doesn't produce a
+ * valid rebalance range" as a real cause of its 500 response, and B1=0
+ * against a real, nonzero position (A1) is exactly that kind of
+ * degenerate input. Deposited events don't have this failure mode: the
+ * contract itself only ever emits them with the real amounts it just
+ * transferFrom'd.
  */
 const EVENT_SCAN_CHUNK = 5_000n; // forno.celo.org's eth_getLogs range cap — see lib/getLogsChunked.ts
 
@@ -666,20 +679,15 @@ async function getCumulativeInvestmentUsd(chain: ChainRuntime, vaultAddress: Add
   }
   const events = parseEventLogs({ abi: chain.vaultAbi, logs });
 
-  let originalInvestmentRaw: bigint | undefined;
-  let totalReinjectedRaw = 0n;
+  let totalDepositedRaw = 0n;
   for (const ev of events) {
-    const args = ev.args as Record<string, unknown>;
-    if (ev.eventName === "TargetConfigured" && originalInvestmentRaw === undefined) {
-      originalInvestmentRaw = args.investmentAmountUsd as bigint;
-    } else if (ev.eventName === "Rebalanced") {
-      totalReinjectedRaw += args.reinjectedAmount as bigint;
-    } else if (ev.eventName === "ReinjectedIntoPosition") {
-      totalReinjectedRaw += args.amount as bigint;
+    if (ev.eventName === "Deposited") {
+      const args = ev.args as Record<string, unknown>;
+      totalDepositedRaw += (args.investableAmount as bigint) + (args.reserveAmount as bigint);
     }
   }
 
-  return Number((originalInvestmentRaw ?? 0n) + totalReinjectedRaw) * 1e-6; // both raw USDT, 6 decimals
+  return Number(totalDepositedRaw) * 1e-6; // raw USDT, 6 decimals
 }
 
 /**
