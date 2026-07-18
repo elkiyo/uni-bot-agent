@@ -531,11 +531,23 @@ async function sizeInitialSwapAccurate(
       // solve against reflects the post-swap state, not the pre-swap one.
       // Skipped when swapping through a different pool (see above).
       const ratioTick = sameFeeAsPosition ? tickFromEthPrice(1 / (execRate * 1e-12), chain.stableIsToken0) : input.currentTick;
+      // targetRawRatio always returns amount1Raw/amount0Raw (real Uniswap
+      // terms) — volatile/stable only when stableIsToken0 (token0=stable,
+      // token1=volatile, true on Celo). On Arbitrum token0=volatile, so this
+      // is stable/volatile instead: the RECIPROCAL of execRate's units
+      // (always volatile-out/stable-in, chain-agnostic). Solving the
+      // equation below with mismatched units silently collapsed `corrected`
+      // to ~0 on Arbitrum (confirmed in production 2026-07-17, vault
+      // 0x45d5a25A...663E3Be — the "converged" swap size floored to zero,
+      // never actually swapping anything, minting fully one-sided into a
+      // range that spans the live price and reverting with 0 liquidity).
       const rawRatio = targetRawRatio({ currentTick: ratioTick, tickLower: input.tickLower, tickUpper: input.tickUpper });
-      if (!Number.isFinite(rawRatio) || rawRatio <= 0) break;
+      if (!Number.isFinite(rawRatio) || rawRatio < 0) break;
+      const volatilePerStableRatio = chain.stableIsToken0 ? rawRatio : 1 / rawRatio;
+      if (!Number.isFinite(volatilePerStableRatio) || volatilePerStableRatio <= 0) break;
 
-      // Solve x*execRate / (investable - x) = rawRatio for x.
-      const corrected = (rawRatio * investable) / (execRate + rawRatio);
+      // Solve x*execRate / (investable - x) = volatilePerStableRatio for x.
+      const corrected = (volatilePerStableRatio * investable) / (execRate + volatilePerStableRatio);
       if (!Number.isFinite(corrected) || corrected <= 0) break;
 
       const next = BigInt(Math.floor(Math.min(corrected, investable)));
