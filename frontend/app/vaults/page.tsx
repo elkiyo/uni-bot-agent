@@ -1,26 +1,35 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
-import { formatUnits } from "viem";
+import { useQueries } from "@tanstack/react-query";
+import { formatUnits, type PublicClient } from "viem";
 import { Header } from "../components/Header";
 import { uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
+import { fetchVaultCreationTimes, type ConfiguredChainId } from "@/lib/useVaultCreationTimes";
+import { getPublicClient } from "wagmi/actions";
+import { wagmiConfig } from "@/lib/wagmi";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
 import type { ChainDef } from "@/lib/chains";
 
+interface VaultRef {
+  chain: ChainDef;
+  address: `0x${string}`;
+}
+
 /**
- * Shows every vault across every deployed chain at once — not just whichever
- * one the app's selected-chain state (useSelectedChain) happens to be on.
- * Confirmed in production 2026-07-17: a user's real Celo vaults appeared to
- * vanish simply because that selection was left on Arbitrum from testing —
- * a single-chain-filtered "Mis vaults" is the wrong default for a page whose
- * whole point is "show me everything I own". The selected-chain concept
- * still exists for /create's network picker and the vault detail page's
- * write flows, just not for this list.
+ * Shows every vault across every deployed chain at once, in a SINGLE sorted
+ * list — not grouped by chain (each card carries its own chain badge
+ * instead). Active vaults first, oldest-first split from closed ones which
+ * sink to the bottom, both ordered by creation date — creation date comes
+ * from the factory's own VaultCreated event (one chunked log scan per
+ * chain, not per vault — see useVaultCreationTimes.ts), since block numbers
+ * alone aren't comparable across chains with different block times.
  */
 export default function VaultsPage() {
   const { address, isConnected } = useAccount();
@@ -51,118 +60,136 @@ export default function VaultsPage() {
           </div>
         )}
 
-        {isConnected &&
-          chains.map((chain) => (
-            <ChainVaultsSection key={chain.id} chain={chain} owner={address as `0x${string}`} />
-          ))}
+        {isConnected && <AllVaults chains={chains} owner={address as `0x${string}`} />}
       </main>
     </>
   );
 }
 
-function ChainVaultsSection({ chain, owner }: { chain: ChainDef; owner: `0x${string}` }) {
-  const { setSelectedChainId } = useSelectedChain();
-
-  const { data: slot0 } = useReadContract({
-    address: chain.pool,
-    abi: uniswapV3PoolAbi,
-    functionName: "slot0",
-    chainId: chain.id,
-    query: { refetchInterval: 15_000 },
-  });
-  const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
-
-  const { data: vaults, isLoading } = useReadContract({
-    address: chain.factoryAddress || undefined,
-    abi: chain.factoryAbi,
-    functionName: "getVaultsByOwner",
-    args: [owner],
-    chainId: chain.id,
-    query: { enabled: Boolean(chain.factoryAddress) },
-  });
-  const vaultList = (vaults as string[] | undefined) ?? [];
-
-  // closeVault() is permanent — split those out below instead of mixing them
-  // in with vaults that can still operate.
-  const { data: closedFlags } = useReadContracts({
-    contracts: vaultList.map(
-      (v) => ({ address: v as `0x${string}`, abi: chain.vaultAbi, functionName: "closed", chainId: chain.id }) as const,
+function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}` }) {
+  // Stage 1: which vaults exist, per chain — one batched call across chains.
+  const { data: vaultListsData, isLoading: vaultListsLoading } = useReadContracts({
+    contracts: chains.map(
+      (chain) =>
+        ({
+          address: chain.factoryAddress || undefined,
+          abi: chain.factoryAbi,
+          functionName: "getVaultsByOwner",
+          args: [owner],
+          chainId: chain.id,
+        }) as const,
     ),
-    query: { enabled: vaultList.length > 0, refetchInterval: 15_000 },
+    query: { enabled: chains.some((c) => c.factoryAddress) },
   });
-  const activeVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result !== true);
-  const closedVaults = vaultList.filter((_, i) => closedFlags?.[i]?.result === true);
 
-  // Clicking into a vault also switches the app's viewing chain to match it
-  // — VaultDetail.tsx reads useSelectedChain(), so without this a vault
-  // opened while browsing a DIFFERENT chain's section would try to read its
-  // data from the wrong network.
-  const goToChain = () => setSelectedChainId(chain.id);
+  const vaultRefs: VaultRef[] = useMemo(
+    () =>
+      chains.flatMap((chain, i) => {
+        const list = (vaultListsData?.[i]?.result as string[] | undefined) ?? [];
+        return list.map((address) => ({ chain, address: address as `0x${string}` }));
+      }),
+    [chains, vaultListsData],
+  );
+
+  // Stage 2: closed flag for every vault across every chain — one batched call.
+  const { data: closedData, isLoading: closedLoading } = useReadContracts({
+    contracts: vaultRefs.map(
+      ({ chain, address }) => ({ address, abi: chain.vaultAbi, functionName: "closed", chainId: chain.id }) as const,
+    ),
+    query: { enabled: vaultRefs.length > 0, refetchInterval: 15_000 },
+  });
+
+  // Stage 3: creation timestamps — one chunked event scan per chain (dynamic
+  // list of queries, so useQueries rather than one useQuery per chain).
+  const creationTimesResults = useQueries({
+    queries: chains.map((chain) => ({
+      queryKey: ["vault-creation-times", chain.id, owner],
+      enabled: Boolean(chain.factoryAddress),
+      staleTime: 5 * 60_000,
+      queryFn: async () => {
+        const publicClient = getPublicClient(wagmiConfig, { chainId: chain.id as ConfiguredChainId }) as
+          | PublicClient
+          | undefined;
+        if (!publicClient) return {};
+        return fetchVaultCreationTimes(publicClient, chain, owner);
+      },
+    })),
+  });
+  const creationTimesLoading = creationTimesResults.some((r) => r.isLoading);
+  const creationTimes = useMemo(() => {
+    const merged: Record<string, number> = {};
+    for (const r of creationTimesResults) Object.assign(merged, r.data ?? {});
+    return merged;
+  }, [creationTimesResults]);
+
+  const isLoading = vaultListsLoading || closedLoading || creationTimesLoading;
+
+  const { activeVaults, closedVaults } = useMemo(() => {
+    const records = vaultRefs.map((ref, i) => ({
+      ...ref,
+      isClosed: closedData?.[i]?.result === true,
+      createdAt: creationTimes[ref.address.toLowerCase()] ?? 0,
+    }));
+    // Newest first within each group.
+    const byNewest = (a: { createdAt: number }, b: { createdAt: number }) => b.createdAt - a.createdAt;
+    return {
+      activeVaults: records.filter((r) => !r.isClosed).sort(byNewest),
+      closedVaults: records.filter((r) => r.isClosed).sort(byNewest),
+    };
+  }, [vaultRefs, closedData, creationTimes]);
 
   if (isLoading) {
     return (
-      <div className="mt-10">
-        <ChainSectionHeader chain={chain} />
-        <div className="glass mt-4 rounded-2xl p-10 text-center">
-          <p className="text-muted">Cargando…</p>
-        </div>
+      <div className="glass mt-10 rounded-2xl p-10 text-center">
+        <p className="text-muted">Cargando…</p>
       </div>
     );
   }
 
-  if (vaultList.length === 0) return null; // no noise for a chain the user has nothing on
+  if (vaultRefs.length === 0) {
+    return (
+      <div className="glass mt-10 rounded-2xl p-10 text-center">
+        <p className="text-muted">Todavía no tenés ningún vault.</p>
+        <Link href="/create" className="btn-primary mt-6 !px-5 !py-2.5">
+          Crear mi primer vault
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="mt-10">
-      <ChainSectionHeader chain={chain} />
-
+    <>
       {activeVaults.length > 0 && (
-        <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {activeVaults.map((vaultAddress) => (
-            <li key={vaultAddress}>
-              <VaultCard
-                vaultAddress={vaultAddress as `0x${string}`}
-                currentTick={currentTick}
-                chain={chain}
-                onNavigate={goToChain}
-              />
+        <ul className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {activeVaults.map(({ chain, address }) => (
+            <li key={`${chain.id}-${address}`}>
+              <VaultCard vaultAddress={address} chain={chain} />
             </li>
           ))}
         </ul>
       )}
 
       {closedVaults.length > 0 && (
-        <div className="mt-6">
-          <p className="text-sm text-muted">Cerrados permanentemente — no pueden recibir depósitos ni operar de nuevo.</p>
+        <div className="mt-12">
+          <h2
+            className="text-lg font-semibold tracking-tight text-faint"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Vaults cerrados
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            Cerrados permanentemente — no pueden recibir depósitos ni operar de nuevo.
+          </p>
           <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {closedVaults.map((vaultAddress) => (
-              <li key={vaultAddress}>
-                <VaultCard
-                  vaultAddress={vaultAddress as `0x${string}`}
-                  currentTick={currentTick}
-                  chain={chain}
-                  onNavigate={goToChain}
-                  isClosed
-                />
+            {closedVaults.map(({ chain, address }) => (
+              <li key={`${chain.id}-${address}`}>
+                <VaultCard vaultAddress={address} chain={chain} isClosed />
               </li>
             ))}
           </ul>
         </div>
       )}
-    </div>
-  );
-}
-
-function ChainSectionHeader({ chain }: { chain: ChainDef }) {
-  return (
-    <div className="flex items-center gap-2">
-      <h2 className="text-lg font-semibold tracking-tight text-white/90" style={{ fontFamily: "var(--font-display)" }}>
-        {chain.name}
-      </h2>
-      <span className="eyebrow !px-3 !py-1">
-        {chain.stableSymbol}/{chain.volatileSymbol}
-      </span>
-    </div>
+    </>
   );
 }
 
@@ -178,17 +205,29 @@ const cardReads = (address: `0x${string}`, vaultAbi: ChainDef["vaultAbi"]) =>
 
 function VaultCard({
   vaultAddress,
-  currentTick,
   chain,
-  onNavigate,
   isClosed,
 }: {
   vaultAddress: `0x${string}`;
-  currentTick?: number;
   chain: ChainDef;
-  onNavigate: () => void;
   isClosed?: boolean;
 }) {
+  // Clicking into a vault also switches the app's viewing chain to match it
+  // — VaultDetail.tsx reads useSelectedChain(), so without this a vault
+  // opened while this list shows a DIFFERENT chain's card would try to read
+  // its data from the wrong network.
+  const { setSelectedChainId } = useSelectedChain();
+  const onNavigate = () => setSelectedChainId(chain.id);
+
+  const { data: slot0 } = useReadContract({
+    address: chain.pool,
+    abi: uniswapV3PoolAbi,
+    functionName: "slot0",
+    chainId: chain.id,
+    query: { refetchInterval: 15_000 },
+  });
+  const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
+
   const { data } = useReadContracts({
     contracts: cardReads(vaultAddress, chain.vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
     query: { refetchInterval: 15_000 },
@@ -283,7 +322,7 @@ function VaultCard({
     >
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="eyebrow !px-3 !py-1">Vault</span>
+          <span className="eyebrow !border-accent/40 !px-3 !py-1 !text-accent">{chain.name}</span>
           {isClosed ? (
             <span className="eyebrow !px-3 !py-1">Cerrado</span>
           ) : paused ? (

@@ -16,10 +16,20 @@ const interTight = Inter_Tight({
   subsets: ["latin"],
 });
 
+const title = "AutoRange — Vaults no-custodiales en Uniswap V3";
+const description =
+  "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper. Vos depositás y retirás; el agente solo rebalancea.";
+
 export const metadata: Metadata = {
-  title: "AutoRange — Vaults no-custodiales en Uniswap V3",
-  description:
-    "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper. Vos depositás y retirás; el agente solo rebalancea.",
+  // Needed so Next.js can turn the file-convention OG image (opengraph-image.tsx)
+  // into an absolute URL — without this, social-preview scrapers (WhatsApp,
+  // Twitter, etc.) can silently fail to resolve it and fall back to the
+  // browser's own favicon instead, which is what was happening here.
+  metadataBase: new URL("https://autorange.xyz"),
+  title,
+  description,
+  openGraph: { title, description, siteName: "AutoRange" },
+  twitter: { card: "summary_large_image", title, description },
 };
 
 export default function RootLayout({
