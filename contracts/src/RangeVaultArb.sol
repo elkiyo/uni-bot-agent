@@ -29,8 +29,10 @@ import {IPlatformConfig} from "./interfaces/IPlatformConfig.sol";
 ///    positionManager.mint() resolve to the wrong pool address entirely — see
 ///    VaultFactoryArb.sol.
 ///
-/// 2. Keeper gas reimbursement on rebalance() — see that function's own comment
-///    for why it's metered from the real transaction instead of a flat
+/// 2. Keeper gas reimbursement on every onlyOperator entrypoint that the keeper
+///    sends as its own real transaction (initPosition, rebalance,
+///    reinjectIntoPosition, sweepIdleDust) — see _reimburseKeeperGas()'s own
+///    comment for why it's metered from the real transaction instead of a flat
 ///    configured amount.
 ///
 /// Deployed as an EIP-1167 minimal clone by VaultFactoryArb — hence Initializable
@@ -357,7 +359,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
         _executeSwap(swapIx);
 
-        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - preExistingInvestable - reserveBalance;
+        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - preExistingInvestable - reserveBalance - gasReserveBalance;
         uint256 volatileBal = IERC20(_volatileAddr()).balanceOf(address(this));
         if (stableBal > usdtAmount) stableBal = usdtAmount; // guard, same as initPosition()
         (uint256 amount0, uint256 amount1) = _toToken01(stableBal, volatileBal);
@@ -447,6 +449,8 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         nonReentrant
         returns (uint256 tokenId)
     {
+        uint256 gasStart = gasleft();
+
         if (positionTokenId != 0) revert AlreadyInitializedPosition();
         if (!targetConfigured) revert TargetNotConfigured();
         _checkRangeNearMarket(targetTickLower, targetTickUpper);
@@ -456,7 +460,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
         _executeSwap(swapIx);
 
-        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - reserveBalance;
+        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - reserveBalance - gasReserveBalance;
         uint256 volatileBal = IERC20(_volatileAddr()).balanceOf(address(this));
         if (stableBal > investable) {
             // swap direction was volatile->stable (shouldn't happen pre-position, but guard anyway)
@@ -493,6 +497,11 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
         // Any leftover dust that didn't go into either call stays as investableUsdt/volatile dust.
         investableUsdt = stableBal - _stableOf(used0, used1) - _stableOf(swept0, swept1);
+
+        // Same real, metered gas reimbursement as rebalance() — initPosition()
+        // is its own separate keeper-sent transaction (not free), so it must
+        // be covered by gasReserveBalance too. See _reimburseKeeperGas().
+        _reimburseKeeperGas(gasStart);
 
         emit PositionInitialized(tokenId, used0 + swept0, used1 + swept1);
     }
@@ -579,7 +588,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
         // 4) Mint the new position with whatever's left over (investable pool only —
         // reserveBalance is excluded and untouched).
-        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - reserveBalance;
+        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - reserveBalance - gasReserveBalance;
         uint256 volatileBal = IERC20(_volatileAddr()).balanceOf(address(this));
         (uint256 amount0, uint256 amount1) = _toToken01(stableBal, volatileBal);
 
@@ -609,45 +618,11 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         investableUsdt = stableBal - _stableOf(used0, used1) - _stableOf(swept0, swept1);
 
         // 5) Keeper gas reimbursement — metered from THIS transaction's real gas
-        // usage, not a predefined/configured amount: every rebalance() costs a
-        // different amount of real gas (varies with whether decreaseLiquidity
-        // has anything to remove, how many ticks the sweep/mint cross, current
-        // network gas price, ...), so a flat fee is either an overcharge most of
-        // the time or an undercharge some of the time. gasUsed here is measured
-        // directly (gasStart captured as literally the first line of this
-        // function); GAS_REIMBURSEMENT_OVERHEAD approximates the ~21,000
-        // intrinsic tx cost paid before this function's first opcode runs (not
-        // visible to gasleft()) plus this reimbursement step's own cost
-        // (measured before it executes, since it can't measure itself) — an
-        // unavoidable approximation, not a business-decision fee amount.
-        //
-        // Converted to the stable leg's USD terms entirely on-chain from the
-        // pool's own live sqrtPriceX96 (no oracle) via _nativeWeiToStableRaw —
-        // correct specifically because Arbitrum's native gas token (ETH) IS
-        // this pool's volatile leg (WETH is 1:1 wrapped ETH); this contract is
-        // Arbitrum-only, not a general chain-agnostic assumption.
-        //
-        // tx.gasprice is operator-supplied and could in principle be inflated
-        // to overcharge the vault — bounded against block.basefee (a 3x
-        // multiplier comfortably covers real priority-fee spikes without
-        // trusting the operator's number outright).
-        //
-        // Draws ONLY from gasReserveBalance — the owner's dedicated,
-        // visible gas budget (see that field's own docstring) — never from
-        // investableUsdt/reserveBalance. Capped to whatever's actually in
-        // there (checked BEFORE transferring) so it can NEVER revert the
-        // rebalance: a depleted budget just means zero reimbursement this
-        // cycle, not a blocked mint; the owner can always deposit more to
-        // keep the keeper funded (see deposit()).
-        uint256 effectiveGasPrice = tx.gasprice < block.basefee * 3 ? tx.gasprice : block.basefee * 3;
-        uint256 gasUsed = gasStart - gasleft() + GAS_REIMBURSEMENT_OVERHEAD;
-        uint256 gasCostUsd = _nativeWeiToStableRaw(gasUsed * effectiveGasPrice);
-        uint256 gasReimbursed = gasCostUsd < gasReserveBalance ? gasCostUsd : gasReserveBalance;
-        if (gasReimbursed > 0) {
-            gasReserveBalance -= gasReimbursed;
-            IERC20(_stableAddr()).safeTransfer(operator, gasReimbursed);
-            emit KeeperGasReimbursed(gasReimbursed, gasUsed, effectiveGasPrice);
-        }
+        // usage, not a predefined/configured amount (see _reimburseKeeperGas()'s
+        // own docstring for the full reasoning: the overhead constant, the
+        // tx.gasprice bound, why it draws only from gasReserveBalance, and why
+        // it can never revert the rebalance).
+        _reimburseKeeperGas(gasStart);
 
         rebalanceCount += 1;
         lastRebalanceTimestamp = block.timestamp;
@@ -668,6 +643,8 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         uint256 amount0Min,
         uint256 amount1Min
     ) external onlyOperator whenNotPaused notClosed nonReentrant {
+        uint256 gasStart = gasleft();
+
         if (positionTokenId == 0) revert NoPosition();
         if (amount == 0) return;
         if (amount > reinjectionAmount) revert ReinjectionExceedsCap();
@@ -680,7 +657,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
         _executeSwap(swapIx);
 
-        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - preExistingInvestable - reserveBalance;
+        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - preExistingInvestable - reserveBalance - gasReserveBalance;
         uint256 volatileBal = IERC20(_volatileAddr()).balanceOf(address(this));
         if (stableBal > amount) stableBal = amount; // guard, same as increasePosition()
         (uint256 amount0, uint256 amount1) = _toToken01(stableBal, volatileBal);
@@ -697,6 +674,11 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         );
 
         investableUsdt = preExistingInvestable + (stableBal - _stableOf(used0, used1));
+
+        // Same real, metered gas reimbursement as rebalance()/initPosition() —
+        // see _reimburseKeeperGas().
+        _reimburseKeeperGas(gasStart);
+
         emit ReinjectedIntoPosition(amount, used0, used1);
     }
 
@@ -715,11 +697,13 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         notClosed
         nonReentrant
     {
+        uint256 gasStart = gasleft();
+
         if (positionTokenId == 0) revert NoPosition();
 
         _executeSwap(swapIx);
 
-        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - reserveBalance;
+        uint256 stableBal = IERC20(_stableAddr()).balanceOf(address(this)) - reserveBalance - gasReserveBalance;
         uint256 volatileBal = IERC20(_volatileAddr()).balanceOf(address(this));
         (uint256 amount0, uint256 amount1) = _toToken01(stableBal, volatileBal);
 
@@ -735,6 +719,11 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
         );
 
         investableUsdt = stableBal - _stableOf(used0, used1);
+
+        // Same real, metered gas reimbursement as rebalance()/initPosition() —
+        // see _reimburseKeeperGas().
+        _reimburseKeeperGas(gasStart);
+
         emit IdleDustSwept(used0, used1);
     }
 
@@ -971,6 +960,29 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
     // before it runs) — an accounting approximation of the transaction's own
     // overhead, not a configurable business fee.
     uint256 constant GAS_REIMBURSEMENT_OVERHEAD = 40_000;
+
+    /// @dev Reimburses the operator for THIS transaction's real, metered gas
+    /// cost, in the stable leg's USD terms — shared by every onlyOperator
+    /// entrypoint that the keeper calls as its own separate on-chain
+    /// transaction (initPosition, rebalance, reinjectIntoPosition,
+    /// sweepIdleDust). Each caller must capture `gasStart = gasleft()` as
+    /// literally its first line and pass it here as its last line, so the
+    /// measured delta covers the whole call. Not used by increasePosition()
+    /// — that one is onlyOwner, paid for by the owner's own wallet, not the
+    /// agent's. See rebalance()'s original inline comment (now here) for the
+    /// full reasoning behind the overhead constant, the tx.gasprice bound,
+    /// and why this can never revert the caller.
+    function _reimburseKeeperGas(uint256 gasStart) internal {
+        uint256 effectiveGasPrice = tx.gasprice < block.basefee * 3 ? tx.gasprice : block.basefee * 3;
+        uint256 gasUsed = gasStart - gasleft() + GAS_REIMBURSEMENT_OVERHEAD;
+        uint256 gasCostUsd = _nativeWeiToStableRaw(gasUsed * effectiveGasPrice);
+        uint256 gasReimbursed = gasCostUsd < gasReserveBalance ? gasCostUsd : gasReserveBalance;
+        if (gasReimbursed > 0) {
+            gasReserveBalance -= gasReimbursed;
+            IERC20(_stableAddr()).safeTransfer(operator, gasReimbursed);
+            emit KeeperGasReimbursed(gasReimbursed, gasUsed, effectiveGasPrice);
+        }
+    }
 
     /// @dev Splits accrued LP trading fees by the live `performanceFeeBps`,
     /// sends the platform's cut to `operator`, and returns what's left for

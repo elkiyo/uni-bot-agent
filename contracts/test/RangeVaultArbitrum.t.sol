@@ -113,10 +113,93 @@ contract RangeVaultArbitrumTest is Test {
         vault.initPosition(initSwap, 0, 0);
     }
 
+    /// Same as _openPosition(), but swaps most of the investable pool into
+    /// WETH (900 of 945 USDC) instead of half. That leaves only ~45 USDC of
+    /// real stable behind before the mint, well under what a 2000-tick-wide
+    /// range wants opposite that much WETH — so the stable side becomes the
+    /// mint's LIMITING amount and gets consumed almost to zero, exactly like
+    /// production vault 0x1ef11e0b...4fbA01F2f (59.6% WETH / 40.4% USDC).
+    /// _openPosition()'s 475/945 split leaves ~470 USDC of genuine leftover
+    /// dust, which swamps the 5 USDC gas budget and makes the buggy and fixed
+    /// code paths indistinguishable by real-balance alone — this helper
+    /// exists so the regression tests below can actually tell them apart.
+    function _openPositionStableLimited() internal returns (int24 lower, int24 upper) {
+        (lower, upper) = _alignedRangeAroundMarket(2000);
+
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 50_000_000, investableAmount: 945_000_000, gasReserveAmount: 5_000_000});
+        vault.configureTarget({
+            investmentAmountUsd: 945_000_000,
+            _targetTickLower: lower,
+            _targetTickUpper: upper,
+            _maxRebalances: 5,
+            _reinjectionAmount: 10_000_000,
+            _periodicRebalanceInterval: 1 days,
+            _recenterMarginBps: 500,
+            _exitTopCeilingMarginBps: 300
+        });
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVaultArb.SwapInstruction memory initSwap = RangeVaultArb.SwapInstruction({
+            token0ToToken1: false,
+            amountIn: 900_000_000,
+            amountOutMinimum: 0,
+            fee: 500
+        });
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+    }
+
     function test_factoryDerivesRealTokenOrder_stableIsToken1() public view {
         assertEq(vault.token0(), WETH);
         assertEq(vault.token1(), USDC);
         assertFalse(vault.stableIsToken0());
+    }
+
+    /// Confirmed in production 2026-07-18 (vault 0x1ef11e0b...4fbA01F2f):
+    /// initPosition()'s mint-sizing read the vault's RAW stable balance minus
+    /// only reserveBalance, never gasReserveBalance — since both ledgers sit
+    /// in the same undifferentiated ERC20 balance, the gas budget silently
+    /// got minted into the position alongside investableUsdt. gasReserveBalance()
+    /// kept reporting its full value afterward even though the vault's real
+    /// token balance backing it was 0 — a reimbursement would have reverted
+    /// for insufficient funds, or worse, silently drawn from money that
+    /// belonged to a different ledger.
+    function test_initPosition_neverMintsTheGasReserveBudget() public {
+        _openPositionStableLimited();
+        assertGt(vault.positionTokenId(), 0);
+
+        uint256 realStableBal = IERC20(USDC).balanceOf(address(vault));
+        assertGe(
+            realStableBal,
+            vault.reserveBalance() + vault.gasReserveBalance(),
+            "gasReserveBalance must still be backed by real, unminted USDC after initPosition"
+        );
+    }
+
+    /// Same guarantee must hold after rebalance() re-mints the position —
+    /// the gas budget (already debited for that cycle's own reimbursement,
+    /// see the mechanism's own comment) must never be swept into the new mint.
+    /// reinjectAmount is 0 here (unlike the happy-path lifecycle test) so the
+    /// reserve doesn't top up the recovered stable pool and mask the same
+    /// scarcity property _openPositionStableLimited() sets up for initPosition.
+    function test_rebalance_neverMintsTheGasReserveBudget() public {
+        _openPositionStableLimited();
+        vm.warp(block.timestamp + 1 days + 1);
+        (int24 lower2, int24 upper2) = _alignedRangeAroundMarket(2000);
+        RangeVaultArb.SwapInstruction memory noSwap =
+            RangeVaultArb.SwapInstruction({token0ToToken1: false, amountIn: 0, amountOutMinimum: 0, fee: 500});
+
+        vm.prank(defaultOperator);
+        vault.rebalance(lower2, upper2, noSwap, 0, 0, 0);
+
+        uint256 realStableBal = IERC20(USDC).balanceOf(address(vault));
+        assertGe(
+            realStableBal,
+            vault.reserveBalance() + vault.gasReserveBalance(),
+            "gasReserveBalance must still be backed by real, unminted USDC after rebalance"
+        );
     }
 
     function test_fullLifecycle_deposit_initPosition_rebalance_withdraw() public {
@@ -210,6 +293,78 @@ contract RangeVaultArbitrumTest is Test {
             investableBefore > vault.investableUsdt() ? investableBefore - vault.investableUsdt() : 0,
             investableBefore,
             "sanity: investableUsdt change (from re-minting) shouldn't underflow"
+        );
+    }
+
+    /// The keeper sends initPosition(), reinjectIntoPosition(), and
+    /// sweepIdleDust() as their own separate, real, gas-paying transactions —
+    /// exactly like rebalance() — so the agent must be reimbursed for those
+    /// too, not just rebalance(). Confirms initPosition() specifically.
+    function test_keeperGasReimbursement_alsoAppliesToInitPosition() public {
+        (int24 lower, int24 upper) = _alignedRangeAroundMarket(2000);
+        vm.startPrank(lp);
+        vault.deposit({reserveAmount: 50_000_000, investableAmount: 945_000_000, gasReserveAmount: 5_000_000});
+        vault.configureTarget({
+            investmentAmountUsd: 945_000_000,
+            _targetTickLower: lower,
+            _targetTickUpper: upper,
+            _maxRebalances: 5,
+            _reinjectionAmount: 10_000_000,
+            _periodicRebalanceInterval: 1 days,
+            _recenterMarginBps: 500,
+            _exitTopCeilingMarginBps: 300
+        });
+        vault.setRiskParams(500, 0, 500);
+        vm.stopPrank();
+
+        RangeVaultArb.SwapInstruction memory initSwap = RangeVaultArb.SwapInstruction({
+            token0ToToken1: false,
+            amountIn: 475_000_000,
+            amountOutMinimum: 0,
+            fee: 500
+        });
+
+        uint256 gasReserveBefore = vault.gasReserveBalance();
+        uint256 operatorUsdcBefore = IERC20(USDC).balanceOf(defaultOperator);
+        vm.prank(defaultOperator);
+        vault.initPosition(initSwap, 0, 0);
+        uint256 reimbursed = IERC20(USDC).balanceOf(defaultOperator) - operatorUsdcBefore;
+
+        assertGt(reimbursed, 0, "operator should be reimbursed for initPosition's real gas too, not just rebalance");
+        assertLt(reimbursed, 5_000_000, "reimbursement implausibly high for one initPosition's real gas cost (>$5)");
+        assertEq(
+            vault.gasReserveBalance(), gasReserveBefore - reimbursed, "reimbursement must debit gasReserveBalance exactly"
+        );
+    }
+
+    /// Same guarantee for sweepIdleDust() — mirrors RangeVault.t.sol's
+    /// test_sweepIdleDust_convertsOneSidedLeftoverIntoLiquidity setup (stranded
+    /// one-sided WETH dust, corrective swap) to give the sweep real work to do.
+    function test_keeperGasReimbursement_alsoAppliesToSweepIdleDust() public {
+        _openPosition();
+
+        // Strand some extra WETH dust (token0 here) with nothing to pair it
+        // with, same as the production case _sweepDustIntoPosition() alone
+        // can't fix.
+        deal(WETH, address(vault), IERC20(WETH).balanceOf(address(vault)) + 0.03 ether);
+
+        RangeVaultArb.SwapInstruction memory correctiveSwap = RangeVaultArb.SwapInstruction({
+            token0ToToken1: true, // sell WETH (token0 here), buy USDC (token1)
+            amountIn: 0.015 ether,
+            amountOutMinimum: 0,
+            fee: 500
+        });
+
+        uint256 gasReserveBefore = vault.gasReserveBalance();
+        uint256 operatorUsdcBefore = IERC20(USDC).balanceOf(defaultOperator);
+        vm.prank(defaultOperator);
+        vault.sweepIdleDust(correctiveSwap, 0, 0);
+        uint256 reimbursed = IERC20(USDC).balanceOf(defaultOperator) - operatorUsdcBefore;
+
+        assertGt(reimbursed, 0, "operator should be reimbursed for sweepIdleDust's real gas too");
+        assertLt(reimbursed, 5_000_000, "reimbursement implausibly high for one sweepIdleDust's real gas cost (>$5)");
+        assertEq(
+            vault.gasReserveBalance(), gasReserveBefore - reimbursed, "reimbursement must debit gasReserveBalance exactly"
         );
     }
 
