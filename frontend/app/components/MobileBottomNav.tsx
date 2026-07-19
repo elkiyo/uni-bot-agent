@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 const items = [
   {
     href: "/vaults",
-    label: "Mis vaults",
+    labelKey: "mobileNav.vaults" as const,
     icon: (active: boolean) => (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
         <rect
@@ -25,7 +26,7 @@ const items = [
   },
   {
     href: "/create",
-    label: "Crear vault",
+    labelKey: "mobileNav.create" as const,
     icon: (active: boolean) => (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
         <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth={active ? 2 : 1.6} />
@@ -35,7 +36,7 @@ const items = [
   },
   {
     href: "/dashboard",
-    label: "Dashboard",
+    labelKey: "mobileNav.dashboard" as const,
     icon: (active: boolean) => (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
         <path
@@ -51,6 +52,7 @@ const items = [
 
 export function MobileBottomNav() {
   const pathname = usePathname();
+  const { t } = useTranslation();
 
   return (
     <nav
@@ -65,7 +67,7 @@ export function MobileBottomNav() {
       }}
     >
       <div className="flex h-16 items-stretch justify-around">
-        {items.map(({ href, label, icon }) => {
+        {items.map(({ href, labelKey, icon }) => {
           const active = pathname === href;
           return (
             <Link
@@ -78,7 +80,7 @@ export function MobileBottomNav() {
               }
             >
               {icon(active)}
-              <span className="text-[10.5px] font-medium leading-none">{label}</span>
+              <span className="text-[10.5px] font-medium leading-none">{t(labelKey)}</span>
             </Link>
           );
         })}

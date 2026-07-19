@@ -7,6 +7,7 @@ import { positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { positionAmounts, uncollectedFeesRaw } from "@/lib/positionMath";
 import type { ChainDef } from "@/lib/chains";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 /**
  * Renders the actual Uniswap V3 position NFT — the SVG art is generated fully
@@ -15,6 +16,7 @@ import type { ChainDef } from "@/lib/chains";
  * position page (value + volatile/stable split bar, fees-earned card).
  */
 export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: ChainDef; pool: `0x${string}` }) {
+  const { t } = useTranslation();
   const { data: uri } = useReadContract({
     address: chain.positionManager,
     abi: positionManagerAbi,
@@ -163,21 +165,18 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
           className="text-xl font-semibold tracking-tight"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Posición NFT #{String(tokenId)}
+          {t("positionNft.title", { id: String(tokenId) })}
         </h2>
         {inRange ? (
-          <span className="eyebrow !border-positive/40 !text-positive">Dentro del rango</span>
+          <span className="eyebrow !border-positive/40 !text-positive">{t("positionNft.inRange")}</span>
         ) : (
-          <span className="eyebrow !border-negative/40 !text-negative">Fuera de rango</span>
+          <span className="eyebrow !border-negative/40 !text-negative">{t("positionNft.outOfRange")}</span>
         )}
         <span className="eyebrow">
           {chain.stableSymbol} / {chain.volatileSymbol} · {fee / 10_000}%
         </span>
       </div>
-      <p className="mt-1 text-sm text-muted">
-        Arte generado 100% on-chain por el contrato de Uniswap V3 — el NFT vive dentro del
-        vault, nunca en la wallet del operador.
-      </p>
+      <p className="mt-1 text-sm text-muted">{t("positionNft.subtitle")}</p>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[260px_1fr]">
         {/* On-chain NFT art */}
@@ -192,7 +191,7 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
           ) : (
             <div className="grid aspect-[290/500] w-full place-items-center rounded-2xl border border-hairline bg-white/[0.02]">
               <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-                Cargando NFT…
+                {t("positionNft.loadingNft")}
               </span>
             </div>
           )}
@@ -202,14 +201,14 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
             rel="noopener noreferrer"
             className="mt-3 block text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted underline-offset-4 hover:text-accent hover:underline"
           >
-            Ver NFT en el explorer →
+            {t("positionNft.viewExplorer")}
           </a>
         </div>
 
         {/* Uniswap-style breakdown */}
         <div className="flex flex-col gap-4">
           <div className="glass rounded-2xl p-5">
-            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">Posición</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{t("positionNft.position")}</span>
             <p
               className="mt-1 text-2xl font-semibold tabular-nums"
               style={{ fontFamily: "var(--font-display)" }}
@@ -235,7 +234,7 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
 
           <div className="glass rounded-2xl p-5">
             <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-              Comisiones ganadas
+              {t("positionNft.feesEarned")}
             </span>
             <p
               className="mt-1 text-2xl font-semibold tabular-nums text-accent"
@@ -258,30 +257,30 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
                 native={`${feesUsdtAmount.toFixed(4)} ${chain.stableSymbol}`}
               />
             </div>
-            <p className="mt-3 text-xs text-faint">
-              Comisiones acumuladas en tiempo real, calculadas igual que lo hace Uniswap — se
-              cobran recién cuando el vault rebalancea o se retira.
-            </p>
+            <p className="mt-3 text-xs text-faint">{t("positionNft.feesCaption")}</p>
           </div>
 
           <div className="glass rounded-2xl p-5">
             <div className="flex items-baseline justify-between">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                Rango de precio
+                {t("positionNft.priceRange")}
               </span>
               <span className="font-mono text-[11px] text-faint">ticks [{tickLower}, {tickUpper}]</span>
             </div>
             <div className="mt-2 flex items-baseline justify-between text-sm">
               <span className="text-white/90">
-                Mín. <span className="font-semibold">${rangeLow.toFixed(2)}</span>
+                {t("positionNft.min")} <span className="font-semibold">${rangeLow.toFixed(2)}</span>
               </span>
               <span className="text-white/90">
-                Máx. <span className="font-semibold">${rangeHigh.toFixed(2)}</span>
+                {t("positionNft.max")} <span className="font-semibold">${rangeHigh.toFixed(2)}</span>
               </span>
             </div>
             {ethPrice !== undefined && (
               <p className="mt-2 text-xs text-faint">
-                Precio actual: ${ethPrice.toFixed(2)} · {chain.stableSymbol}/{chain.volatileSymbol}
+                {t("positionNft.currentPrice", {
+                  price: ethPrice.toFixed(2),
+                  pair: `${chain.stableSymbol}/${chain.volatileSymbol}`,
+                })}
               </p>
             )}
           </div>

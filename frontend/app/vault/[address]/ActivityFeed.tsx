@@ -5,6 +5,9 @@ import { usePublicClient } from "wagmi";
 import { formatUnits, parseEventLogs, type Log } from "viem";
 import { getLogsChunked } from "@/lib/getLogsChunked";
 import type { ChainDef } from "@/lib/chains";
+import { useTranslation } from "@/lib/i18n/useTranslation";
+
+const dateLocale: Record<string, string> = { es: "es", en: "en-US", pt: "pt-BR", zh: "zh-CN" };
 
 interface FeedItem {
   txHash: string;
@@ -23,9 +26,10 @@ interface FeedItem {
  */
 export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
   const publicClient = usePublicClient({ chainId: chain.id });
+  const { t, locale } = useTranslation();
 
   const { data: items } = useQuery({
-    queryKey: ["vault-activity", chain.id, address],
+    queryKey: ["vault-activity", chain.id, address, locale],
     enabled: Boolean(publicClient),
     refetchInterval: 10_000,
     queryFn: async (): Promise<FeedItem[]> => {
@@ -39,7 +43,7 @@ export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain
 
       const feed: FeedItem[] = [];
       for (const log of parsed) {
-        const item = describe(log.eventName, log.args as Record<string, unknown>, chain);
+        const item = describe(t, log.eventName, log.args as Record<string, unknown>, chain);
         if (!item) continue;
         feed.push({
           txHash: log.transactionHash ?? "",
@@ -73,17 +77,15 @@ export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain
           className="text-xl font-semibold tracking-tight"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Actividad on-chain
+          {t("activity.feedTitle")}
         </h2>
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-60" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-positive" />
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">en vivo</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("activity.live")}</span>
       </div>
-      <p className="mt-1 text-sm text-muted">
-        Cada acción del agente y del owner, leída directo de los eventos del contrato.
-      </p>
+      <p className="mt-1 text-sm text-muted">{t("activity.feedSubtitle")}</p>
 
       <ol className="mt-6 flex flex-col">
         {items.map((item, i) => (
@@ -102,14 +104,19 @@ export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain
                         : "text-muted"
                   }`}
                 >
-                  {item.kind === "agent" ? "agente" : item.kind === "money" ? "fondos" : "config"}
+                  {item.kind === "agent" ? t("activity.kindAgent") : item.kind === "money" ? t("activity.kindMoney") : t("activity.kindConfig")}
                 </span>
                 <span className="font-medium text-white/90">{item.title}</span>
               </div>
               <p className="mt-1 text-sm text-muted">{item.detail}</p>
               <div className="mt-1.5 flex flex-wrap gap-x-4 font-mono text-[11px] text-faint">
                 {item.timestamp && (
-                  <span>{new Date(item.timestamp * 1000).toLocaleString("es", { dateStyle: "short", timeStyle: "medium" })}</span>
+                  <span>
+                    {new Date(item.timestamp * 1000).toLocaleString(dateLocale[locale] ?? "es", {
+                      dateStyle: "short",
+                      timeStyle: "medium",
+                    })}
+                  </span>
                 )}
                 <a
                   href={`${chain.explorerBaseUrl}/tx/${item.txHash}`}
@@ -129,6 +136,7 @@ export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain
 }
 
 function describe(
+  t: ReturnType<typeof useTranslation>["t"],
   eventName: string,
   args: Record<string, unknown>,
   chain: ChainDef,
@@ -139,118 +147,150 @@ function describe(
     case "Deposited":
       return {
         kind: "money",
-        title: "Depósito del owner",
-        detail:
-          `Invertible ${usdt(args.investableAmount)} · reserva ${usdt(args.reserveAmount)}` +
-          (args.gasReserveAmount !== undefined ? ` · gas ${usdt(args.gasReserveAmount)}` : ""),
+        title: t("activity.depositTitle"),
+        detail: t("activity.depositDetail", {
+          investable: usdt(args.investableAmount),
+          reserve: usdt(args.reserveAmount),
+          gasClause:
+            args.gasReserveAmount !== undefined
+              ? t("activity.depositGasClause", { gas: usdt(args.gasReserveAmount) })
+              : "",
+        }),
       };
     case "CreationFeeCharged":
       return {
         kind: "money",
-        title: "Fee de creación cobrado",
-        detail: `${usdt(args.amount)} a la tesorería de la plataforma — pago único, no se vuelve a cobrar en este vault`,
+        title: t("activity.creationFeeTitle"),
+        detail: t("activity.creationFeeDetail", { amount: usdt(args.amount) }),
       };
     case "TargetConfigured":
       return {
         kind: "config",
-        title: "Configuración del agente",
-        detail: `Rango objetivo [${args.targetTickLower}, ${args.targetTickUpper}] · máx. ${args.maxRebalances} rebalanceos · reinyección ${usdt(args.reinjectionAmount)} · periódico cada ${Number(args.periodicRebalanceInterval) / 3600}h · margen recentrado ${Number((args.recenterMarginBps as bigint) ?? 0n) / 100}% · margen techo ${Number((args.exitTopCeilingMarginBps as bigint) ?? 0n) / 100}%`,
+        title: t("activity.targetConfiguredTitle"),
+        detail: t("activity.targetConfiguredDetail", {
+          lower: String(args.targetTickLower),
+          upper: String(args.targetTickUpper),
+          maxRebalances: String(args.maxRebalances),
+          reinjection: usdt(args.reinjectionAmount),
+          hours: Number(args.periodicRebalanceInterval) / 3600,
+          recenterMargin: Number((args.recenterMarginBps as bigint) ?? 0n) / 100,
+          topMargin: Number((args.exitTopCeilingMarginBps as bigint) ?? 0n) / 100,
+        }),
       };
     case "RiskParamsUpdated":
       return {
         kind: "config",
-        title: "Límites de riesgo",
-        detail: `Slippage máx. ${Number(args.maxSlippageBps) / 100}% · desviación de rango máx. ${args.maxRangeDeviationBps} ticks`,
+        title: t("activity.riskParamsTitle"),
+        detail: t("activity.riskParamsDetail", {
+          slippage: Number(args.maxSlippageBps) / 100,
+          deviation: String(args.maxRangeDeviationBps),
+        }),
       };
     case "PositionInitialized":
       return {
         kind: "agent",
-        title: `Posición creada — NFT #${args.tokenId}`,
-        detail: `El agente armó la posición con ${usdt(args.amount0)} + ${weth(args.amount1)}`,
+        title: t("activity.positionInitTitle", { tokenId: String(args.tokenId) }),
+        detail: t("activity.positionInitDetail", { amount0: usdt(args.amount0), amount1: weth(args.amount1) }),
       };
     case "Rebalanced": {
       const reinjectedAmount = (args.reinjectedAmount as bigint) ?? 0n;
       return {
         kind: "agent",
-        title: `Rebalanceo — nueva posición #${args.newTokenId}`,
-        detail: `Nuevo rango [${args.tickLower}, ${args.tickUpper}] · ${reinjectedAmount > 0n ? `reinyectó ${usdt(reinjectedAmount)}` : "sin reinyección"}`,
+        title: t("activity.rebalancedTitle", { tokenId: String(args.newTokenId) }),
+        detail:
+          reinjectedAmount > 0n
+            ? t("activity.rebalancedDetailReinjected", {
+                lower: String(args.tickLower),
+                upper: String(args.tickUpper),
+                amount: usdt(reinjectedAmount),
+              })
+            : t("activity.rebalancedDetailNoReinjection", {
+                lower: String(args.tickLower),
+                upper: String(args.tickUpper),
+              }),
       };
     }
     case "LpFeesPaidToOwner": {
       const amount1 = (args.amount1 as bigint) ?? 0n;
       return {
         kind: "money",
-        title: "Comisiones de Uniswap pagadas al owner",
-        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""} netos generados por la posición, enviados directo a tu wallet antes de rearmarla`,
+        title: t("activity.lpFeesTitle"),
+        detail: t("activity.lpFeesDetail", {
+          amounts: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""}`,
+        }),
       };
     }
     case "FeesCollected": {
       const amount1 = (args.amount1 as bigint) ?? 0n;
       return {
         kind: "money",
-        title: "Comisiones reclamadas manualmente",
-        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""} netos para vos — la posición sigue abierta, solo se cobraron las comisiones`,
+        title: t("activity.feesCollectedTitle"),
+        detail: t("activity.feesCollectedDetail", {
+          amounts: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""}`,
+        }),
       };
     }
     case "PerformanceFeeCollected": {
       const amount1 = (args.amount1 as bigint) ?? 0n;
       return {
         kind: "money",
-        title: "Fee de performance a la plataforma",
-        detail: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""} — corte de plataforma sobre las comisiones de Uniswap generadas`,
+        title: t("activity.performanceFeeTitle"),
+        detail: t("activity.performanceFeeDetail", {
+          amounts: `${usdt(args.amount0)}${amount1 > 0n ? ` + ${weth(amount1)}` : ""}`,
+        }),
       };
     }
     case "KeeperGasReimbursed":
       return {
         kind: "agent",
-        title: "Reembolso de gas al operador",
-        detail: `${usdt(args.amountUsd)} — costo real de este rebalanceo, descontado del presupuesto de gas`,
+        title: t("activity.gasReimbursedTitle"),
+        detail: t("activity.gasReimbursedDetail", { amount: usdt(args.amountUsd) }),
       };
     case "Withdrawn":
       return {
         kind: "money",
-        title: "Retiro del owner",
-        detail: `${usdt(args.amount0)} + ${weth(args.amount1)} devueltos al owner`,
+        title: t("activity.withdrawnTitle"),
+        detail: t("activity.withdrawnDetail", { amount0: usdt(args.amount0), amount1: weth(args.amount1) }),
       };
     case "PositionIncreased":
       return {
         kind: "money",
-        title: "El owner sumó capital a la posición",
-        detail: `${usdt(args.usdtAmount)} depositados, ${usdt(args.used0)} entraron a la posición al instante`,
+        title: t("activity.positionIncreasedTitle"),
+        detail: t("activity.positionIncreasedDetail", { deposited: usdt(args.usdtAmount), used: usdt(args.used0) }),
       };
     case "ReinjectedIntoPosition":
       return {
         kind: "agent",
-        title: "El agente reinyectó reserva a la posición",
-        detail: `${usdt(args.amount)} salieron de la reserva, ${usdt(args.used0)} entraron a la posición sin cerrarla`,
+        title: t("activity.reinjectedTitle"),
+        detail: t("activity.reinjectedDetail", { amount: usdt(args.amount), used: usdt(args.used0) }),
       };
     case "IdleDustSwept": {
       const used1 = (args.used1 as bigint) ?? 0n;
       return {
         kind: "agent",
-        title: "El agente barrió sobrante suelto con un swap",
-        detail: `${usdt(args.used0)}${used1 > 0n ? ` + ${weth(used1)}` : ""} que estaban sueltos entraron a la posición`,
+        title: t("activity.dustSweptTitle"),
+        detail: t("activity.dustSweptDetail", {
+          amounts: `${usdt(args.used0)}${used1 > 0n ? ` + ${weth(used1)}` : ""}`,
+        }),
       };
     }
     case "EmergencyWithdraw":
       return {
         kind: "money",
-        title: "Retiro de emergencia",
-        detail: `${usdt(args.amount0)} + ${weth(args.amount1)} devueltos al owner (vault pausado)`,
+        title: t("activity.emergencyWithdrawTitle"),
+        detail: t("activity.emergencyWithdrawDetail", { amount0: usdt(args.amount0), amount1: weth(args.amount1) }),
       };
     case "OperatorUpdated":
       return {
         kind: "config",
-        title: "Operador actualizado",
+        title: t("activity.operatorUpdatedTitle"),
         detail: String(args.newOperator),
       };
     case "PausedSet":
       return {
         kind: "config",
-        title: args.isPaused ? "Vault pausado" : "Vault reanudado",
-        detail: args.isPaused
-          ? "El agente no puede operar hasta que el owner reanude"
-          : "El agente puede volver a operar",
+        title: args.isPaused ? t("activity.pausedTitleOn") : t("activity.pausedTitleOff"),
+        detail: args.isPaused ? t("activity.pausedDetailOn") : t("activity.pausedDetailOff"),
       };
     default:
       return null;

@@ -6,9 +6,12 @@ import { Header } from "./components/Header";
 import { uniswapV3PoolAbi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { useSelectedChain } from "@/lib/useSelectedChain";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 export default function Home() {
   const { selectedChain: chain } = useSelectedChain();
+  const { t } = useTranslation();
+  const pair = `${chain.stableSymbol}/${chain.volatileSymbol}`;
 
   const { data: slot0 } = useReadContract({
     address: chain.pool,
@@ -36,13 +39,13 @@ export default function Home() {
         <div className="grid items-center gap-10 lg:grid-cols-[1fr_320px]">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="eyebrow">Uniswap V3 · {chain.name} Mainnet</span>
+              <span className="eyebrow">{t("home.eyebrowMainnet", { chain: chain.name })}</span>
               <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-60" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-positive" />
                 </span>
-                En producción, con fondos reales
+                {t("home.liveBadge")}
               </span>
             </div>
             <h1
@@ -58,45 +61,42 @@ export default function Home() {
               className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-white/90 sm:text-2xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Liquidez concentrada en pools de Uniswap —el DEX más grande del mundo—, siempre en
-              rango, sin ceder nunca la custodia de tus fondos.
+              {t("home.heroSubtitle")}
             </p>
             <p className="mt-4 max-w-xl text-base font-medium leading-relaxed text-accent">
-              Ganá dinero pasivo desde el primer minuto — sin experiencia previa, con control total
-              sobre tus fondos.
+              {t("home.heroHighlight")}
             </p>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
-              Depositás <span className="text-white/80">{chain.stableSymbol}</span> — un solo token. Un
-              agente arma y rebalancea tu posición en el pool {chain.stableSymbol}/{chain.volatileSymbol} por vos,
-              corriendo el rango junto con el precio.{" "}
-              <span className="text-white/80">Solo vos podés retirar los fondos</span>: el
-              operador únicamente rebalancea, dentro de los límites que vos configurás.
+              {t("home.heroBodyPre")} <span className="text-white/80">{chain.stableSymbol}</span>
+              {t("home.heroBodyMid", { pair })}
+              <span className="text-white/80">{t("home.heroBodyHighlight")}</span>
+              {t("home.heroBodyPost")}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/create" className="btn-primary !px-6 !py-3">
-                Crear vault
+                {t("home.ctaCreate")}
               </Link>
               <Link href="/vaults" className="btn-secondary !px-6 !py-3">
-                Ver mis vaults
+                {t("home.ctaViewVaults")}
               </Link>
             </div>
 
             {/* Live snapshot */}
             <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4 rounded-2xl border border-hairline bg-white/[0.02] px-6 py-4">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Precio ETH</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">{t("home.snapshotEthPrice")}</p>
                 <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
                   {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
                 </p>
               </div>
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Vaults creados</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">{t("home.snapshotVaultsCreated")}</p>
                 <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
                   {vaultCount !== undefined ? String(vaultCount) : "…"}
                 </p>
               </div>
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Pool</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">{t("home.snapshotPool")}</p>
                 <p className="mt-1 font-mono text-lg text-white/90">
                   {chain.stableSymbol}/{chain.volatileSymbol} · {chain.feeTier / 10_000}%
                 </p>
@@ -114,7 +114,7 @@ export default function Home() {
             />
             <div className="glass w-full rounded-2xl p-6">
               <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
-                Rango ilustrativo · ±5%
+                {t("home.illustrativeRange")}
               </span>
               <p
                 className="mt-2 text-2xl font-semibold tabular-nums text-white/90"
@@ -122,9 +122,7 @@ export default function Home() {
               >
                 {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
               </p>
-              <p className="mt-0.5 text-xs text-muted">
-                Precio actual · {chain.stableSymbol}/{chain.volatileSymbol}
-              </p>
+              <p className="mt-0.5 text-xs text-muted">{t("home.currentPrice", { pair })}</p>
 
               <div className="relative mt-6 h-1.5 rounded-full bg-white/10">
                 <div className="absolute inset-y-0 left-[10%] right-[10%] rounded-full bg-accent/25" />
@@ -132,15 +130,11 @@ export default function Home() {
               </div>
               <div className="mt-2.5 flex items-center justify-between font-mono text-[11px] text-faint">
                 <span>{ethPrice !== undefined ? `$${(ethPrice * 0.95).toFixed(0)}` : "…"}</span>
-                <span className="text-accent">en rango</span>
+                <span className="text-accent">{t("home.inRange")}</span>
                 <span>{ethPrice !== undefined ? `$${(ethPrice * 1.05).toFixed(0)}` : "…"}</span>
               </div>
 
-              <p className="mt-6 text-xs leading-relaxed text-muted">
-                Cuando el precio se acerca a un borde, el agente cierra la posición y
-                rearma el rango centrado en el nuevo precio — sin que vos tengas que
-                hacer nada.
-              </p>
+              <p className="mt-6 text-xs leading-relaxed text-muted">{t("home.illustrativeCaption")}</p>
             </div>
           </div>
         </div>
@@ -149,32 +143,34 @@ export default function Home() {
         <div className="mt-20 flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-0">
           {[
             {
-              n: "01",
-              t: `Depositás ${chain.stableSymbol}`,
-              d: "Un solo token. El vault lo reparte entre capital invertible y reserva de reinyección.",
+              n: t("home.step1N"),
+              title: t("home.step1T", { symbol: chain.stableSymbol }),
+              d: t("home.step1D"),
             },
             {
-              n: "02",
-              t: (
+              n: t("home.step2N"),
+              title: (
                 <>
-                  El <span className="text-accent">agente</span> opera
+                  {t("home.step2TPre")}
+                  <span className="text-accent">{t("home.step2THighlight")}</span>
+                  {t("home.step2TPost")}
                 </>
               ),
-              d: "Consulta uni-lab.xyz (pagando vía x402 con su propia wallet), hace el swap necesario y mintea la posición. Rebalancea si el precio sale del rango o en el intervalo que definas.",
+              d: t("home.step2D"),
             },
             {
-              n: "03",
-              t: "Solo vos retirás",
-              d: "withdrawAll() siempre paga al owner. El operador no puede tocar el principal, y podés revocarlo o pausar el vault cuando quieras.",
+              n: t("home.step3N"),
+              title: t("home.step3T"),
+              d: t("home.step3D"),
             },
-          ].map(({ n, t, d }, i, arr) => (
+          ].map(({ n, title, d }, i, arr) => (
             <div key={n} className="flex flex-1 items-stretch">
               <div className="glass flex-1 rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
                   {n}
                 </span>
                 <h3 className="mt-3 text-lg font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-                  {t}
+                  {title}
                 </h3>
                 <p className="mt-2 text-base leading-relaxed text-muted">{d}</p>
               </div>
@@ -190,48 +186,30 @@ export default function Home() {
         {/* Cómo decide el agente */}
         <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
           <span className="eyebrow">
-            El <span className="text-accent">agente</span>
+            {t("home.decisionEyebrowPre")}
+            <span className="text-accent">{t("home.decisionEyebrowHighlight")}</span>
           </span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Cómo decide cuándo rebalancear
+            {t("home.decisionTitle")}
           </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
-            Cada ~5 minutos, para cada vault, el agente corre la misma secuencia — sin
-            discreción humana de por medio, todo verificable on-chain.
-          </p>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{t("home.decisionSubtitle")}</p>
 
           <ol className="mt-8 flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-0">
             {[
-              {
-                n: "1",
-                t: "¿Quedan rebalanceos?",
-                d: "rebalanceCount < maxRebalances, el tope que vos fijaste al crear el vault. Si se agotó, no hace nada.",
-              },
-              {
-                n: "2",
-                t: "¿Pasó el cooldown?",
-                d: "El piso mínimo de tiempo desde el último rebalanceo. Evita thrashing aunque el precio se mueva rápido.",
-              },
-              {
-                n: "3",
-                t: "¿Toca el periódico?",
-                d: "Si configuraste un intervalo, rebalancea igual aunque el precio siga en rango — actividad real, no solo reactiva.",
-              },
-              {
-                n: "4",
-                t: "¿Rompió el rango?",
-                d: "Compara el precio actual contra los límites de la posición abierta. Fuera por abajo o por arriba, cada caso arma un rango nuevo distinto.",
-              },
-            ].map(({ n, t, d }, i, arr) => (
+              { n: "1", title: t("home.decision1T"), d: t("home.decision1D") },
+              { n: "2", title: t("home.decision2T"), d: t("home.decision2D") },
+              { n: "3", title: t("home.decision3T"), d: t("home.decision3D") },
+              { n: "4", title: t("home.decision4T"), d: t("home.decision4D") },
+            ].map(({ n, title, d }, i, arr) => (
               <li key={n} className="flex flex-1 items-stretch">
                 <div className="glass flex-1 rounded-2xl p-5" style={{ backgroundColor: "#0a0a0a" }}>
                   <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
-                    Paso {n}
+                    {t("home.decisionStepLabel", { n })}
                   </span>
-                  <h3 className="mt-3 text-base font-semibold text-white/90">{t}</h3>
+                  <h3 className="mt-3 text-base font-semibold text-white/90">{title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
                 </div>
                 {i < arr.length - 1 && (
@@ -247,28 +225,26 @@ export default function Home() {
             href="/recursos"
             className="mt-6 inline-flex items-center gap-1.5 text-sm text-accent underline-offset-4 hover:underline"
           >
-            Ver la guía completa con ejemplos numéricos →
+            {t("home.decisionLink")}
           </Link>
         </div>
 
         {/* El pool */}
         <div className="mt-20">
-          <span className="eyebrow">El pool</span>
+          <span className="eyebrow">{t("home.poolEyebrow")}</span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            {chain.stableSymbol}/{chain.volatileSymbol}, {chain.feeTier / 10_000}%, con liquidez real
+            {t("home.poolTitle", { pair, fee: chain.feeTier / 10_000 })}
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
-            No es un pool de prueba armado para la demo — cada vault mintea su posición en
-            el mismo pool público de Uniswap V3 que ya opera en {chain.name} mainnet, compartiendo
-            liquidez con cualquier otro LP.
+            {t("home.poolSubtitle", { chain: chain.name })}
           </p>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="glass rounded-2xl p-5">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Pool</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("home.poolLabel")}</p>
               <a
                 href={`${chain.explorerBaseUrl}/address/${chain.pool}`}
                 target="_blank"
@@ -278,13 +254,13 @@ export default function Home() {
                 {chain.pool} ↗
               </a>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                Fee tier
+                {t("home.feeTierLabel")}
               </p>
               <p className="mt-1 text-sm text-white/80">{chain.feeTier / 10_000}%</p>
             </div>
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                token0 · {chain.stableSymbol}
+                {t("home.token0Label", { symbol: chain.stableSymbol })}
               </p>
               <a
                 href={`${chain.explorerBaseUrl}/address/${chain.stableToken}`}
@@ -295,7 +271,7 @@ export default function Home() {
                 {chain.stableToken} ↗
               </a>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                token1 · {chain.volatileSymbol} puenteado
+                {t("home.token1Label", { symbol: chain.volatileSymbol })}
               </p>
               <a
                 href={`${chain.explorerBaseUrl}/address/${chain.volatileToken}`}
@@ -309,7 +285,7 @@ export default function Home() {
           </div>
 
           <p className="mt-4 font-mono text-[11px] text-faint">
-            El agente opera vía el{" "}
+            {t("home.poolFooterPre")}
             <a
               href={`${chain.explorerBaseUrl}/address/${chain.positionManager}`}
               target="_blank"
@@ -317,8 +293,8 @@ export default function Home() {
               className="underline-offset-4 hover:text-accent hover:underline"
             >
               NonfungiblePositionManager
-            </a>{" "}
-            y el{" "}
+            </a>
+            {t("home.poolFooterMid")}
             <a
               href={`${chain.explorerBaseUrl}/address/${chain.swapRouter02}`}
               target="_blank"
@@ -326,40 +302,35 @@ export default function Home() {
               className="underline-offset-4 hover:text-accent hover:underline"
             >
               SwapRouter02
-            </a>{" "}
-            oficiales de Uniswap en {chain.name} — contratos verificados, no wrappers propios.
+            </a>
+            {t("home.poolFooterPost", { chain: chain.name })}
           </p>
         </div>
 
         {/* Un contrato por usuario */}
         <div className="mt-20">
-          <span className="eyebrow">Arquitectura</span>
+          <span className="eyebrow">{t("home.archEyebrow")}</span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Un contrato nuevo por usuario — nunca un fondo compartido
+            {t("home.archTitle")}
           </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
-            Cuando creás un vault, se despliega un contrato exclusivo para vos — no es una fila en una
-            base de datos ni una porción de un pool común. Tu dinero, tu posición y tu historial viven
-            ahí, y en ningún otro lugar.
-          </p>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{t("home.archSubtitle")}</p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="glass rounded-2xl p-5">
-              <h3 className="text-sm font-semibold text-muted">Cómo operan muchos gestores DeFi</h3>
+              <h3 className="text-sm font-semibold text-muted">{t("home.archOthersTitle")}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                Un solo contrato reúne el dinero de todos los usuarios en el mismo lugar. Un bug o
-                exploit ahí compromete a{" "}
-                <span className="text-white/80">todos los depositantes al mismo tiempo.</span>
+                {t("home.archOthersDPre")}
+                <span className="text-white/80">{t("home.archOthersDHighlight")}</span>
               </p>
             </div>
             <div className="glass rounded-2xl p-5" style={{ borderColor: "rgba(252,255,82,0.25)" }}>
-              <h3 className="text-sm font-semibold text-accent">Cómo opera AutoRange</h3>
+              <h3 className="text-sm font-semibold text-accent">{t("home.archUsTitle")}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                Cada usuario tiene su propio contrato, aislado del resto. Un problema en un vault{" "}
-                <span className="text-white/80">queda contenido a ese vault</span> — nunca se propaga
-                al dinero de otro usuario.
+                {t("home.archUsDPre")}
+                <span className="text-white/80">{t("home.archUsDHighlight")}</span>
+                {t("home.archUsDPost")}
               </p>
             </div>
           </div>
@@ -367,35 +338,23 @@ export default function Home() {
 
         {/* Garantías no-custodiales */}
         <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
-          <span className="eyebrow">Sin custodia</span>
+          <span className="eyebrow">{t("home.custodyEyebrow")}</span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            El operador rebalancea. Vos sos dueño.
+            {t("home.custodyTitle")}
           </h2>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {[
-              {
-                t: "El principal solo vuelve a vos",
-                d: "withdrawAll()/withdraw() transfieren siempre al owner del vault — nunca hay un parámetro que redirija a otra dirección.",
-              },
-              {
-                t: "El operador no puede inventar rangos",
-                d: "Cada rango que propone se valida on-chain contra los límites que vos configuraste al crear o reconfigurar el vault.",
-              },
-              {
-                t: "Podés pausar o revocar cuando quieras",
-                d: "pause() bloquea al agente sin tocar tus fondos. setOperator(0x0) es un kill switch inmediato — nadie puede rebalancear después.",
-              },
-              {
-                t: "Retiro de emergencia sin depender de nadie",
-                d: "emergencyWithdrawPosition() fuerza el cierre de la posición y te devuelve todo, incluso si el operador dejó de responder.",
-              },
-            ].map(({ t, d }) => (
-              <div key={t} className="glass rounded-2xl p-5" style={{ backgroundColor: "#0a0a0a" }}>
-                <h3 className="text-base font-semibold text-white/90">{t}</h3>
+              { title: t("home.custody1T"), d: t("home.custody1D") },
+              { title: t("home.custody2T"), d: t("home.custody2D") },
+              { title: t("home.custody3T"), d: t("home.custody3D") },
+              { title: t("home.custody4T"), d: t("home.custody4D") },
+            ].map(({ title, d }) => (
+              <div key={title} className="glass rounded-2xl p-5" style={{ backgroundColor: "#0a0a0a" }}>
+                <h3 className="text-base font-semibold text-white/90">{title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
               </div>
             ))}
@@ -404,24 +363,23 @@ export default function Home() {
 
         {/* Modelo de ingresos, con ejemplo numérico */}
         <div className="mt-20">
-          <span className="eyebrow">Modelo de ingresos</span>
+          <span className="eyebrow">{t("home.revenueEyebrow")}</span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Comisión solo sobre lo que ganás — nunca sobre tu capital
+            {t("home.revenueTitle")}
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
-            Un ejemplo real: si tu posición genera $1,000 en comisiones de trading sobre $10,000
-            depositados (10% de rentabilidad bruta), la plataforma cobra un{" "}
-            <span className="text-white/80">10% performance fee</span> solo sobre esa ganancia — nunca
-            sobre el capital. Mismo pool, mismas comisiones ganadas: lo único que cambia es el reparto.
+            {t("home.revenueSubtitlePre")}
+            <span className="text-white/80">{t("home.revenueSubtitleHighlight")}</span>
+            {t("home.revenueSubtitlePost")}
           </p>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                Sin AutoRange · gestión manual experta
+                {t("home.revenueWithoutLabel")}
               </p>
               <div className="mt-3 flex h-8 overflow-hidden rounded-md bg-white/[0.03]">
                 <div
@@ -434,7 +392,7 @@ export default function Home() {
             </div>
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                Con AutoRange · automático, sin experiencia
+                {t("home.revenueWithLabel")}
               </p>
               <div className="mt-3 flex h-8 gap-0.5 overflow-hidden rounded-md bg-white/[0.03]">
                 <div
@@ -448,30 +406,23 @@ export default function Home() {
                   style={{ backgroundColor: "#8b7cf6", flexGrow: 100 }}
                 />
               </div>
-              <p className="mt-2 text-[11px] text-faint">
-                Tramo violeta = $100 · 1% para AutoRange (10% de lo ganado, nunca del capital)
-              </p>
+              <p className="mt-2 text-[11px] text-faint">{t("home.revenueBarCaption")}</p>
             </div>
           </div>
 
-          <p className="mt-4 max-w-2xl text-xs leading-relaxed text-faint">
-            Además, cada vault nuevo paga un cargo único de creación (1 USD, una sola vez) que cubre el
-            costo de desplegar un contrato propio e independiente para ese usuario. Ambos valores son
-            ajustables con el tiempo por decisión de la gobernanza de la plataforma — nunca fijos para
-            siempre.
-          </p>
+          <p className="mt-4 max-w-2xl text-xs leading-relaxed text-faint">{t("home.revenueFooter")}</p>
         </div>
 
         {/* Closing CTA */}
         <div className="mt-20 flex flex-wrap items-center gap-4 border-t border-hairline pt-10">
           <Link href="/create" className="btn-primary !px-6 !py-3">
-            Crear vault
+            {t("home.ctaCreate")}
           </Link>
           <Link href="/recursos" className="btn-secondary !px-6 !py-3">
-            Cómo decide el agente
+            {t("home.closingGuide")}
           </Link>
           <Link href="/recursos/inversionistas" className="btn-secondary !px-6 !py-3">
-            Presentación para inversionistas
+            {t("home.closingInvestors")}
           </Link>
         </div>
       </main>

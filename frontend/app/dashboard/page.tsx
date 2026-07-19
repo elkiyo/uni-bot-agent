@@ -19,15 +19,18 @@ import { Header } from "../components/Header";
 import { useProtocolMetrics, type VaultRow, type VaultStatus } from "@/lib/dashboard/useProtocolMetrics";
 import { bucketByTime, type Granularity } from "@/lib/dashboard/bucket";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 const CHART_COLORS = ["#fcff52", "#4ade80", "#60a5fa", "#f472b6", "#fb923c", "#a78bfa"];
 
-const GRANULARITY_LABELS: Record<Granularity, string> = {
-  day: "Diario",
-  week: "Semanal",
-  month: "Mensual",
-  year: "Anual",
-};
+function granularityLabels(t: ReturnType<typeof useTranslation>["t"]): Record<Granularity, string> {
+  return {
+    day: t("dashboard.granularityDay"),
+    week: t("dashboard.granularityWeek"),
+    month: t("dashboard.granularityMonth"),
+    year: t("dashboard.granularityYear"),
+  };
+}
 
 function usd(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
@@ -40,6 +43,8 @@ export default function DashboardPage() {
   const [chainFilter, setChainFilter] = useState<number | "all">("all");
   const [granularity, setGranularity] = useState<Granularity>("day");
   const metrics = useProtocolMetrics(chainFilter);
+  const { t } = useTranslation();
+  const GRANULARITY_LABELS = granularityLabels(t);
 
   return (
     <>
@@ -47,16 +52,14 @@ export default function DashboardPage() {
       <main className="section flex-1 pb-24 pt-32">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <span className="eyebrow">Protocolo</span>
+            <span className="eyebrow">{t("dashboard.eyebrow")}</span>
             <h1
               className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Dashboard
+              {t("dashboard.title")}
             </h1>
-            <p className="mt-2 max-w-xl text-sm text-muted">
-              Estado del protocolo en tiempo real — leído directo de la cadena, sin backend intermediario.
-            </p>
+            <p className="mt-2 max-w-xl text-sm text-muted">{t("dashboard.subtitle")}</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -64,12 +67,12 @@ export default function DashboardPage() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-positive" />
             </span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">en vivo</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("dashboard.live")}</span>
           </div>
         </div>
 
         <div className="mt-8 flex flex-wrap gap-1.5 rounded-full border border-hairline p-1" style={{ width: "fit-content" }}>
-          <ChainTab label="Todas" active={chainFilter === "all"} onClick={() => setChainFilter("all")} />
+          <ChainTab label={t("dashboard.chainAll")} active={chainFilter === "all"} onClick={() => setChainFilter("all")} />
           {chains.map((c) => (
             <ChainTab key={c.id} label={c.name} active={chainFilter === c.id} onClick={() => setChainFilter(c.id)} />
           ))}
@@ -78,9 +81,7 @@ export default function DashboardPage() {
         {metrics.chainErrors.length > 0 && (
           <div className="glass mt-8 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
             <p className="text-sm font-medium text-negative">
-              No se pudo leer la cadena completa de {metrics.chainErrors.map((e) => e.chainName).join(", ")} — los
-              números de esa red pueden estar incompletos, no son necesariamente cero real. Reintentando
-              automáticamente.
+              {t("dashboard.chainErrorMsg", { chains: metrics.chainErrors.map((e) => e.chainName).join(", ") })}
             </p>
           </div>
         )}
@@ -91,7 +92,7 @@ export default function DashboardPage() {
 
         <div className="mt-10 flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold tracking-tight text-white/90" style={{ fontFamily: "var(--font-display)" }}>
-            Series históricas
+            {t("dashboard.historicalSeries")}
           </h2>
           <div className="flex gap-1.5 rounded-full border border-hairline p-1">
             {(Object.keys(GRANULARITY_LABELS) as Granularity[]).map((g) => (
@@ -124,12 +125,7 @@ export default function DashboardPage() {
           eventsLoading={metrics.eventsLoading}
         />
 
-        <p className="mt-10 max-w-2xl font-mono text-[11px] leading-relaxed text-faint">
-          TVL es un valor en vivo (ledgers + posición abierta al precio actual del pool) — no una serie histórica, para
-          no multiplicar las lecturas on-chain por cada punto del gráfico. Comisiones se valoran al precio actual de
-          ETH, no al precio exacto del momento de cada evento — una aproximación razonable dado el volumen.
-          Rendimiento es comisiones generadas ÷ valor actual del vault — una referencia simple, no un APY anualizado.
-        </p>
+        <p className="mt-10 max-w-2xl font-mono text-[11px] leading-relaxed text-faint">{t("dashboard.footnote")}</p>
       </main>
     </>
   );
@@ -176,6 +172,7 @@ function Stat({
 }
 
 function StatGrid({ metrics }: { metrics: ReturnType<typeof useProtocolMetrics> }) {
+  const { t } = useTranslation();
   const chainBreakdown = (byChain: Record<number, number>, format: (n: number) => string = usd) =>
     metrics.chains.map((c) => `${c.name}: ${format(byChain[c.id] ?? 0)}`).join(" · ");
 
@@ -184,62 +181,67 @@ function StatGrid({ metrics }: { metrics: ReturnType<typeof useProtocolMetrics> 
   return (
     <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Stat
-        label="TVL"
+        label={t("dashboard.statTvl")}
         value={metrics.snapshotLoading ? "…" : usd(metrics.tvlUsd)}
         accent
         sub={chainBreakdown(metrics.tvlByChain)}
       />
       <Stat
-        label="Volumen movido"
+        label={t("dashboard.statVolumeMoved")}
         value={metrics.mintVolumeLoading ? "…" : usd(mintVolumeTotal)}
-        sub="Valor de cada posición armada"
+        sub={t("dashboard.statVolumeSub")}
       />
       <Stat
-        label="Vaults activos"
+        label={t("dashboard.statActiveVaults")}
         value={metrics.snapshotLoading ? "…" : String(metrics.vaultCounts.withPosition)}
-        sub={`${metrics.vaultCounts.total} creados · ${metrics.vaultCounts.closed} cerrados`}
+        sub={t("dashboard.statActiveVaultsSub", {
+          total: metrics.vaultCounts.total,
+          closed: metrics.vaultCounts.closed,
+        })}
       />
       <Stat
-        label="Rebalanceos"
+        label={t("dashboard.statRebalances")}
         value={metrics.snapshotLoading ? "…" : String(metrics.rebalanceCount)}
         sub={chainBreakdown(metrics.rebalanceCountByChain, String)}
       />
       <Stat
-        label="Comisiones al owner"
+        label={t("dashboard.statOwnerFees")}
         value={metrics.eventsLoading ? "…" : usd(metrics.ownerFeesUsd)}
-        sub="Neto, ya descontado el fee de plataforma"
+        sub={t("dashboard.statOwnerFeesSub")}
       />
       <Stat
-        label="Ingresos de plataforma"
+        label={t("dashboard.statPlatformRevenue")}
         value={metrics.eventsLoading ? "…" : usd(metrics.platformFeesUsd)}
-        sub="Performance fee"
+        sub={t("dashboard.statPlatformRevenueSub")}
       />
       <Stat
         label={
           <>
-            Gas reembolsado al <span className="text-accent">agente</span>
+            {t("dashboard.statGasReimbursedPre")}
+            <span className="text-accent">{t("dashboard.statGasReimbursedHighlight")}</span>
           </>
         }
         value={metrics.eventsLoading ? "…" : usd(metrics.gasReimbursedUsd)}
-        sub="Solo Arbitrum — costo real medido on-chain"
+        sub={t("dashboard.statGasReimbursedSub")}
       />
       <Stat
-        label="Capital depositado histórico"
+        label={t("dashboard.statHistoricalDeposits")}
         value={metrics.eventsLoading ? "…" : usd(metrics.depositedTotalUsd)}
-        sub="Suma de todos los Deposited"
+        sub={t("dashboard.statHistoricalDepositsSub")}
       />
     </div>
   );
 }
 
 function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocolMetrics>["poolTypes"] }) {
+  const { t } = useTranslation();
   const data = poolTypes.map((p) => ({ label: p.label, tvl: Number(p.tvlUsd.toFixed(2)), vaults: p.vaultCount }));
   return (
     <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
       <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-        TVL por tipo de pool
+        {t("dashboard.poolTypeTitle")}
       </h2>
-      <p className="mt-1 text-sm text-muted">Par + fee tier + chain — dónde está realmente el capital.</p>
+      <p className="mt-1 text-sm text-muted">{t("dashboard.poolTypeSubtitle")}</p>
       <div className="mt-6" style={{ width: "100%", height: 280 }}>
         <ResponsiveContainer minWidth={200} minHeight={200}>
           <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
@@ -248,7 +250,7 @@ function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocol
             <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
             <Tooltip
               contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
-              formatter={(value: unknown) => [usd(Number(value)), "TVL"]}
+              formatter={(value: unknown) => [usd(Number(value)), t("dashboard.statTvl")]}
             />
             <Bar dataKey="tvl" radius={[6, 6, 0, 0]}>
               {data.map((_, i) => (
@@ -269,6 +271,7 @@ function ChartShell({ title, subtitle, isLoading, empty, children }: {
   empty: boolean;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="glass rounded-2xl p-6 sm:p-8">
       <h3 className="text-base font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
@@ -276,9 +279,9 @@ function ChartShell({ title, subtitle, isLoading, empty, children }: {
       </h3>
       <p className="mt-1 text-sm text-muted">{subtitle}</p>
       {isLoading && (
-        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Escaneando eventos on-chain…</p>
+        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("dashboard.scanning")}</p>
       )}
-      {!isLoading && empty && <p className="mt-8 text-sm text-muted">Todavía no hay datos para graficar.</p>}
+      {!isLoading && empty && <p className="mt-8 text-sm text-muted">{t("dashboard.noDataYet")}</p>}
       {!isLoading && !empty && <div className="mt-6" style={{ width: "100%", height: 240 }}>{children}</div>}
     </div>
   );
@@ -293,16 +296,18 @@ function VolumeSeriesChart({
   granularity: Granularity;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const data = bucketByTime(events, (e) => e.timestamp, (e) => e.usd, granularity).map((b) => ({
     label: b.label,
     value: Number(b.value.toFixed(2)),
   }));
   return (
     <ChartShell
-      title="Volumen"
+      title={t("dashboard.volumeTitle")}
       subtitle={
         <>
-          Valor de cada posición armada por el <span className="text-accent">agente</span>
+          {t("dashboard.volumeSubtitlePre")}
+          <span className="text-accent">{t("dashboard.volumeSubtitleHighlight")}</span>
         </>
       }
       isLoading={isLoading}
@@ -315,7 +320,7 @@ function VolumeSeriesChart({
           <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
           <Tooltip
             contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
-            formatter={(value: unknown) => [usd(Number(value)), "Volumen"]}
+            formatter={(value: unknown) => [usd(Number(value)), t("dashboard.tooltipVolume")]}
           />
           <Bar dataKey="value" fill="#fcff52" radius={[6, 6, 0, 0]} />
         </BarChart>
@@ -333,6 +338,7 @@ function FeesSeriesChart({
   granularity: Granularity;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const owner = bucketByTime(events, (e) => e.timestamp, (e) => e.ownerUsd, granularity);
   const platform = bucketByTime(events, (e) => e.timestamp, (e) => e.platformUsd, granularity);
   const labels = [...new Set([...owner.map((b) => b.label), ...platform.map((b) => b.label)])];
@@ -345,7 +351,7 @@ function FeesSeriesChart({
   }));
 
   return (
-    <ChartShell title="Comisiones" subtitle="Owner (neto) vs. plataforma (performance fee)" isLoading={isLoading} empty={data.length === 0}>
+    <ChartShell title={t("dashboard.feesTitle")} subtitle={t("dashboard.feesSubtitle")} isLoading={isLoading} empty={data.length === 0}>
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
@@ -353,7 +359,10 @@ function FeesSeriesChart({
           <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
           <Tooltip
             contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
-            formatter={(value: unknown, name: unknown) => [usd(Number(value)), name === "owner" ? "Owner" : "Plataforma"]}
+            formatter={(value: unknown, name: unknown) => [
+              usd(Number(value)),
+              name === "owner" ? t("dashboard.tooltipOwner") : t("dashboard.tooltipPlatform"),
+            ]}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar dataKey="owner" stackId="fees" fill="#4ade80" radius={[0, 0, 0, 0]} />
@@ -373,16 +382,18 @@ function RebalanceSeriesChart({
   granularity: Granularity;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const data = bucketByTime(events, (e) => e.timestamp, () => 1, granularity).map((b) => ({
     label: b.label,
     count: b.count,
   }));
   return (
     <ChartShell
-      title="Rebalanceos"
+      title={t("dashboard.rebalancesTitle")}
       subtitle={
         <>
-          Cantidad de rebalanceos ejecutados por el <span className="text-accent">agente</span>
+          {t("dashboard.rebalancesSubtitlePre")}
+          <span className="text-accent">{t("dashboard.rebalancesSubtitleHighlight")}</span>
         </>
       }
       isLoading={isLoading}
@@ -395,7 +406,7 @@ function RebalanceSeriesChart({
           <YAxis stroke="#71717a" fontSize={11} tickLine={false} allowDecimals={false} />
           <Tooltip
             contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
-            formatter={(value: unknown) => [Number(value), "Rebalanceos"]}
+            formatter={(value: unknown) => [Number(value), t("dashboard.tooltipRebalances")]}
           />
           <Area type="monotone" dataKey="count" stroke="#fcff52" fill="#fcff52" fillOpacity={0.25} />
         </AreaChart>
@@ -405,6 +416,7 @@ function RebalanceSeriesChart({
 }
 
 function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolMetrics> }) {
+  const { t } = useTranslation();
   const data = metrics.chains.map((c) => {
     const counts = metrics.vaultCountsByChain[c.id] ?? { total: 0, withPosition: 0, closed: 0 };
     return {
@@ -417,7 +429,12 @@ function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolM
   const empty = data.every((d) => d.activos + d.sinPosicion + d.cerrados === 0);
 
   return (
-    <ChartShell title="Vaults por estado" subtitle="Con posición abierta / creados sin posición / cerrados, por chain" isLoading={metrics.snapshotLoading} empty={empty}>
+    <ChartShell
+      title={t("dashboard.vaultsByStatusTitle")}
+      subtitle={t("dashboard.vaultsByStatusSubtitle")}
+      isLoading={metrics.snapshotLoading}
+      empty={empty}
+    >
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <BarChart data={data} layout="vertical" margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
@@ -425,20 +442,22 @@ function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolM
           <YAxis type="category" dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} width={70} />
           <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="activos" stackId="status" fill="#4ade80" name="Con posición" />
-          <Bar dataKey="sinPosicion" stackId="status" fill="#71717a" name="Sin posición" />
-          <Bar dataKey="cerrados" stackId="status" fill="#3f3f46" name="Cerrados" radius={[0, 6, 6, 0]} />
+          <Bar dataKey="activos" stackId="status" fill="#4ade80" name={t("dashboard.statusWithPosition")} />
+          <Bar dataKey="sinPosicion" stackId="status" fill="#71717a" name={t("dashboard.statusNoPosition")} />
+          <Bar dataKey="cerrados" stackId="status" fill="#3f3f46" name={t("dashboard.statusClosed")} radius={[0, 6, 6, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </ChartShell>
   );
 }
 
-const STATUS_LABEL: Record<VaultStatus, string> = {
-  active: "Activo",
-  no_position: "Sin posición",
-  closed: "Cerrado",
-};
+function statusLabels(t: ReturnType<typeof useTranslation>["t"]): Record<VaultStatus, string> {
+  return {
+    active: t("dashboard.statusActive"),
+    no_position: t("dashboard.statusNoPositionShort"),
+    closed: t("dashboard.statusClosedShort"),
+  };
+}
 const STATUS_CLASS: Record<VaultStatus, string> = {
   active: "bg-positive/10 text-positive",
   no_position: "bg-white/5 text-muted",
@@ -451,9 +470,11 @@ function formatPrice(n: number): string {
   return n.toPrecision(3);
 }
 
-function formatDate(ts: number): string {
+const dateLocale: Record<string, string> = { es: "es", en: "en-US", pt: "pt-BR", zh: "zh-CN" };
+
+function formatDate(ts: number, locale: string): string {
   if (!ts) return "—";
-  return new Date(ts * 1000).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
+  return new Date(ts * 1000).toLocaleString(dateLocale[locale] ?? "es", { dateStyle: "medium", timeStyle: "short" });
 }
 
 function shortHash(hash: string): string {
@@ -527,12 +548,16 @@ function SortableHeader({
  */
 type SortKey = "createdAt" | "valueUsd" | "feesUsd" | "yieldPct";
 
-const SORTABLE_COLUMNS: { key: SortKey; label: string; align: "left" | "right" }[] = [
-  { key: "createdAt", label: "Fecha", align: "left" },
-  { key: "valueUsd", label: "Valor", align: "right" },
-  { key: "feesUsd", label: "Comisiones", align: "right" },
-  { key: "yieldPct", label: "Rendimiento", align: "right" },
-];
+function sortableColumns(
+  t: ReturnType<typeof useTranslation>["t"],
+): { key: SortKey; label: string; align: "left" | "right" }[] {
+  return [
+    { key: "createdAt", label: t("dashboard.colDate"), align: "left" },
+    { key: "valueUsd", label: t("dashboard.colValue"), align: "right" },
+    { key: "feesUsd", label: t("dashboard.colFees"), align: "right" },
+    { key: "yieldPct", label: t("dashboard.colYield"), align: "right" },
+  ];
+}
 
 function VaultHistoryTable({
   rows,
@@ -546,6 +571,9 @@ function VaultHistoryTable({
   eventsLoading: boolean;
 }) {
   const { setSelectedChainId } = useSelectedChain();
+  const { t, locale } = useTranslation();
+  const SORTABLE_COLUMNS = sortableColumns(t);
+  const STATUS_LABEL = statusLabels(t);
   const [statusFilter, setStatusFilter] = useState<VaultStatus | "all">("all");
   const [chainFilter, setChainFilter] = useState<string>("all");
   const [poolFilter, setPoolFilter] = useState<string>("all");
@@ -578,19 +606,16 @@ function VaultHistoryTable({
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-        Historial de vaults
+        {t("dashboard.historyTitle")}
       </h2>
-      <p className="mt-1 text-sm text-muted">
-        Cada vault creado en el protocolo, del más reciente al más antiguo — leído directo de VaultCreated. Filtrá
-        directo desde el encabezado de Chain, Pool, Versión o Estado.
-      </p>
+      <p className="mt-1 text-sm text-muted">{t("dashboard.historySubtitle")}</p>
 
       {isLoading && rows.length === 0 && (
-        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Escaneando eventos on-chain…</p>
+        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("dashboard.scanning")}</p>
       )}
-      {!isLoading && rows.length === 0 && <p className="mt-8 text-sm text-muted">Todavía no se creó ningún vault.</p>}
+      {!isLoading && rows.length === 0 && <p className="mt-8 text-sm text-muted">{t("dashboard.noVaultsYet")}</p>}
       {rows.length > 0 && filteredRows.length === 0 && (
-        <p className="mt-8 text-sm text-muted">Ningún vault coincide con estos filtros.</p>
+        <p className="mt-8 text-sm text-muted">{t("dashboard.noneMatchFilters")}</p>
       )}
 
       {filteredRows.length > 0 && (
@@ -602,38 +627,38 @@ function VaultHistoryTable({
                 <FilterHeader
                   value={chainFilter}
                   onChange={setChainFilter}
-                  options={[{ value: "all", label: "Chain" }, ...chainOptions.map(([id, name]) => ({ value: id, label: name }))]}
+                  options={[{ value: "all", label: t("dashboard.colChain") }, ...chainOptions.map(([id, name]) => ({ value: id, label: name }))]}
                 />
                 <FilterHeader
                   value={poolFilter}
                   onChange={setPoolFilter}
-                  options={[{ value: "all", label: "Pool" }, ...poolOptions.map((p) => ({ value: p, label: p }))]}
+                  options={[{ value: "all", label: t("dashboard.colPool") }, ...poolOptions.map((p) => ({ value: p, label: p }))]}
                 />
                 <FilterHeader
                   value={versionFilter}
                   onChange={setVersionFilter}
-                  options={[{ value: "all", label: "Versión" }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
+                  options={[{ value: "all", label: t("dashboard.colVersion") }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
                 />
-                <th className="px-4 py-3 font-normal">Rango</th>
+                <th className="px-4 py-3 font-normal">{t("dashboard.colRange")}</th>
                 <SortableHeader column={SORTABLE_COLUMNS[1]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[2]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                <th className="px-4 py-3 font-normal text-right">Rebalanceos</th>
+                <th className="px-4 py-3 font-normal text-right">{t("dashboard.colRebalances")}</th>
                 <FilterHeader
                   value={statusFilter}
                   onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
                   options={[
-                    { value: "all", label: "Estado" },
+                    { value: "all", label: t("dashboard.colStatus") },
                     ...(["active", "no_position", "closed"] as VaultStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] })),
                   ]}
                 />
-                <th className="px-4 py-3 font-normal">Hash</th>
+                <th className="px-4 py-3 font-normal">{t("dashboard.colHash")}</th>
               </tr>
             </thead>
             <tbody>
               {filteredRows.map((row) => (
                 <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-white/[0.02]">
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt, locale)}</td>
                   <td className="whitespace-nowrap px-4 py-3">{row.chain.name}</td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <Link

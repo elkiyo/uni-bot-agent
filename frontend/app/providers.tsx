@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi";
 import { SelectedChainProvider } from "@/lib/useSelectedChain";
+import { LanguageProvider } from "@/lib/i18n/LanguageProvider";
 
 const queryClient = new QueryClient();
 
@@ -20,7 +21,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={theme}>
-          <SelectedChainProvider>{children}</SelectedChainProvider>
+          <LanguageProvider>
+            <SelectedChainProvider>{children}</SelectedChainProvider>
+          </LanguageProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

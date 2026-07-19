@@ -4,22 +4,25 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-
-const links = [
-  { href: "/vaults", label: "Mis vaults" },
-  { href: "/create", label: "Crear vault" },
-  { href: "/dashboard", label: "Dashboard" },
-];
-
-const resourceLinks = [
-  { href: "/recursos", label: "Guías" },
-  { href: "/recursos/inversionistas", label: "Para inversionistas" },
-  { href: "/docs", label: "Doc" },
-  { href: "/admin", label: "Operaciones" },
-];
+import { useTranslation } from "@/lib/i18n/useTranslation";
+import { LOCALES } from "@/lib/i18n/locales";
 
 export function Header() {
   const pathname = usePathname();
+  const { t } = useTranslation();
+
+  const links = [
+    { href: "/vaults", label: t("header.navVaults") },
+    { href: "/create", label: t("header.navCreate") },
+    { href: "/dashboard", label: t("header.navDashboard") },
+  ];
+
+  const resourceLinks = [
+    { href: "/recursos", label: t("header.resourceGuides") },
+    { href: "/recursos/inversionistas", label: t("header.resourceInvestors") },
+    { href: "/docs", label: t("header.resourceDocs") },
+    { href: "/admin", label: t("header.resourceAdmin") },
+  ];
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-hairline bg-background/80 backdrop-blur-xl">
@@ -52,11 +55,12 @@ export function Header() {
                 {label}
               </Link>
             ))}
-            <ResourcesMenu pathname={pathname} />
+            <ResourcesMenu pathname={pathname} resourceLinks={resourceLinks} />
           </nav>
         </div>
 
         <div className="flex items-center gap-3">
+          <LanguageMenu />
           <ConnectButton showBalance={false} chainStatus="icon" />
         </div>
       </div>
@@ -64,10 +68,81 @@ export function Header() {
   );
 }
 
-function ResourcesMenu({ pathname }: { pathname: string }) {
+function LanguageMenu() {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { locale, setLocale } = useTranslation();
+  const current = LOCALES.find((l) => l.code === locale) ?? LOCALES[0];
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label="Idioma"
+        className="flex h-9 items-center gap-1.5 rounded-full border border-hairline bg-white/[0.02] px-3 text-sm text-white/70 transition-colors hover:text-white"
+      >
+        <span>{current.flag}</span>
+        <span className="font-mono text-[11px] uppercase tracking-wide">{current.code}</span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 top-full z-10 mt-2 w-36 rounded-xl border border-hairline p-1.5 shadow-2xl shadow-black/60"
+          style={{ backgroundColor: "#0a0a0a" }}
+        >
+          {LOCALES.map((l) => (
+            <button
+              key={l.code}
+              type="button"
+              onClick={() => {
+                setLocale(l.code);
+                setOpen(false);
+              }}
+              className={
+                l.code === locale
+                  ? "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-accent"
+                  : "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-white/70 transition-colors hover:bg-white/5 hover:text-white"
+              }
+            >
+              <span>{l.flag}</span>
+              <span>{l.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResourcesMenu({
+  pathname,
+  resourceLinks,
+}: {
+  pathname: string;
+  resourceLinks: { href: string; label: string }[];
+}) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const isActive = resourceLinks.some((l) => l.href === pathname);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!open) return;
@@ -97,7 +172,7 @@ function ResourcesMenu({ pathname }: { pathname: string }) {
             : "flex items-center gap-1 text-sm text-white/60 transition-colors hover:text-white"
         }
       >
-        Recursos
+        {t("header.resources")}
         <svg
           width="10"
           height="10"

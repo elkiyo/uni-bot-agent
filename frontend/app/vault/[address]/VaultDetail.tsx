@@ -24,6 +24,7 @@ import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { useSelectedChain } from "@/lib/useSelectedChain";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 const reads = (address: `0x${string}`, chainId: number, vaultAbi: ChainDef["vaultAbi"]) =>
   [
@@ -58,6 +59,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { switchChainAsync } = useSwitchChain();
+  const { t } = useTranslation();
 
   // 15s polling keeps the stats live while the keeper acts — the page is a demo
   // surface as much as a control panel.
@@ -183,7 +185,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, 6));
   const rentLabel =
     feesUsdTotal !== undefined && initialInvestmentUsd > 0
-      ? `${((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2)}% rent.`
+      ? t("vaults.returnLabel", { pct: ((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2) })
       : undefined;
 
   const isOwner = Boolean(
@@ -257,7 +259,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         try {
           await switchChainAsync({ chainId: chain.id });
         } catch {
-          setError(`Cambiá tu wallet a ${chain.name} para continuar.`);
+          setError(t("vaultDetail.errSwitchChain", { chain: chain.name }));
           return;
         }
       }
@@ -288,9 +290,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     if (maxDepositUsd > 0n && currentTotal + total > maxDepositUsd) {
       const room = maxDepositUsd > currentTotal ? maxDepositUsd - currentTotal : 0n;
       setCapAlert(
-        `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol} y este vault ya tiene ` +
-          `${formatUnits(currentTotal, 6)} ${chain.stableSymbol} comprometidos — quedan ${formatUnits(room, 6)} ${chain.stableSymbol} de margen. ` +
-          `Reducí el monto.`,
+        t("vaultDetail.capAlertMsg", {
+          cap: formatUnits(maxDepositUsd, 6),
+          symbol: chain.stableSymbol,
+          current: formatUnits(currentTotal, 6),
+          room: formatUnits(room, 6),
+        }),
       );
       return;
     }
@@ -298,7 +303,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // If this vault never had a successful deposit() yet, this call IS the
     // first one — deposit() pulls PlatformConfig's one-time creationFeeUsdt
     // on top, so the approval has to cover it too (see RangeVault.sol).
-    await withTx("Aprobando", () =>
+    await withTx(t("vaultDetail.txApproving"), () =>
       writeContractAsync({
         address: chain.stableToken,
         abi: erc20Abi,
@@ -307,7 +312,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         chainId: chain.id,
       }),
     );
-    await withTx("Depositando", () =>
+    await withTx(t("vaultDetail.txDepositing"), () =>
       writeContractAsync({
         address,
         abi: chain.vaultAbi,
@@ -334,7 +339,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       const lowerPrice = Number(cfgMinPrice);
       const upperPrice = Number(cfgMaxPrice);
       if (!(lowerPrice > 0) || !(upperPrice > lowerPrice)) {
-        setError("El precio máximo debe ser mayor al mínimo, ambos positivos");
+        setError(t("vaultDetail.errPriceRange"));
         return;
       }
       const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice, chain.stableIsToken0), Number(tickSpacing));
@@ -347,7 +352,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
     }
 
-    await withTx("Reconfigurando", () =>
+    await withTx(t("vaultDetail.txReconfiguring"), () =>
       writeContractAsync({
         address,
         abi: chain.vaultAbi,
@@ -395,7 +400,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       ? BigInt(riskMaxRangeDeviationTicks)
       : ((maxRangeDeviationBps as bigint) || 5_000n);
 
-    await withTx("Fijando límites de riesgo", () =>
+    await withTx(t("vaultDetail.txSettingRisk"), () =>
       writeContractAsync({
         address,
         abi: chain.vaultAbi,
@@ -410,7 +415,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     const usdtAmount = parseUnits(increaseAmount || "0", 6);
     if (usdtAmount === 0n) return;
     if (!positionTicks || currentTick === undefined) {
-      setError("Todavía no se pudo leer el rango actual de la posición — probá de nuevo en un momento.");
+      setError(t("vaultDetail.errNoRange"));
       return;
     }
 
@@ -436,7 +441,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       stableIsToken0: chain.stableIsToken0,
     });
 
-    await withTx("Aprobando", () =>
+    await withTx(t("vaultDetail.txApproving"), () =>
       writeContractAsync({
         address: chain.stableToken,
         abi: erc20Abi,
@@ -445,7 +450,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         chainId: chain.id,
       }),
     );
-    await withTx("Sumando a la posición", () =>
+    await withTx(t("vaultDetail.txIncreasing"), () =>
       writeContractAsync({
         address,
         abi: chain.vaultAbi,
@@ -472,10 +477,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     const fundsShareBps = BigInt(Math.round(Number(withdrawFundsPct || "0") * 100));
     if (positionShareBps === 0n && fundsShareBps === 0n) return;
     if (positionShareBps > 10_000n || fundsShareBps > 10_000n) {
-      setError("Los porcentajes no pueden superar 100%");
+      setError(t("vaultDetail.errPctOver100"));
       return;
     }
-    await withTx("Retirando", () =>
+    await withTx(t("vaultDetail.txWithdrawing"), () =>
       writeContractAsync({
         address,
         abi: chain.vaultAbi,
@@ -491,36 +496,39 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   return (
     <>
       {capAlert && (
-        <AlertModal title="Supera el tope de depósito" message={capAlert} onClose={() => setCapAlert(null)} />
+        <AlertModal title={t("vaultDetail.capAlertTitle")} message={capAlert} onClose={() => setCapAlert(null)} />
       )}
       <Header />
       <main className="section flex-1 pb-24 pt-32">
         <div className="flex flex-wrap items-center gap-3">
           <span className="eyebrow">
-            Vault · {chain.stableSymbol}/{chain.volatileSymbol} {feeTier / 10_000}%
+            {t("vaultDetail.eyebrow", {
+              pair: `${chain.stableSymbol}/${chain.volatileSymbol}`,
+              fee: feeTier / 10_000,
+            })}
           </span>
           {paused ? (
-            <span className="eyebrow !border-negative/40 !text-negative">Pausado</span>
+            <span className="eyebrow !border-negative/40 !text-negative">{t("vaultDetail.paused")}</span>
           ) : (
-            <span className="eyebrow !border-positive/40 !text-positive">Activo</span>
+            <span className="eyebrow !border-positive/40 !text-positive">{t("vaultDetail.active")}</span>
           )}
           {hasPosition ? (
-            <span className="eyebrow !border-accent/40 !text-accent">Posición #{String(positionTokenId)}</span>
+            <span className="eyebrow !border-accent/40 !text-accent">
+              {t("vaultDetail.positionLabel", { id: String(positionTokenId) })}
+            </span>
           ) : (
-            <span className="eyebrow">Sin posición aún</span>
+            <span className="eyebrow">{t("vaultDetail.noPositionYet")}</span>
           )}
         </div>
 
         <h1 className="mt-5 break-all font-mono text-lg text-white/90 sm:text-xl">{address}</h1>
         <p className="mt-2 text-sm text-muted">
-          {isOwner ? "Sos el owner de este vault." : "Vista de solo lectura — no sos el owner."}
+          {isOwner ? t("vaultDetail.ownerNote") : t("vaultDetail.readOnlyNote")}
         </p>
 
         {rebalanceAlert && (
           <div className="glass mt-6 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
-            <p className="text-sm font-medium text-negative">
-              El último rebalanceo no se pudo completar — no se pudo consultar la API de precios (uni-lab).
-            </p>
+            <p className="text-sm font-medium text-negative">{t("vaultDetail.rebalanceFailedTitle")}</p>
             <p className="mt-1 text-xs text-negative/80">{rebalanceAlert.message}</p>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-negative/60">
               {new Date(rebalanceAlert.createdAt).toLocaleString()}
@@ -530,7 +538,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
         {!data && (
           <div className="glass mt-10 rounded-2xl p-10 text-center">
-            <p className="text-muted">Cargando…</p>
+            <p className="text-muted">{t("vaultDetail.loading")}</p>
           </div>
         )}
 
@@ -539,37 +547,43 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             {/* Stats */}
             <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
-                label="Capital invertible"
+                label={t("vaultDetail.statInvestable")}
                 value={`${formatUnits((investableUsdt as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
                 hint={
                   (idleWeth as bigint | undefined) && (idleWeth as bigint) > 0n
-                    ? `+ ${Number(formatUnits(idleWeth as bigint, 18)).toFixed(6)} ${chain.volatileSymbol} suelto${
-                        currentTick !== undefined
-                          ? ` (~$${(Number(idleWeth as bigint) * 1e-18 * ethPriceFromTick(currentTick, chain.stableIsToken0)).toFixed(2)})`
-                          : ""
-                      }`
+                    ? t("vaultDetail.idleWethHint", {
+                        amount: Number(formatUnits(idleWeth as bigint, 18)).toFixed(6),
+                        symbol: chain.volatileSymbol,
+                        usdSuffix:
+                          currentTick !== undefined
+                            ? ` (~$${(Number(idleWeth as bigint) * 1e-18 * ethPriceFromTick(currentTick, chain.stableIsToken0)).toFixed(2)})`
+                            : "",
+                      })
                     : undefined
                 }
               />
               <Stat
-                label="Reserva reinyección"
+                label={t("vaultDetail.statReserve")}
                 value={`${formatUnits((reserveBalance as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
-                hint={`tope por ciclo: ${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
+                hint={t("vaultDetail.reserveHint", {
+                  amount: formatUnits((reinjectionAmount as bigint) ?? 0n, 6),
+                  symbol: chain.stableSymbol,
+                })}
               />
               {chain.supportsGasReserve && (
                 <Stat
-                  label="Presupuesto de gas"
+                  label={t("vaultDetail.statGasBudget")}
                   value={`${formatUnits(gasReserveBalance, 6)} ${chain.stableSymbol}`}
-                  hint="Se descuenta en cada rebalanceo — si llega a 0, el agente sigue operando pero no le reembolsa nada al operador"
+                  hint={t("vaultDetail.gasBudgetHint")}
                 />
               )}
               <Stat
-                label="Rebalanceos"
+                label={t("vaultDetail.statRebalances")}
                 value={`${rebalanceCount ?? 0} / ${maxRebalances ?? 0}`}
                 accent
               />
               <Stat
-                label="Comisiones generadas"
+                label={t("vaultDetail.statFees")}
                 value={
                   feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} ${chain.stableSymbol}`
                 }
@@ -588,7 +602,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                  Rango objetivo
+                  {t("vaultDetail.targetRange")}
                 </span>
                 {targetConfigured ? (
                   <>
@@ -604,16 +618,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       })()}
                     </p>
                     {Number(targetTickLower) > Number(targetTickUpper) && (
-                      <p className="mt-1 text-xs text-negative">
-                        Ticks invertidos on-chain — usá &quot;Reconfigurar agente&quot; para corregir
-                      </p>
+                      <p className="mt-1 text-xs text-negative">{t("vaultDetail.invertedTicksWarning")}</p>
                     )}
                     <p className="mt-1.5 font-mono text-[11px] text-faint">
                       ticks [{String(targetTickLower)}, {String(targetTickUpper)}]
                     </p>
                   </>
                 ) : (
-                  <p className="mt-2 text-sm text-white/90">sin configurar</p>
+                  <p className="mt-2 text-sm text-white/90">{t("vaultDetail.notConfigured")}</p>
                 )}
               </div>
 
@@ -631,7 +643,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                  Operador
+                  {t("vaultDetail.operator")}
                 </span>
                 <p className="mt-2 break-all font-mono text-sm text-white/90">{String(operator)}</p>
               </div>
@@ -640,34 +652,38 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             {/* Vault configuration — what was set at create/reconfigure time */}
             <div className="glass mt-4 rounded-2xl p-5">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                Configuración del <span className="text-accent">agente</span>
+                {t("vaultDetail.agentConfigPre")}
+                <span className="text-accent">{t("vaultDetail.agentConfigHighlight")}</span>
               </span>
               <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
                 <ConfigRow
-                  k="Reinyección alternada"
+                  k={t("vaultDetail.configReinjection")}
                   v={`${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
                 />
                 <ConfigRow
-                  k="Rebalanceo periódico"
+                  k={t("vaultDetail.configPeriodic")}
                   v={
                     periodicRebalanceInterval && (periodicRebalanceInterval as bigint) > 0n
-                      ? `cada ${Number(periodicRebalanceInterval) / 3600}h`
-                      : "desactivado"
+                      ? t("vaultDetail.configPeriodicEvery", { hours: Number(periodicRebalanceInterval) / 3600 })
+                      : t("vaultDetail.configOff")
                   }
                 />
                 <ConfigRow
-                  k="Cooldown mínimo"
+                  k={t("vaultDetail.configCooldown")}
                   v={
                     minRebalanceInterval && (minRebalanceInterval as bigint) > 0n
                       ? `${Number(minRebalanceInterval) / 3600}h`
-                      : "sin piso"
+                      : t("vaultDetail.configNoFloor")
                   }
                 />
-                <ConfigRow k="Slippage máx." v={`${Number(maxSlippageBps ?? 0n) / 100}%`} />
-                <ConfigRow k="Desviación máx. de rango" v={`${maxRangeDeviationBps ?? 0} ticks`} />
-                <ConfigRow k="Margen de recentrado" v={`${Number(recenterMarginBps ?? 0n) / 100}%`} />
-                <ConfigRow k="Margen techo (salida arriba)" v={`${Number(exitTopCeilingMarginBps ?? 0n) / 100}%`} />
-                <ConfigRow k="Tope de rebalanceos" v={`${maxRebalances ?? 0}`} />
+                <ConfigRow k={t("vaultDetail.configMaxSlippage")} v={`${Number(maxSlippageBps ?? 0n) / 100}%`} />
+                <ConfigRow k={t("vaultDetail.configMaxDeviation")} v={`${maxRangeDeviationBps ?? 0} ticks`} />
+                <ConfigRow k={t("vaultDetail.configRecenterMargin")} v={`${Number(recenterMarginBps ?? 0n) / 100}%`} />
+                <ConfigRow
+                  k={t("vaultDetail.configTopMargin")}
+                  v={`${Number(exitTopCeilingMarginBps ?? 0n) / 100}%`}
+                />
+                <ConfigRow k={t("vaultDetail.configMaxRebalances")} v={`${maxRebalances ?? 0}`} />
               </dl>
             </div>
 
@@ -678,111 +694,113 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   className="text-xl font-semibold tracking-tight"
                   style={{ fontFamily: "var(--font-display)" }}
                 >
-                  Gestión
+                  {t("vaultDetail.managementTitle")}
                 </h2>
-                <p className="mt-1 text-sm text-muted">Solo el owner puede ejecutar estas acciones.</p>
+                <p className="mt-1 text-sm text-muted">{t("vaultDetail.managementSubtitle")}</p>
 
                 <div className="mt-6">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Depositar {chain.stableSymbol} (repartido entre capital invertible y reserva de reinyección)
+                    {t("vaultDetail.depositLabel", { symbol: chain.stableSymbol })}
                   </span>
                   {pendingCreationFee > 0n && (
                     <p className="mt-1 text-xs text-faint">
-                      Este vault todavía no pagó el fee de creación — se suma {formatUnits(pendingCreationFee, 6)}{" "}
-                      {chain.stableSymbol} arriba de lo que pongas acá, una sola vez.
+                      {t("vaultDetail.pendingFeeNote", {
+                        fee: formatUnits(pendingCreationFee, 6),
+                        symbol: chain.stableSymbol,
+                      })}
                     </p>
                   )}
                   {maxDepositUsd > 0n && (
                     <p className="mt-1 text-xs text-faint">
-                      Tope de la plataforma: {formatUnits(maxDepositUsd, 6)} {chain.stableSymbol} — quedan{" "}
-                      {formatUnits(
-                        maxDepositUsd >
-                          ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance
-                          ? maxDepositUsd -
-                              (((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance)
-                          : 0n,
-                        6,
-                      )}{" "}
-                      {chain.stableSymbol} de margen.
+                      {t("vaultDetail.platformCapNote", {
+                        cap: formatUnits(maxDepositUsd, 6),
+                        symbol: chain.stableSymbol,
+                        room: formatUnits(
+                          maxDepositUsd >
+                            ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance
+                            ? maxDepositUsd -
+                                (((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance)
+                            : 0n,
+                          6,
+                        ),
+                      })}
                     </p>
                   )}
                   <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <MiniField label="Invertible" value={depInvestable} onChange={setDepInvestable} />
-                    <MiniField label="Reserva" value={depReserve} onChange={setDepReserve} />
+                    <MiniField label={t("vaultDetail.fieldInvestable")} value={depInvestable} onChange={setDepInvestable} />
+                    <MiniField label={t("vaultDetail.fieldReserve")} value={depReserve} onChange={setDepReserve} />
                     {chain.supportsGasReserve && (
-                      <MiniField label="Presupuesto de gas" value={depGasReserve} onChange={setDepGasReserve} />
+                      <MiniField label={t("vaultDetail.fieldGasBudget")} value={depGasReserve} onChange={setDepGasReserve} />
                     )}
                     <button onClick={handleDepositMore} disabled={Boolean(busy)} className="btn-primary !py-3">
-                      Depositar
+                      {t("vaultDetail.deposit")}
                     </button>
                   </div>
                 </div>
 
                 <div className="mt-8">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Reconfigurar <span className="text-accent">agente</span>
+                    {t("vaultDetail.reconfigureLabelPre")}
+                    <span className="text-accent">{t("vaultDetail.reconfigureLabelHighlight")}</span>
                   </span>
                   <p className="mt-1 text-xs text-faint">
                     {targetConfigured
-                      ? "Dejá precio mínimo/máximo vacíos para mantener el rango actual, o completalos para fijar uno nuevo (también actualiza los límites de riesgo)."
-                      : "Este vault todavía no tiene rango — completá precio mínimo y máximo para terminar de configurarlo."}
+                      ? t("vaultDetail.reconfigureHintConfigured")
+                      : t("vaultDetail.reconfigureHintUnconfigured")}
                   </p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <MiniField label="Precio mínimo (USD)" value={cfgMinPrice} onChange={setCfgMinPrice} />
-                    <MiniField label="Precio máximo (USD)" value={cfgMaxPrice} onChange={setCfgMaxPrice} />
+                    <MiniField label={t("vaultDetail.fieldMinPriceUsd")} value={cfgMinPrice} onChange={setCfgMinPrice} />
+                    <MiniField label={t("vaultDetail.fieldMaxPriceUsd")} value={cfgMaxPrice} onChange={setCfgMaxPrice} />
                     <MiniField
-                      label={`Tope rebalanceos (hoy: ${maxRebalances ?? "…"})`}
+                      label={t("vaultDetail.fieldMaxRebalancesToday", { n: maxRebalances !== undefined ? String(maxRebalances) : "…" })}
                       value={cfgMaxRebalances}
                       onChange={setCfgMaxRebalances}
                     />
                     <MiniField
-                      label={`Reinyección (${chain.stableSymbol})`}
+                      label={t("vaultDetail.fieldReinjectionSymbol", { symbol: chain.stableSymbol })}
                       value={cfgReinjection}
                       onChange={setCfgReinjection}
                     />
-                    <MiniField label="Periódico (horas)" value={cfgPeriodicHours} onChange={setCfgPeriodicHours} />
+                    <MiniField label={t("vaultDetail.fieldPeriodicHours")} value={cfgPeriodicHours} onChange={setCfgPeriodicHours} />
                     <MiniField
-                      label={`Margen recentrado % (hoy: ${Number(recenterMarginBps ?? 500n) / 100})`}
+                      label={t("vaultDetail.fieldRecenterMarginToday", { n: Number(recenterMarginBps ?? 500n) / 100 })}
                       value={cfgRecenterMarginPct}
                       onChange={setCfgRecenterMarginPct}
                     />
                     <MiniField
-                      label={`Margen techo salida arriba % (hoy: ${Number(exitTopCeilingMarginBps ?? 300n) / 100})`}
+                      label={t("vaultDetail.fieldTopMarginToday", { n: Number(exitTopCeilingMarginBps ?? 300n) / 100 })}
                       value={cfgExitTopCeilingMarginPct}
                       onChange={setCfgExitTopCeilingMarginPct}
                     />
                     <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
-                      Actualizar
+                      {t("vaultDetail.update")}
                     </button>
                   </div>
                 </div>
 
                 <div className="mt-8">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Límites de riesgo
+                    {t("vaultDetail.riskLimitsLabel")}
                   </span>
-                  <p className="mt-1 text-xs text-faint">
-                    Dejá cualquiera en blanco para mantener su valor actual. Se aplican solos al fijar un rango
-                    nuevo arriba, o podés actualizarlos acá sin tocar el rango.
-                  </p>
+                  <p className="mt-1 text-xs text-faint">{t("vaultDetail.riskLimitsHint")}</p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField
-                      label={`Slippage máx. % (hoy: ${Number(maxSlippageBps ?? 30n) / 100})`}
+                      label={t("vaultDetail.fieldMaxSlippageToday", { n: Number(maxSlippageBps ?? 30n) / 100 })}
                       value={riskMaxSlippagePct}
                       onChange={setRiskMaxSlippagePct}
                     />
                     <MiniField
-                      label={`Cooldown mín. horas (hoy: ${Number(minRebalanceInterval ?? 0n) / 3600})`}
+                      label={t("vaultDetail.fieldCooldownToday", { n: Number(minRebalanceInterval ?? 0n) / 3600 })}
                       value={riskMinCooldownHours}
                       onChange={setRiskMinCooldownHours}
                     />
                     <MiniField
-                      label={`Desviación máx. ticks (hoy: ${maxRangeDeviationBps ?? 5_000n})`}
+                      label={t("vaultDetail.fieldMaxDeviationToday", { n: maxRangeDeviationBps !== undefined ? String(maxRangeDeviationBps) : "5000" })}
                       value={riskMaxRangeDeviationTicks}
                       onChange={setRiskMaxRangeDeviationTicks}
                     />
                     <button onClick={handleUpdateRiskParams} disabled={Boolean(busy)} className="btn-secondary !py-3">
-                      Actualizar
+                      {t("vaultDetail.update")}
                     </button>
                   </div>
                 </div>
@@ -790,15 +808,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 {hasPosition && (
                   <div className="mt-8">
                     <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                      Sumar a la posición abierta
+                      {t("vaultDetail.increasePositionLabel")}
                     </span>
-                    <p className="mt-1 text-xs text-faint">
-                      Entra a la posición actual al instante, sin esperar al próximo rebalanceo del agente — se
-                      calcula acá mismo el swap necesario para respetar el rango vigente.
-                    </p>
+                    <p className="mt-1 text-xs text-faint">{t("vaultDetail.increasePositionHint")}</p>
                     <div className="mt-2 flex flex-wrap items-end gap-3">
                       <MiniField
-                        label={`Monto (${chain.stableSymbol})`}
+                        label={t("vaultDetail.fieldAmountSymbol", { symbol: chain.stableSymbol })}
                         value={increaseAmount}
                         onChange={setIncreaseAmount}
                       />
@@ -807,7 +822,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                         disabled={Boolean(busy)}
                         className="btn-secondary !py-3"
                       >
-                        Sumar a la posición
+                        {t("vaultDetail.addToPosition")}
                       </button>
                     </div>
                   </div>
@@ -815,25 +830,22 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 <div className="mt-8">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Retiro parcial
+                    {t("vaultDetail.partialWithdrawLabel")}
                   </span>
-                  <p className="mt-1 text-xs text-faint">
-                    Independiente entre sí — retirá un % de la posición activa, un % de los fondos idle
-                    (invertible + reserva), o ambos, sin cerrar el vault.
-                  </p>
+                  <p className="mt-1 text-xs text-faint">{t("vaultDetail.partialWithdrawHint")}</p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField
-                      label="% de la posición"
+                      label={t("vaultDetail.fieldPositionPct")}
                       value={withdrawPositionPct}
                       onChange={setWithdrawPositionPct}
                     />
-                    <MiniField label="% de fondos idle" value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
+                    <MiniField label={t("vaultDetail.fieldIdleFundsPct")} value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
                     <button
                       onClick={handlePartialWithdraw}
                       disabled={Boolean(busy)}
                       className="btn-secondary !py-3"
                     >
-                      Retirar parcial
+                      {t("vaultDetail.partialWithdraw")}
                     </button>
                   </div>
                 </div>
@@ -841,7 +853,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 <div className="mt-6 flex flex-wrap gap-3">
                   <button
                     onClick={() =>
-                      withTx("Reclamando comisiones", () =>
+                      withTx(t("vaultDetail.txCollectingFees"), () =>
                         writeContractAsync({
                           address,
                           abi: chain.vaultAbi,
@@ -855,15 +867,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     className="btn-secondary"
                     title={
                       hasPosition
-                        ? "Cobra solo las comisiones de trading acumuladas — la posición sigue abierta, sin tocar el principal"
-                        : "No hay posición abierta todavía"
+                        ? t("vaultDetail.collectFeesTooltipEnabled")
+                        : t("vaultDetail.collectFeesTooltipDisabled")
                     }
                   >
-                    Reclamar comisiones
+                    {t("vaultDetail.collectFees")}
                   </button>
                   <button
                     onClick={() =>
-                      withTx("Retirando", () =>
+                      withTx(t("vaultDetail.txWithdrawing"), () =>
                         writeContractAsync({
                           address,
                           abi: chain.vaultAbi,
@@ -876,11 +888,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     disabled={Boolean(busy)}
                     className="btn-secondary"
                   >
-                    Retirar todo
+                    {t("vaultDetail.withdrawAll")}
                   </button>
                   <button
                     onClick={() =>
-                      withTx(paused ? "Reanudando" : "Pausando", () =>
+                      withTx(paused ? t("vaultDetail.txResuming") : t("vaultDetail.txPausing"), () =>
                         writeContractAsync({
                           address,
                           abi: chain.vaultAbi,
@@ -893,11 +905,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     disabled={Boolean(busy)}
                     className="btn-secondary"
                   >
-                    {paused ? "Reanudar" : "Pausar"}
+                    {paused ? t("vaultDetail.resume") : t("vaultDetail.pause")}
                   </button>
                   <button
                     onClick={() =>
-                      withTx("Revocando operador", () =>
+                      withTx(t("vaultDetail.txRevoking"), () =>
                         writeContractAsync({
                           address,
                           abi: chain.vaultAbi,
@@ -910,11 +922,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     disabled={Boolean(busy)}
                     className="btn-secondary"
                   >
-                    Revocar operador
+                    {t("vaultDetail.revokeOperator")}
                   </button>
                   <button
                     onClick={() =>
-                      withTx("Retiro de emergencia", () =>
+                      withTx(t("vaultDetail.txEmergency"), () =>
                         writeContractAsync({
                           address,
                           abi: chain.vaultAbi,
@@ -927,12 +939,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     disabled={Boolean(busy)}
                     className="btn-danger"
                   >
-                    Emergency withdraw
+                    {t("vaultDetail.emergencyWithdraw")}
                   </button>
                   {!closed && (
                     <button
                       onClick={() =>
-                        withTx("Cerrando vault", () =>
+                        withTx(t("vaultDetail.txClosing"), () =>
                           writeContractAsync({
                             address,
                             abi: chain.vaultAbi,
@@ -944,21 +956,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       }
                       disabled={Boolean(busy)}
                       className="btn-danger"
-                      title="Solo funciona si el vault ya está vacío — retirá todo primero"
+                      title={t("vaultDetail.closeVaultTooltip")}
                     >
-                      Cerrar vault
+                      {t("vaultDetail.closeVaultBtn")}
                     </button>
                   )}
                 </div>
                 {Boolean(closed) && (
                   <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-negative">
-                    Vault cerrado permanentemente — ya no puede recibir depósitos ni operar.
+                    {t("vaultDetail.closedNote")}
                   </p>
                 )}
 
                 {busy && (
                   <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    {busy}… firmá en tu wallet
+                    {t("vaultDetail.signing", { action: busy })}
                   </p>
                 )}
                 {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}

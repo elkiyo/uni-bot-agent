@@ -6,6 +6,9 @@ import { formatUnits, parseEventLogs, type Log } from "viem";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { getLogsChunked } from "@/lib/getLogsChunked";
 import type { ChainDef } from "@/lib/chains";
+import { useTranslation } from "@/lib/i18n/useTranslation";
+
+const dateLocale: Record<string, string> = { es: "es", en: "en-US", pt: "pt-BR", zh: "zh-CN" };
 
 interface OpenEvent {
   tokenId: bigint;
@@ -42,6 +45,7 @@ interface PositionRecord {
  */
 export function PositionHistory({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
   const publicClient = usePublicClient({ chainId: chain.id });
+  const { t, locale } = useTranslation();
 
   const { data: positions } = useQuery({
     queryKey: ["vault-position-history", chain.id, address],
@@ -155,55 +159,58 @@ export function PositionHistory({ address, chain }: { address: `0x${string}`; ch
 
   if (!positions || positions.length === 0) return null;
 
-  const fmtDate = (t?: number) =>
-    t ? new Date(t * 1000).toLocaleString("es", { dateStyle: "short", timeStyle: "short" }) : "—";
+  const fmtDate = (ts?: number) =>
+    ts ? new Date(ts * 1000).toLocaleString(dateLocale[locale] ?? "es", { dateStyle: "short", timeStyle: "short" }) : "—";
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-        Historial de posiciones
+        {t("positionHistory.title")}
       </h2>
-      <p className="mt-1 text-sm text-muted">
-        Cada posición NFT que el agente armó en este vault, con su rango y las comisiones que generó antes de
-        cerrarse.
-      </p>
+      <p className="mt-1 text-sm text-muted">{t("positionHistory.subtitle")}</p>
 
       <ol className="mt-6 flex flex-col gap-4">
         {positions.map((p) => (
           <li key={p.tokenId.toString()} className="rounded-xl border border-hairline p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-mono text-sm text-white/90">
-                Posición #{p.tokenId.toString()} · ${p.minPrice.toFixed(2)} – ${p.maxPrice.toFixed(2)}
+                {t("positionHistory.positionLabel", {
+                  id: p.tokenId.toString(),
+                  min: p.minPrice.toFixed(2),
+                  max: p.maxPrice.toFixed(2),
+                })}
               </span>
               {p.isOpen ? (
-                <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">Activa</span>
+                <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">{t("positionHistory.active")}</span>
               ) : (
-                <span className="eyebrow !px-3 !py-1">Cerrada</span>
+                <span className="eyebrow !px-3 !py-1">{t("positionHistory.closed")}</span>
               )}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Creada</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("positionHistory.created")}</p>
                 <p className="mt-0.5 text-white/90">{fmtDate(p.createdAt)}</p>
               </div>
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Cerrada</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("positionHistory.closedLabel")}</p>
                 <p className="mt-0.5 text-white/90">{p.isOpen ? "—" : fmtDate(p.closedAt)}</p>
               </div>
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                  Comisiones ganadas
+                  {t("positionHistory.feesEarned")}
                 </p>
                 <p className="mt-0.5 text-positive">
                   {p.isOpen
-                    ? "en curso"
+                    ? t("positionHistory.inProgress")
                     : `${formatUnits(p.feesUsdt, 6)} ${chain.stableSymbol}${p.feesWeth > 0n ? ` + ${Number(formatUnits(p.feesWeth, 18)).toFixed(6)} ${chain.volatileSymbol}` : ""}`}
                 </p>
               </div>
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Reinyección al abrir</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("positionHistory.reinjectionOnOpen")}</p>
                 <p className="mt-0.5 text-white/90">
-                  {p.reinjectedUsdt > 0n ? `${formatUnits(p.reinjectedUsdt, 6)} ${chain.stableSymbol}` : "sin reinyección"}
+                  {p.reinjectedUsdt > 0n
+                    ? `${formatUnits(p.reinjectedUsdt, 6)} ${chain.stableSymbol}`
+                    : t("positionHistory.noReinjection")}
                 </p>
               </div>
             </div>
@@ -213,7 +220,7 @@ export function PositionHistory({ address, chain }: { address: `0x${string}`; ch
               rel="noopener noreferrer"
               className="mt-3 inline-block font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"
             >
-              tx de apertura: {p.createdTxHash.slice(0, 10)}…{p.createdTxHash.slice(-6)} ↗
+              {t("positionHistory.openingTx", { hash: `${p.createdTxHash.slice(0, 10)}…${p.createdTxHash.slice(-6)}` })}
             </a>
           </li>
         ))}

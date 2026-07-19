@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 /**
  * Live countdown to the vault's next *periodic* rebalance trigger
@@ -23,6 +24,7 @@ export function RebalanceCountdown({
   atRebalanceLimit: boolean;
 }) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const { t } = useTranslation();
 
   useEffect(() => {
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
@@ -38,20 +40,20 @@ export function RebalanceCountdown({
   let statusText: string;
   let sub: string;
   if (paused) {
-    statusText = "Vault pausado";
-    sub = "El agente no puede rebalancear hasta que reanudes";
+    statusText = t("rebalanceCountdown.pausedTitle");
+    sub = t("rebalanceCountdown.pausedSub");
   } else if (atRebalanceLimit) {
-    statusText = "Tope de rebalanceos alcanzado";
-    sub = "Subí el tope para que el agente pueda seguir operando";
+    statusText = t("rebalanceCountdown.limitTitle");
+    sub = t("rebalanceCountdown.limitSub");
   } else if (!periodicEnabled) {
-    statusText = "Sin gatillo periódico";
-    sub = "Rebalancea solo si el precio sale del rango";
+    statusText = t("rebalanceCountdown.noTriggerTitle");
+    sub = t("rebalanceCountdown.noTriggerSub");
   } else if (remaining <= 0) {
-    statusText = "Ya está en ventana de rebalanceo";
-    sub = "El keeper corre cada 5 min — puede tardar hasta ese margen en ejecutar";
+    statusText = t("rebalanceCountdown.inWindowTitle");
+    sub = t("rebalanceCountdown.inWindowSub");
   } else {
     statusText = formatDuration(remaining);
-    sub = "hasta el próximo rebalanceo periódico (o antes, si el precio sale del rango)";
+    sub = t("rebalanceCountdown.countdownSub");
   }
 
   const progress = periodicEnabled
@@ -61,7 +63,7 @@ export function RebalanceCountdown({
   return (
     <div className="glass rounded-2xl p-5">
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-        Próximo rebalanceo
+        {t("rebalanceCountdown.nextRebalance")}
       </span>
       <p
         className="mt-1 text-lg font-semibold tabular-nums text-white/90"

@@ -11,19 +11,21 @@ import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/pr
 import { usePoolMetrics } from "@/lib/usePoolMetrics";
 import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
 import { formatUsdCompact } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
+type T = ReturnType<typeof useTranslation>["t"];
 
-function stepLabelFor(stableSymbol: string): Record<Step, string> {
+function stepLabelFor(t: T, stableSymbol: string): Record<Step, string> {
   return {
-    idle: "Crear vault",
-    creating: "1/5 · Creando vault…",
-    approving: `2/5 · Aprobando ${stableSymbol}…`,
-    configuring: "3/5 · Configurando objetivo…",
-    risk: "4/5 · Fijando límites de riesgo…",
-    depositing: "5/5 · Depositando…",
-    done: "Listo ✓",
-    error: "Reintentar",
+    idle: t("create.stepIdle"),
+    creating: t("create.stepCreating"),
+    approving: t("create.stepApproving", { symbol: stableSymbol }),
+    configuring: t("create.stepConfiguring"),
+    risk: t("create.stepRisk"),
+    depositing: t("create.stepDepositing"),
+    done: t("create.stepDone"),
+    error: t("create.stepError"),
   };
 }
 
@@ -31,33 +33,34 @@ function stepLabelFor(stableSymbol: string): Record<Step, string> {
 // checklist so the user knows what each one actually does before signing,
 // not just a changing "3/5…" label on the button mid-flow.
 function signatureStepsFor(
+  t: T,
   stableSymbol: string,
 ): { key: Exclude<Step, "idle" | "done" | "error">; title: string; desc: string }[] {
   return [
     {
       key: "creating",
-      title: "Crear vault",
-      desc: "Despliega tu vault personal (un clon del contrato) — todavía no mueve ningún fondo.",
+      title: t("create.sig1Title"),
+      desc: t("create.sig1Desc"),
     },
     {
       key: "approving",
-      title: `Aprobar ${stableSymbol}`,
-      desc: `Le da permiso al vault para transferir el ${stableSymbol} que vas a depositar en el siguiente paso.`,
+      title: t("create.sig2Title", { symbol: stableSymbol }),
+      desc: t("create.sig2Desc", { symbol: stableSymbol }),
     },
     {
       key: "configuring",
-      title: "Configurar objetivo",
-      desc: "Fija el rango de precio, el tope de rebalanceos y el tope de reinyección que el agente tiene que respetar.",
+      title: t("create.sig3Title"),
+      desc: t("create.sig3Desc"),
     },
     {
       key: "risk",
-      title: "Fijar límites de riesgo",
-      desc: "Slippage máximo y cuánto puede desviarse el rango que proponga el agente del precio de mercado.",
+      title: t("create.sig4Title"),
+      desc: t("create.sig4Desc"),
     },
     {
       key: "depositing",
-      title: "Depositar",
-      desc: `Transfiere el ${stableSymbol} real al vault, repartido entre las reservas que configuraste arriba.`,
+      title: t("create.sig5Title"),
+      desc: t("create.sig5Desc", { symbol: stableSymbol }),
     },
   ];
 }
@@ -70,8 +73,9 @@ export default function CreateVault() {
   const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { switchChainAsync } = useSwitchChain();
-  const stepLabel = stepLabelFor(chain.stableSymbol);
-  const SIGNATURE_STEPS = signatureStepsFor(chain.stableSymbol);
+  const { t } = useTranslation();
+  const stepLabel = stepLabelFor(t, chain.stableSymbol);
+  const SIGNATURE_STEPS = signatureStepsFor(t, chain.stableSymbol);
   const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
 
   // Which fee-tier pool the NEW position itself will live in — independent
@@ -203,7 +207,7 @@ export default function CreateVault() {
     let currentPhase: Step = "creating"; // tracked outside React state — setStep() batches, so `step` itself isn't reliable to read back mid-function
 
     if (!investAmount || !minPrice || !maxPrice || !maxRebalances || !reinjectionAmount || !periodicHours) {
-      setError("Completá todos los campos — no hay valores por defecto.");
+      setError(t("create.errMissingFields"));
       setStep("error");
       return;
     }
@@ -219,8 +223,11 @@ export default function CreateVault() {
       (chain.supportsGasReserve ? parseFloat(gasReserveAmount) || 0 : 0);
     if (maxDepositUsd !== 0n && requestedTotalUsd > Number(formatUnits(maxDepositUsd, 6))) {
       setCapAlert(
-        `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol}. ` +
-          `Estás pidiendo ${requestedTotalUsd.toFixed(2)} ${chain.stableSymbol} entre capital invertible, reserva y presupuesto de gas — reducí el monto.`,
+        t("create.capAlertMsg", {
+          cap: formatUnits(maxDepositUsd, 6),
+          symbol: chain.stableSymbol,
+          requested: requestedTotalUsd.toFixed(2),
+        }),
       );
       return;
     }
@@ -233,9 +240,14 @@ export default function CreateVault() {
     // cuando el deposit() revierte on-chain.
     if (stableBalanceUsd !== undefined && totalUsdt > stableBalanceUsd) {
       setBalanceAlert(
-        `Necesitás ${totalUsdt.toFixed(2)} ${chain.stableSymbol} (capital invertible + reserva` +
-          `${chain.supportsGasReserve ? " + presupuesto de gas" : ""} + ${formatUnits(creationFeeUsdt, 6)} ${chain.stableSymbol} de fee de creación, que se cobra una sola vez por vault) ` +
-          `pero tu wallet solo tiene ${stableBalanceUsd.toFixed(2)} ${chain.stableSymbol} en ${chain.name}. Ajustá el presupuesto o depositá más ${chain.stableSymbol} en tu wallet.`,
+        t("create.balanceAlertMsg", {
+          total: totalUsdt.toFixed(2),
+          symbol: chain.stableSymbol,
+          gasClause: chain.supportsGasReserve ? t("create.balanceAlertGasClause") : "",
+          fee: formatUnits(creationFeeUsdt, 6),
+          balance: stableBalanceUsd.toFixed(2),
+          chain: chain.name,
+        }),
       );
       return;
     }
@@ -248,7 +260,7 @@ export default function CreateVault() {
       try {
         await switchChainAsync({ chainId: chain.id });
       } catch {
-        setError(`Cambiá tu wallet a ${chain.name} para crear un vault ahí.`);
+        setError(t("create.switchChainError", { chain: chain.name }));
         setStep("error");
         return;
       }
@@ -283,7 +295,7 @@ export default function CreateVault() {
       const lowerPrice = Number(minPrice);
       const upperPrice = Number(maxPrice);
       if (!(lowerPrice > 0) || !(upperPrice > lowerPrice)) {
-        throw new Error("El precio máximo debe ser mayor al mínimo, ambos positivos");
+        throw new Error(t("create.priceRangeError"));
       }
       // Whether a HIGHER USD price of ETH maps to a lower or higher tick depends
       // on chain.stableIsToken0 (Celo vs Arbitrum sort WETH/stable oppositely),
@@ -403,30 +415,29 @@ export default function CreateVault() {
   return (
     <>
       {capAlert && (
-        <AlertModal title="Supera el tope de depósito" message={capAlert} onClose={() => setCapAlert(null)} />
+        <AlertModal title={t("create.capAlertTitle")} message={capAlert} onClose={() => setCapAlert(null)} />
       )}
       {balanceAlert && (
-        <AlertModal title="Fondos insuficientes" message={balanceAlert} onClose={() => setBalanceAlert(null)} />
+        <AlertModal title={t("create.balanceAlertTitle")} message={balanceAlert} onClose={() => setBalanceAlert(null)} />
       )}
       <Header />
       <main className="section flex-1 pb-24 pt-32">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="eyebrow">Nuevo vault</span>
+          <span className="eyebrow">{t("create.eyebrow")}</span>
         </div>
         <h1
           className="mt-5 text-balance text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Configurá tu posición
+          {t("create.title")}
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
-          Par {chain.stableSymbol}/{chain.volatileSymbol} en {chain.name}. El agente arma la posición inicial con
-          estos parámetros y la rebalancea automáticamente — vos mantenés el control y la custodia.
+          {t("create.subtitle", { pair: `${chain.stableSymbol}/${chain.volatileSymbol}`, chain: chain.name })}
         </p>
 
         {availableChains.length > 1 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Red:</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("create.networkLabel")}</span>
             {availableChains.map((c) => (
               <button
                 key={c.id}
@@ -447,13 +458,9 @@ export default function CreateVault() {
         {isConnected && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-              Elegí la pool donde vive tu posición
+              {t("create.choosePoolLabel")}
             </span>
-            <p className="mt-1 text-xs text-faint">
-              Métricas en vivo, se actualizan cada minuto. Menor fee no es automáticamente mejor —
-              depende del volumen real que pase por esa pool, no solo de la tasa. La comisión por
-              unidad de liquidez es la mejor referencia de cuánto rendiría un LP ahí ahora mismo.
-            </p>
+            <p className="mt-1 text-xs text-faint">{t("create.choosePoolHint")}</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               {(poolMetrics ?? []).map((p) => {
                 const isSelected = p.fee === selectedFee;
@@ -477,32 +484,32 @@ export default function CreateVault() {
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-sm font-semibold">{p.fee / 10_000}%</span>
-                        {isSelected && <span className="font-mono text-[10px] uppercase text-accent">Elegida</span>}
+                        {isSelected && <span className="font-mono text-[10px] uppercase text-accent">{t("create.chosen")}</span>}
                       </div>
                       {disabled ? (
-                        <p className="mt-2 text-xs text-faint">Sin liquidez — no disponible</p>
+                        <p className="mt-2 text-xs text-faint">{t("create.noLiquidity")}</p>
                       ) : (
                         <dl className="mt-2 flex flex-col gap-1 text-xs text-muted">
                           <div className="flex justify-between">
-                            <dt>TVL</dt>
+                            <dt>{t("create.tvl")}</dt>
                             <dd className="font-mono">{formatUsdCompact(p.tvlUsd)}</dd>
                           </div>
                           <div className="flex justify-between">
-                            <dt>Liquidez</dt>
+                            <dt>{t("create.liquidity")}</dt>
                             <dd className="font-mono" title={p.liquidity.toString()}>
                               {Number(p.liquidity).toExponential(2)}
                             </dd>
                           </div>
                           <div className="flex justify-between">
-                            <dt>Volumen (reciente)</dt>
+                            <dt>{t("create.recentVolume")}</dt>
                             <dd className="font-mono">{formatUsdCompact(p.volumeStable)}</dd>
                           </div>
                           <div className="flex justify-between">
-                            <dt>Swaps (reciente)</dt>
+                            <dt>{t("create.recentSwaps")}</dt>
                             <dd className="font-mono">{p.swapCount}</dd>
                           </div>
                           <div className="flex justify-between">
-                            <dt>Comisión/liquidez</dt>
+                            <dt>{t("create.feePerLiquidity")}</dt>
                             <dd className="font-mono">
                               {p.feeRevenuePerLiquidity !== undefined
                                 ? p.feeRevenuePerLiquidity.toExponential(2)
@@ -525,10 +532,10 @@ export default function CreateVault() {
                               setTimeout(() => setCopiedPool((cur) => (cur === p.pool ? null : cur)), 1500);
                             }}
                             className="transition-colors hover:text-accent"
-                            title="Copiar dirección de la pool"
+                            title={t("create.copyPoolAddress")}
                           >
                             {copiedPool === p.pool
-                              ? "Copiado ✓"
+                              ? t("create.copied")
                               : `${p.pool.slice(0, 6)}…${p.pool.slice(-4)}`}
                           </button>
                           <a
@@ -536,7 +543,7 @@ export default function CreateVault() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="transition-colors hover:text-accent"
-                            title="Ver en el explorer"
+                            title={t("create.viewExplorer")}
                           >
                             ↗
                           </a>
@@ -552,7 +559,7 @@ export default function CreateVault() {
 
         {!chain.factoryAddress && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
-            Los contratos todavía no están configurados en {chain.name}.
+            {t("create.contractsNotDeployed", { chain: chain.name })}
           </div>
         )}
 
@@ -562,46 +569,46 @@ export default function CreateVault() {
             <div className="glass rounded-2xl p-6 sm:p-8">
               <div className="grid gap-6 sm:grid-cols-2">
                 <Field
-                  label="Monto de inversión"
+                  label={t("create.fieldInvestAmount")}
                   suffix={chain.stableSymbol}
                   value={investAmount}
                   onChange={setInvestAmount}
                   placeholder="100"
                 />
                 <Field
-                  label="Precio mínimo"
+                  label={t("create.fieldMinPrice")}
                   suffix="USD"
                   value={minPrice}
                   onChange={setMinPrice}
                   placeholder={minPricePlaceholder}
-                  hint="Piso del rango — no tiene que ser simétrico"
+                  hint={t("create.fieldMinPriceHint")}
                 />
                 <Field
-                  label="Precio máximo"
+                  label={t("create.fieldMaxPrice")}
                   suffix="USD"
                   value={maxPrice}
                   onChange={setMaxPrice}
                   placeholder={maxPricePlaceholder}
-                  hint="Techo del rango"
+                  hint={t("create.fieldMaxPriceHint")}
                 />
                 <Field
-                  label="Tope de rebalanceos"
+                  label={t("create.fieldMaxRebalances")}
                   value={maxRebalances}
                   onChange={setMaxRebalances}
                   placeholder="10"
-                  hint="Tu techo de gasto en fees"
+                  hint={t("create.fieldMaxRebalancesHint")}
                 />
                 <Field
-                  label="Tope de reinyección por ciclo"
+                  label={t("create.fieldReinjection")}
                   suffix={chain.stableSymbol}
                   value={reinjectionAmount}
                   onChange={setReinjectionAmount}
                   placeholder="10"
-                  hint="Máximo que el agente puede mover de la reserva por rebalanceo"
+                  hint={t("create.fieldReinjectionHint")}
                 />
                 <Field
-                  label="Rebalanceo periódico"
-                  suffix="horas"
+                  label={t("create.fieldPeriodic")}
+                  suffix={t("create.hoursSuffix")}
                   value={periodicHours}
                   onChange={setPeriodicHours}
                   placeholder="24"
@@ -610,14 +617,15 @@ export default function CreateVault() {
                   <Field
                     label={
                       <>
-                        Presupuesto de gas para el <span className="text-accent">agente</span>
+                        {t("create.fieldGasReservePre")}
+                        <span className="text-accent">{t("create.fieldGasReserveHighlight")}</span>
                       </>
                     }
                     suffix={chain.stableSymbol}
                     value={gasReserveAmount}
                     onChange={setGasReserveAmount}
                     placeholder="5"
-                    hint="Le reembolsa al operador el gas real de cada rebalanceo — opcional, dejar en blanco es 0. Si se agota, el agente sigue rebalanceando igual, solo deja de cobrar hasta que deposites más."
+                    hint={t("create.fieldGasReserveHint")}
                   />
                 )}
               </div>
@@ -638,48 +646,48 @@ export default function CreateVault() {
                   >
                     <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  Avanzado — dejar en blanco usa los valores por defecto de la plataforma
+                  {t("create.advancedToggle")}
                 </button>
                 {showAdvanced && (
                   <div className="mt-4 grid gap-6 sm:grid-cols-2">
                     <Field
-                      label="Slippage máximo"
+                      label={t("create.fieldMaxSlippage")}
                       suffix="%"
                       value={maxSlippagePct}
                       onChange={setMaxSlippagePct}
                       placeholder="0.3"
                     />
                     <Field
-                      label="Cooldown mínimo entre rebalanceos"
-                      suffix="horas"
+                      label={t("create.fieldCooldown")}
+                      suffix={t("create.hoursSuffix")}
                       value={minRebalanceCooldownHours}
                       onChange={setMinRebalanceCooldownHours}
                       placeholder="0"
-                      hint="0 = sin piso además del periódico"
+                      hint={t("create.fieldCooldownHint")}
                     />
                     <Field
-                      label="Desviación máx. de rango"
+                      label={t("create.fieldMaxDeviation")}
                       suffix="ticks"
                       value={maxRangeDeviationTicks}
                       onChange={setMaxRangeDeviationTicks}
                       placeholder="5000"
-                      hint="Cuánto puede alejarse el precio del rango propuesto sin que el contrato lo rechace"
+                      hint={t("create.fieldMaxDeviationHint")}
                     />
                     <Field
-                      label="Margen de recentrado"
+                      label={t("create.fieldRecenterMargin")}
                       suffix="%"
                       value={recenterMarginPct}
                       onChange={setRecenterMarginPct}
                       placeholder="5"
-                      hint="Piso nuevo por debajo del precio al reconstruir el rango desde cero"
+                      hint={t("create.fieldRecenterMarginHint")}
                     />
                     <Field
-                      label="Margen del techo (salida por arriba)"
+                      label={t("create.fieldExitTopMargin")}
                       suffix="%"
                       value={exitTopCeilingMarginPct}
                       onChange={setExitTopCeilingMarginPct}
                       placeholder="3"
-                      hint="Techo nuevo por encima del precio al salir de rango por arriba"
+                      hint={t("create.fieldExitTopMarginHint")}
                     />
                   </div>
                 )}
@@ -695,15 +703,18 @@ export default function CreateVault() {
 
               {insufficientBalance && (
                 <p className="mt-3 text-center text-sm text-negative">
-                  Te faltan {(totalUsdt - (stableBalanceUsd ?? 0)).toFixed(2)} {chain.stableSymbol} — tenés{" "}
-                  {(stableBalanceUsd ?? 0).toFixed(2)} {chain.stableSymbol} y este vault necesita {totalUsdt.toFixed(2)}{" "}
-                  {chain.stableSymbol} (incluye {formatUnits(creationFeeUsdt, 6)} {chain.stableSymbol} de fee de
-                  creación, una sola vez).
+                  {t("create.insufficientBalanceMsg", {
+                    missing: (totalUsdt - (stableBalanceUsd ?? 0)).toFixed(2),
+                    symbol: chain.stableSymbol,
+                    balance: (stableBalanceUsd ?? 0).toFixed(2),
+                    total: totalUsdt.toFixed(2),
+                    fee: formatUnits(creationFeeUsdt, 6),
+                  })}
                 </p>
               )}
               {busy && (
                 <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                  Firmá cada transacción en tu wallet — son 5 en total
+                  {t("create.signEach")}
                 </p>
               )}
               {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
@@ -717,16 +728,16 @@ export default function CreateVault() {
             <aside className="flex flex-col gap-4">
               <div className="glass rounded-2xl border-accent/35 bg-accent/[0.06] p-6">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
-                  Resumen
+                  {t("create.summaryTitle")}
                 </span>
                 <dl className="mt-4 flex flex-col gap-3 text-sm">
-                  <SummaryRow k="Pool elegida" v={`${selectedFee / 10_000}%`} />
+                  <SummaryRow k={t("create.summaryPoolChosen")} v={`${selectedFee / 10_000}%`} />
                   <SummaryRow
-                    k="Precio actual ETH"
+                    k={t("create.summaryCurrentPrice")}
                     v={currentPrice !== undefined ? `$${currentPrice.toFixed(2)}` : "…"}
                   />
                   <SummaryRow
-                    k="Rango estimado"
+                    k={t("create.summaryEstRange")}
                     v={
                       lowerPreview !== undefined && upperPreview !== undefined
                         ? `$${lowerPreview.toFixed(0)} – $${upperPreview.toFixed(0)}`
@@ -734,22 +745,22 @@ export default function CreateVault() {
                     }
                   />
                   <div className="my-1 border-t border-hairline" />
-                  <SummaryRow k="Capital invertible" v={`${investAmount || "0"} ${chain.stableSymbol}`} />
-                  <SummaryRow k="Reserva de reinyección" v={`${reinjectionAmount || "0"} ${chain.stableSymbol}`} />
+                  <SummaryRow k={t("create.summaryInvestable")} v={`${investAmount || "0"} ${chain.stableSymbol}`} />
+                  <SummaryRow k={t("create.summaryReserve")} v={`${reinjectionAmount || "0"} ${chain.stableSymbol}`} />
                   {chain.supportsGasReserve && (
-                    <SummaryRow k="Presupuesto de gas" v={`${gasReserveAmount || "0"} ${chain.stableSymbol}`} />
+                    <SummaryRow k={t("create.summaryGasBudget")} v={`${gasReserveAmount || "0"} ${chain.stableSymbol}`} />
                   )}
                   {creationFeeUsdt > 0n && (
                     <SummaryRow
-                      k="Fee de creación (una vez)"
+                      k={t("create.summaryCreationFee")}
                       v={`${formatUnits(creationFeeUsdt, 6)} ${chain.stableSymbol}`}
                     />
                   )}
                   <div className="my-1 border-t border-hairline" />
-                  <SummaryRow k="Total a depositar" v={`${totalUsdt.toFixed(2)} ${chain.stableSymbol}`} strong />
+                  <SummaryRow k={t("create.summaryTotal")} v={`${totalUsdt.toFixed(2)} ${chain.stableSymbol}`} strong />
                   {maxDepositUsd > 0n && (
                     <SummaryRow
-                      k="Tope de la plataforma"
+                      k={t("create.summaryPlatformCap")}
                       v={`${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol}`}
                     />
                   )}
@@ -757,17 +768,13 @@ export default function CreateVault() {
               </div>
 
               <div className="glass rounded-2xl p-5">
-                <p className="text-[13px] leading-relaxed text-muted">
-                  El agente cobra el fee de la plataforma por cada rebalanceo exitoso, hasta el
-                  tope que definas. Podés pausar, revocar al operador o retirar todo en
-                  cualquier momento.
-                </p>
+                <p className="text-[13px] leading-relaxed text-muted">{t("create.feeNote")}</p>
               </div>
             </aside>
           </div>
         ) : (
           <div className="glass mt-10 rounded-2xl p-10 text-center">
-            <p className="text-muted">Conectá tu wallet para crear un vault.</p>
+            <p className="text-muted">{t("create.connectWallet")}</p>
           </div>
         )}
       </main>
@@ -839,11 +846,12 @@ function SignatureStepper({
   const isDone = current === "done";
   const isError = current === "error";
   const failedIndex = failedAt ? keys.indexOf(failedAt) : -1;
+  const { t } = useTranslation();
 
   return (
     <div className="glass rounded-2xl p-5">
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-        Firmas necesarias (5)
+        {t("create.requiredSignatures")}
       </span>
       <ol className="mt-4 flex flex-col gap-4">
         {steps.map((s, i) => {
@@ -868,7 +876,7 @@ function SignatureStepper({
               <div>
                 <p className={`text-sm font-medium ${active ? "text-accent" : "text-white/90"}`}>{s.title}</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted">{s.desc}</p>
-                {failed && <p className="mt-1 text-xs text-negative">Falló acá — revisá el error abajo y reintentá.</p>}
+                {failed && <p className="mt-1 text-xs text-negative">{t("create.failedHere")}</p>}
               </div>
             </li>
           );

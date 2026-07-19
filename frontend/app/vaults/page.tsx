@@ -16,6 +16,7 @@ import { getPublicClient } from "wagmi/actions";
 import { wagmiConfig } from "@/lib/wagmi";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
 import type { ChainDef } from "@/lib/chains";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 interface VaultRef {
   chain: ChainDef;
@@ -34,6 +35,7 @@ interface VaultRef {
 export default function VaultsPage() {
   const { address, isConnected } = useAccount();
   const chains = useAvailableChains();
+  const { t } = useTranslation();
 
   return (
     <>
@@ -41,22 +43,22 @@ export default function VaultsPage() {
       <main className="section flex-1 pb-24 pt-32">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <span className="eyebrow">Panel</span>
+            <span className="eyebrow">{t("vaults.eyebrow")}</span>
             <h1
               className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Mis vaults
+              {t("vaults.title")}
             </h1>
           </div>
           <Link href="/create" className="btn-primary !px-5 !py-2.5">
-            Crear vault
+            {t("vaults.createVault")}
           </Link>
         </div>
 
         {!isConnected && (
           <div className="glass mt-10 rounded-2xl p-10 text-center">
-            <p className="text-muted">Conectá tu wallet para ver tus vaults.</p>
+            <p className="text-muted">{t("vaults.connectWallet")}</p>
           </div>
         )}
 
@@ -67,6 +69,7 @@ export default function VaultsPage() {
 }
 
 function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}` }) {
+  const { t } = useTranslation();
   // Stage 1: which vaults exist, per chain — one batched call across chains.
   const { data: vaultListsData, isLoading: vaultListsLoading } = useReadContracts({
     contracts: chains.map(
@@ -141,7 +144,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
   if (isLoading) {
     return (
       <div className="glass mt-10 rounded-2xl p-10 text-center">
-        <p className="text-muted">Cargando…</p>
+        <p className="text-muted">{t("vaults.loading")}</p>
       </div>
     );
   }
@@ -149,9 +152,9 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
   if (vaultRefs.length === 0) {
     return (
       <div className="glass mt-10 rounded-2xl p-10 text-center">
-        <p className="text-muted">Todavía no tenés ningún vault.</p>
+        <p className="text-muted">{t("vaults.noneYet")}</p>
         <Link href="/create" className="btn-primary mt-6 !px-5 !py-2.5">
-          Crear mi primer vault
+          {t("vaults.createFirst")}
         </Link>
       </div>
     );
@@ -175,11 +178,9 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
             className="text-lg font-semibold tracking-tight text-faint"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Vaults cerrados
+            {t("vaults.closedTitle")}
           </h2>
-          <p className="mt-1 text-sm text-muted">
-            Cerrados permanentemente — no pueden recibir depósitos ni operar de nuevo.
-          </p>
+          <p className="mt-1 text-sm text-muted">{t("vaults.closedSubtitle")}</p>
           <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {closedVaults.map(({ chain, address }) => (
               <li key={`${chain.id}-${address}`}>
@@ -220,6 +221,7 @@ function VaultCard({
   // its data from the wrong network.
   const { setSelectedChainId } = useSelectedChain();
   const onNavigate = () => setSelectedChainId(chain.id);
+  const { t } = useTranslation();
 
   const { data } = useReadContracts({
     contracts: cardReads(vaultAddress, chain.vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
@@ -320,7 +322,9 @@ function VaultCard({
     (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)) * ethPrice : 0);
   const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, 6));
   const rentLabel =
-    initialInvestmentUsd > 0 ? `${((feesUsdEquivalent / initialInvestmentUsd) * 100).toFixed(2)}% rent.` : "—";
+    initialInvestmentUsd > 0
+      ? t("vaults.returnLabel", { pct: ((feesUsdEquivalent / initialInvestmentUsd) * 100).toFixed(2) })
+      : "—";
 
   return (
     <Link
@@ -332,13 +336,13 @@ function VaultCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="eyebrow !border-accent/40 !px-3 !py-1 !text-accent">{chain.name}</span>
           {isClosed ? (
-            <span className="eyebrow !px-3 !py-1">Cerrado</span>
+            <span className="eyebrow !px-3 !py-1">{t("vaults.closed")}</span>
           ) : paused ? (
-            <span className="eyebrow !border-negative/40 !px-3 !py-1 !text-negative">Pausado</span>
+            <span className="eyebrow !border-negative/40 !px-3 !py-1 !text-negative">{t("vaults.paused")}</span>
           ) : (
-            <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">Activo</span>
+            <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">{t("vaults.active")}</span>
           )}
-          {!isClosed && !hasPosition && <span className="eyebrow !px-3 !py-1">Sin posición</span>}
+          {!isClosed && !hasPosition && <span className="eyebrow !px-3 !py-1">{t("vaults.noPosition")}</span>}
           {!isClosed && hasPosition && inRange !== undefined && (
             <span
               className={
@@ -347,11 +351,11 @@ function VaultCard({
                   : "eyebrow !border-negative/40 !px-3 !py-1 !text-negative"
               }
             >
-              {inRange ? "En rango" : "Fuera de rango"}
+              {inRange ? t("vaults.inRange") : t("vaults.outOfRange")}
             </span>
           )}
         </div>
-        <span className="text-xs text-faint transition-colors group-hover:text-accent">Ver detalle →</span>
+        <span className="text-xs text-faint transition-colors group-hover:text-accent">{t("vaults.viewDetail")}</span>
       </div>
 
       <p className="mt-4 break-all font-mono text-xs text-white/70">{vaultAddress}</p>
@@ -361,7 +365,7 @@ function VaultCard({
 
       {/* Headline: what the position is actually worth right now, and where */}
       <div className="mt-4 rounded-xl border border-hairline bg-white/[0.02] p-4">
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Valor de la posición</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.positionValue")}</p>
         <p
           className="mt-1 text-2xl font-semibold tabular-nums text-accent"
           style={{ fontFamily: "var(--font-display)" }}
@@ -369,13 +373,13 @@ function VaultCard({
           {hasPosition && positionValueUsd !== undefined ? `$${positionValueUsd.toFixed(2)}` : "—"}
         </p>
         <p className="mt-1 font-mono text-xs text-sky-400">
-          {hasPosition && rangeLabel ? rangeLabel : "sin posición abierta"}
+          {hasPosition && rangeLabel ? rangeLabel : t("vaults.noOpenPosition")}
         </p>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-4 border-t border-hairline pt-4">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Capital libre</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.freeCapital")}</p>
           <p className="mt-1 text-sm font-medium text-white/90">
             {formatUnits(idleCapital, 6)} {chain.stableSymbol}
           </p>
@@ -387,13 +391,13 @@ function VaultCard({
           )}
         </div>
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Rebalanceos</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.rebalances")}</p>
           <p className="mt-1 text-sm font-medium text-violet-400">
             {String(rebalanceCount ?? 0)} / {String(maxRebalances ?? 0)}
           </p>
         </div>
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Comisiones</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.fees")}</p>
           <p className="mt-1 text-sm font-medium text-positive">
             {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} {chain.stableSymbol}
           </p>
