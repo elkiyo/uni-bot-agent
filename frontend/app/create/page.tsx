@@ -114,6 +114,22 @@ export default function CreateVault() {
   });
   const maxDepositUsd = (maxDepositUsdRaw as bigint) ?? 0n;
   const [capAlert, setCapAlert] = useState<string | null>(null);
+  const [balanceAlert, setBalanceAlert] = useState<string | null>(null);
+
+  // The wallet's real balance of the token this vault deposits in — not the
+  // wallet's active chain, `chain` (the one being CREATED on, see the
+  // network picker above); reads against the wrong chain would silently
+  // show a stale/zero balance while the wallet's still elsewhere.
+  const { data: stableBalanceRaw } = useReadContract({
+    address: chain.stableToken,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    chainId: chain.id,
+    query: { enabled: Boolean(address), refetchInterval: 15_000 },
+  });
+  const stableBalanceUsd =
+    stableBalanceRaw !== undefined ? Number(formatUnits(stableBalanceRaw as bigint, 6)) : undefined;
 
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const currentPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
@@ -165,6 +181,13 @@ export default function CreateVault() {
   const lowerPreview = parseFloat(minPrice) || undefined;
   const upperPreview = parseFloat(maxPrice) || undefined;
 
+  // Only a real "insufficient funds" once there's an actual balance reading
+  // AND the user has typed a real amount — otherwise every fresh page load
+  // (totalUsdt === creationFeeUsdt only, balance still loading) would flash
+  // the button disabled before either value is meaningful.
+  const insufficientBalance =
+    Boolean(investAmount) && stableBalanceUsd !== undefined && totalUsdt > stableBalanceUsd;
+
   async function handleCreate() {
     if (!address || !publicClient || currentPrice === undefined || tickSpacing === undefined) return;
     setError(null);
@@ -190,6 +213,21 @@ export default function CreateVault() {
       setCapAlert(
         `El tope de depósito de la plataforma es ${formatUnits(maxDepositUsd, 6)} ${chain.stableSymbol}. ` +
           `Estás pidiendo ${requestedTotalUsd.toFixed(2)} ${chain.stableSymbol} entre capital invertible, reserva y presupuesto de gas — reducí el monto.`,
+      );
+      return;
+    }
+
+    // Balance real de la wallet en el token con el que se crea el vault —
+    // capital invertible + reserva + presupuesto de gas + el fee de creación
+    // (se cobra una sola vez, al primer depósito, pero la aprobación tiene
+    // que cubrirlo igual — ver el approve() más abajo). Sin esto, la wallet
+    // se abre igual y el usuario se entera de que le faltan fondos recién
+    // cuando el deposit() revierte on-chain.
+    if (stableBalanceUsd !== undefined && totalUsdt > stableBalanceUsd) {
+      setBalanceAlert(
+        `Necesitás ${totalUsdt.toFixed(2)} ${chain.stableSymbol} (capital invertible + reserva` +
+          `${chain.supportsGasReserve ? " + presupuesto de gas" : ""} + ${formatUnits(creationFeeUsdt, 6)} ${chain.stableSymbol} de fee de creación, que se cobra una sola vez por vault) ` +
+          `pero tu wallet solo tiene ${stableBalanceUsd.toFixed(2)} ${chain.stableSymbol} en ${chain.name}. Ajustá el presupuesto o depositá más ${chain.stableSymbol} en tu wallet.`,
       );
       return;
     }
@@ -358,6 +396,9 @@ export default function CreateVault() {
     <>
       {capAlert && (
         <AlertModal title="Supera el tope de depósito" message={capAlert} onClose={() => setCapAlert(null)} />
+      )}
+      {balanceAlert && (
+        <AlertModal title="Fondos insuficientes" message={balanceAlert} onClose={() => setBalanceAlert(null)} />
       )}
       <Header />
       <main className="section flex-1 pb-24 pt-32">
@@ -636,10 +677,22 @@ export default function CreateVault() {
                 )}
               </div>
 
-              <button onClick={handleCreate} disabled={busy || !chain.factoryAddress} className="btn-primary mt-8 w-full">
+              <button
+                onClick={handleCreate}
+                disabled={busy || !chain.factoryAddress || insufficientBalance}
+                className="btn-primary mt-8 w-full"
+              >
                 {stepLabel[step]}
               </button>
 
+              {insufficientBalance && (
+                <p className="mt-3 text-center text-sm text-negative">
+                  Te faltan {(totalUsdt - (stableBalanceUsd ?? 0)).toFixed(2)} {chain.stableSymbol} — tenés{" "}
+                  {(stableBalanceUsd ?? 0).toFixed(2)} {chain.stableSymbol} y este vault necesita {totalUsdt.toFixed(2)}{" "}
+                  {chain.stableSymbol} (incluye {formatUnits(creationFeeUsdt, 6)} {chain.stableSymbol} de fee de
+                  creación, una sola vez).
+                </p>
+              )}
               {busy && (
                 <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
                   Firmá cada transacción en tu wallet — son 5 en total
