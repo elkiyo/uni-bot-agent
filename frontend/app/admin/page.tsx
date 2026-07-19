@@ -17,7 +17,7 @@ import { platformConfigAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } fro
 import { USDC } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
-import { useSelectedChain } from "@/lib/useSelectedChain";
+import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
 
 interface UniLabCallRow {
   id: number;
@@ -34,7 +34,8 @@ interface UniLabCallRow {
 
 export default function Admin() {
   const { address: connected, chainId: walletChainId } = useAccount();
-  const { selectedChain: chain } = useSelectedChain();
+  const { selectedChain: chain, setSelectedChainId } = useSelectedChain();
+  const availableChains = useAvailableChains();
   const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { switchChainAsync } = useSwitchChain();
@@ -333,6 +334,26 @@ export default function Admin() {
           Salud de la plataforma en vivo — capital bajo gestión, estado del operador, y la
           configuración global que aplica a todos los vaults.
         </p>
+
+        {availableChains.length > 1 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Red:</span>
+            {availableChains.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setSelectedChainId(c.id)}
+                className={
+                  c.id === chain.id
+                    ? "rounded-full border border-accent bg-accent/[0.08] px-3 py-1.5 text-sm font-medium text-accent"
+                    : "rounded-full border border-hairline px-3 py-1.5 text-sm text-white/70 transition-colors hover:border-accent/50 hover:text-white"
+                }
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {(!chain.platformConfigAddress || !chain.factoryAddress) && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
