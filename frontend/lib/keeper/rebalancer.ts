@@ -920,21 +920,17 @@ async function runRebalanceViaUniLab(
   // uni-lab.xyz's /rc-rlp-rebalance returns 500 ("input combination doesn't
   // produce a valid rebalance range" — its own documented meaning) whenever
   // A1 (currentLiquidityUsd, the position's live value) exceeds B1 — root-
-  // caused live 2026-07-19 (vault 0x00a393AB...78F52b): real LP fees pushed
-  // the position slightly above its original committed capital (A1=$500.18
-  // vs. B1=$500.00, both otherwise clean/correct numbers) and the call still
-  // failed. B1 is meant to be a floor on what's at stake, never below
-  // current value, so capping it up here is consistent with (not a
-  // workaround of) B1's own "entire committed capital" definition above.
-  //
-  // B1 == A1 exactly (tested live 2026-07-19, same vault) still 500'd — their
-  // calculator apparently needs B1 STRICTLY greater than A1, not just >=.
-  // Testing a small margin above A1 next: 0.5%, comfortably above float
-  // rounding noise but small enough not to distort the real "amount to
-  // recover" for vaults where B1 is legitimately already far above A1 (the
-  // common case — this margin only ever matters when they're this close).
-  const B1_MIN_MARGIN_OVER_A1 = 1.005;
-  const cappedAmountToRecoverUsd = Math.max(amountToRecoverUsd, positionValueUsd * B1_MIN_MARGIN_OVER_A1);
+  // caused by the user from real production data 2026-07-19 (vault
+  // 0x00a393AB...78F52b): real yield/appreciation (the volatile asset's
+  // price rising) can push the position's live value slightly above its
+  // original committed capital, and uni-lab's calculator apparently needs
+  // B1 strictly greater than A1 in that case, not just equal. A1 itself is
+  // NEVER touched — only B1, and only when this specific condition holds;
+  // the normal case (B1 already comfortably above A1, the common one) is
+  // untouched. 1.0005 (0.05%) is comfortably above float rounding noise
+  // without meaningfully distorting the real "amount to recover".
+  const cappedAmountToRecoverUsd =
+    positionValueUsd > amountToRecoverUsd ? positionValueUsd * 1.0005 : amountToRecoverUsd;
 
   const baseParams = {
     currentLiquidityUsd: positionValueUsd,
