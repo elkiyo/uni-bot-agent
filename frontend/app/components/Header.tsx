@@ -6,9 +6,9 @@ import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 const links = [
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/vaults", label: "Mis vaults" },
   { href: "/create", label: "Crear vault" },
+  { href: "/dashboard", label: "Dashboard" },
 ];
 
 const resourceLinks = [

@@ -55,7 +55,14 @@ export function MobileBottomNav() {
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-50 border-t border-hairline bg-background/90 backdrop-blur-xl md:hidden"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      style={{
+        paddingBottom: "env(safe-area-inset-bottom)",
+        // iOS Safari can visibly jitter/reposition backdrop-blur + fixed
+        // elements during scroll (compositor repaints the layer instead of
+        // treating it as pinned); forcing its own GPU layer keeps it pinned.
+        transform: "translateZ(0)",
+        WebkitTransform: "translateZ(0)",
+      }}
     >
       <div className="flex h-16 items-stretch justify-around">
         {items.map(({ href, label, icon }) => {
