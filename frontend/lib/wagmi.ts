@@ -20,26 +20,14 @@ const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID 
 // retries against the second URL when the first errors, rather than every
 // read on this app depending on a single third-party RPC's uptime.
 //
-// Arbitrum additionally gets a dedicated NodeReal endpoint as its FIRST
-// choice (2026-07-19) — the dashboard's read pattern (multicalls + chunked
-// multi-address getLogs scans across every vault) is heavy enough to trip
-// public RPCs' rate limits on its own, independent of the CORS issue above.
-// NodeReal doesn't support Celo, so Celo keeps its public-RPC fallback pair.
-//
-// The browser talks to OUR OWN /api/rpc/arbitrum route (see that file),
-// which forwards to NodeReal server-side — not to NodeReal directly — so the
-// API key (ARBITRUM_RPC_URL, server-only) never ships in the client bundle.
-// Only wired up in the browser: during SSR there's no same-origin base to
-// resolve a relative URL against, and no wagmi hook actually reads through
-// this transport server-side anyway (every consumer is a "use client" hook).
-const arbitrumProxyUrl = typeof window !== "undefined" ? "/api/rpc/arbitrum" : undefined;
+// A NodeReal-backed proxy was tried here 2026-07-19 but reverted the same
+// day — that specific key's Arbitrum Nitro product was rate-limited
+// (-32005 max CUPS) well below what the dashboard's read volume needs, even
+// though the same key's Ethereum product worked fine. Back to public-only
+// until there's a properly-provisioned paid RPC to add.
 const transports = {
   [celo.id]: fallback([http("https://forno.celo.org"), http("https://rpc.ankr.com/celo")]),
-  [arbitrum.id]: fallback([
-    ...(arbitrumProxyUrl ? [http(arbitrumProxyUrl)] : []),
-    http("https://arb1.arbitrum.io/rpc"),
-    http("https://rpc.ankr.com/arbitrum"),
-  ]),
+  [arbitrum.id]: fallback([http("https://arb1.arbitrum.io/rpc"), http("https://rpc.ankr.com/arbitrum")]),
 };
 
 // Both chains listed here regardless of whether Arbitrum's contracts are
