@@ -25,11 +25,18 @@ const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID 
 // multi-address getLogs scans across every vault) is heavy enough to trip
 // public RPCs' rate limits on its own, independent of the CORS issue above.
 // NodeReal doesn't support Celo, so Celo keeps its public-RPC fallback pair.
-const arbitrumRpcUrl = process.env.NEXT_PUBLIC_ARBITRUM_RPC_URL;
+//
+// The browser talks to OUR OWN /api/rpc/arbitrum route (see that file),
+// which forwards to NodeReal server-side — not to NodeReal directly — so the
+// API key (ARBITRUM_RPC_URL, server-only) never ships in the client bundle.
+// Only wired up in the browser: during SSR there's no same-origin base to
+// resolve a relative URL against, and no wagmi hook actually reads through
+// this transport server-side anyway (every consumer is a "use client" hook).
+const arbitrumProxyUrl = typeof window !== "undefined" ? "/api/rpc/arbitrum" : undefined;
 const transports = {
   [celo.id]: fallback([http("https://forno.celo.org"), http("https://rpc.ankr.com/celo")]),
   [arbitrum.id]: fallback([
-    ...(arbitrumRpcUrl ? [http(arbitrumRpcUrl)] : []),
+    ...(arbitrumProxyUrl ? [http(arbitrumProxyUrl)] : []),
     http("https://arb1.arbitrum.io/rpc"),
     http("https://rpc.ankr.com/arbitrum"),
   ]),
