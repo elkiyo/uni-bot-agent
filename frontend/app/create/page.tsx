@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useWriteContract, useSwitchChain } from "wagmi";
 import { decodeEventLog, formatUnits, parseUnits } from "viem";
@@ -81,6 +81,14 @@ export default function CreateVault() {
   // automatically better. Defaults to the platform's main pool (chain.feeTier).
   const { data: poolMetrics } = usePoolMetrics(chain);
   const [selectedFee, setSelectedFee] = useState<number>(chain.feeTier);
+  // useState's initial value only applies on first mount — without this,
+  // switching the network picker (chain.id changes, no remount) leaves
+  // selectedFee stuck on the PREVIOUS chain's default fee tier, so the
+  // wrong pool card can show up pre-selected (e.g. Celo's 0.3% "sticking"
+  // after switching to Arbitrum, whose real default is the 0.05% pool).
+  useEffect(() => {
+    setSelectedFee(chain.feeTier);
+  }, [chain.id]);
   const selectedPoolMeta = poolMetrics?.find((p) => p.fee === selectedFee);
   const selectedPool = (selectedPoolMeta?.pool ?? chain.pool) as `0x${string}`;
 
