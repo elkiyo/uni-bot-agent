@@ -49,7 +49,7 @@ export default function Home() {
               className="mt-6 text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Auto<span className="text-accent">Range</span>
+              AI <span className="text-accent">Agent</span>
             </h1>
             <p
               className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-white/90 sm:text-2xl"
@@ -101,36 +101,44 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Range visual — the actual product idea, at a glance */}
-          <div className="glass hidden rounded-2xl p-6 lg:block">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
-              Rango ilustrativo · ±5%
-            </span>
-            <p
-              className="mt-2 text-2xl font-semibold tabular-nums text-white/90"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
-            </p>
-            <p className="mt-0.5 text-xs text-muted">
-              Precio actual · {chain.stableSymbol}/{chain.volatileSymbol}
-            </p>
+          {/* Logo + range visual — the actual product idea, at a glance */}
+          <div className="hidden flex-col items-end gap-4 lg:flex">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/logo-mark-256.png"
+              alt="AI Agent"
+              className="h-16 w-16 rounded-full shadow-[0_0_36px_rgba(252,255,82,0.18)]"
+            />
+            <div className="glass w-full rounded-2xl p-6">
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
+                Rango ilustrativo · ±5%
+              </span>
+              <p
+                className="mt-2 text-2xl font-semibold tabular-nums text-white/90"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
+              </p>
+              <p className="mt-0.5 text-xs text-muted">
+                Precio actual · {chain.stableSymbol}/{chain.volatileSymbol}
+              </p>
 
-            <div className="relative mt-6 h-1.5 rounded-full bg-white/10">
-              <div className="absolute inset-y-0 left-[10%] right-[10%] rounded-full bg-accent/25" />
-              <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_12px_rgba(252,255,82,0.55)]" />
-            </div>
-            <div className="mt-2.5 flex items-center justify-between font-mono text-[11px] text-faint">
-              <span>{ethPrice !== undefined ? `$${(ethPrice * 0.95).toFixed(0)}` : "…"}</span>
-              <span className="text-accent">en rango</span>
-              <span>{ethPrice !== undefined ? `$${(ethPrice * 1.05).toFixed(0)}` : "…"}</span>
-            </div>
+              <div className="relative mt-6 h-1.5 rounded-full bg-white/10">
+                <div className="absolute inset-y-0 left-[10%] right-[10%] rounded-full bg-accent/25" />
+                <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_12px_rgba(252,255,82,0.55)]" />
+              </div>
+              <div className="mt-2.5 flex items-center justify-between font-mono text-[11px] text-faint">
+                <span>{ethPrice !== undefined ? `$${(ethPrice * 0.95).toFixed(0)}` : "…"}</span>
+                <span className="text-accent">en rango</span>
+                <span>{ethPrice !== undefined ? `$${(ethPrice * 1.05).toFixed(0)}` : "…"}</span>
+              </div>
 
-            <p className="mt-6 text-xs leading-relaxed text-muted">
-              Cuando el precio se acerca a un borde, el agente cierra la posición y
-              rearma el rango centrado en el nuevo precio — sin que vos tengas que
-              hacer nada.
-            </p>
+              <p className="mt-6 text-xs leading-relaxed text-muted">
+                Cuando el precio se acerca a un borde, el agente cierra la posición y
+                rearma el rango centrado en el nuevo precio — sin que vos tengas que
+                hacer nada.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -338,7 +346,7 @@ export default function Home() {
               </p>
             </div>
             <div className="glass rounded-2xl p-5" style={{ borderColor: "rgba(252,255,82,0.25)" }}>
-              <h3 className="text-sm font-semibold text-accent">Cómo opera AutoRange</h3>
+              <h3 className="text-sm font-semibold text-accent">Cómo opera AI Agent</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">
                 Cada usuario tiene su propio contrato, aislado del resto. Un problema en un vault{" "}
                 <span className="text-white/80">queda contenido a ese vault</span> — nunca se propaga
@@ -404,7 +412,7 @@ export default function Home() {
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                Sin AutoRange · gestión manual experta
+                Sin AI Agent · gestión manual experta
               </p>
               <div className="mt-3 flex h-8 overflow-hidden rounded-md bg-white/[0.03]">
                 <div
@@ -417,7 +425,7 @@ export default function Home() {
             </div>
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                Con AutoRange · automático, sin experiencia
+                Con AI Agent · automático, sin experiencia
               </p>
               <div className="mt-3 flex h-8 gap-0.5 overflow-hidden rounded-md bg-white/[0.03]">
                 <div
@@ -432,7 +440,7 @@ export default function Home() {
                 />
               </div>
               <p className="mt-2 text-[11px] text-faint">
-                Tramo violeta = $100 · 1% para AutoRange (10% de lo ganado, nunca del capital)
+                Tramo violeta = $100 · 1% para AI Agent (10% de lo ganado, nunca del capital)
               </p>
             </div>
           </div>

@@ -11,7 +11,7 @@ import {
 } from "@/lib/addresses";
 
 const toc = [
-  { id: "que-es", label: "Qué es AutoRange" },
+  { id: "que-es", label: "Qué es AI Agent" },
   { id: "roles", label: "Los 3 roles" },
   { id: "ciclo-de-vida", label: "Ciclo de vida de un vault" },
   { id: "contratos", label: "Los contratos" },
@@ -32,7 +32,7 @@ export default function Docs() {
           className="mt-5 max-w-2xl text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Cómo funciona AutoRange, de punta a punta
+          Cómo funciona AI Agent, de punta a punta
         </h1>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted">
           Todo el protocolo explicado desde cero: los roles, el ciclo de vida de un vault,
@@ -62,9 +62,9 @@ export default function Docs() {
 
           <div className="flex flex-col gap-20 overflow-hidden">
             {/* Qué es */}
-            <Section id="que-es" eyebrow="01" title="Qué es AutoRange">
+            <Section id="que-es" eyebrow="01" title="Qué es AI Agent">
               <p>
-                AutoRange es una plataforma no-custodial de vaults de liquidez concentrada
+                AI Agent es una plataforma no-custodial de vaults de liquidez concentrada
                 para Uniswap V3, corriendo en Celo mainnet. Cualquiera puede crear su propio
                 vault, depositar <strong className="text-white/85">USDT</strong> — un solo
                 token, sin necesidad de tener WETH de antemano —, y un agente automatizado
