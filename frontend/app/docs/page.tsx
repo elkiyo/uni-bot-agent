@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Header } from "../components/Header";
 import {
@@ -9,37 +11,38 @@ import {
   SWAP_ROUTER02,
   UNILAB_PAYMENT_WALLET,
 } from "@/lib/addresses";
-
-const toc = [
-  { id: "que-es", label: "Qué es AutoRange" },
-  { id: "roles", label: "Los 3 roles" },
-  { id: "ciclo-de-vida", label: "Ciclo de vida de un vault" },
-  { id: "contratos", label: "Los contratos" },
-  { id: "decision", label: "Cómo decide el agente" },
-  { id: "pagos", label: "Pagos: x402 y uni-lab.xyz" },
-  { id: "seguridad", label: "Seguridad y guardrails" },
-  { id: "direcciones", label: "Direcciones de referencia" },
-  { id: "glosario", label: "Glosario" },
-];
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 export default function Docs() {
+  const { t } = useTranslation();
+
+  const toc = [
+    { id: "que-es", label: t("docs.tocQueEs") },
+    { id: "roles", label: t("docs.tocRoles") },
+    { id: "ciclo-de-vida", label: t("docs.tocCicloDeVida") },
+    { id: "contratos", label: t("docs.tocContratos") },
+    { id: "decision", label: t("docs.tocDecision") },
+    { id: "pagos", label: t("docs.tocPagos") },
+    { id: "seguridad", label: t("docs.tocSeguridad") },
+    { id: "direcciones", label: t("docs.tocDirecciones") },
+    { id: "glosario", label: t("docs.tocGlosario") },
+  ];
+
   return (
     <>
       <Header />
       <main className="section flex-1 pb-24 pt-32">
-        <span className="eyebrow">Documentación</span>
+        <span className="eyebrow">{t("docs.eyebrow")}</span>
         <h1
           className="mt-5 max-w-2xl text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Cómo funciona AutoRange, de punta a punta
+          {t("docs.title")}
         </h1>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted">
-          Todo el protocolo explicado desde cero: los roles, el ciclo de vida de un vault,
-          cada contrato y sus funciones, cómo decide el agente, y cómo se paga todo. Para el
-          detalle numérico de las reglas de rebalanceo, con ejemplos, ver{" "}
+          {t("docs.subtitlePre")}
           <Link href="/recursos" className="text-accent underline-offset-4 hover:underline">
-            Recursos
+            {t("docs.subtitleLink")}
           </Link>
           .
         </p>
@@ -48,13 +51,13 @@ export default function Docs() {
           {/* TOC */}
           <nav className="hidden lg:block">
             <div className="sticky top-32 flex flex-col gap-1 border-l border-hairline pl-4">
-              {toc.map((t) => (
+              {toc.map((item) => (
                 <a
-                  key={t.id}
-                  href={`#${t.id}`}
+                  key={item.id}
+                  href={`#${item.id}`}
                   className="py-1 text-xs text-muted transition-colors hover:text-accent"
                 >
-                  {t.label}
+                  {item.label}
                 </a>
               ))}
             </div>
@@ -62,227 +65,214 @@ export default function Docs() {
 
           <div className="flex flex-col gap-20 overflow-hidden">
             {/* Qué es */}
-            <Section id="que-es" eyebrow="01" title="Qué es AutoRange">
+            <Section id="que-es" eyebrow="01" title={t("docs.s01Title")}>
               <p>
-                AutoRange es una plataforma no-custodial de vaults de liquidez concentrada
-                para Uniswap V3, corriendo en Celo mainnet. Cualquiera puede crear su propio
-                vault, depositar <strong className="text-white/85">USDT</strong> — un solo
-                token, sin necesidad de tener WETH de antemano —, y un agente automatizado
-                (el <em>keeper</em>) arma y rebalancea la posición por vos, dentro de los
-                límites que vos mismo configurás.
+                {t("docs.s01P1Pre")}
+                <strong className="text-white/85">USDT</strong>
+                {t("docs.s01P1Mid")}
+                <em>keeper</em>
+                {t("docs.s01P1Post")}
               </p>
               <p>
-                La garantía central del diseño: el agente puede operar la posición
-                (rebalancear, sumar liquidez), pero <strong className="text-white/85">nunca
-                puede retirar capital a otro destino que no seas vos</strong>. Cada función
-                que mueve fondos hacia afuera del vault está codeada para pagar siempre al{" "}
-                <code>owner</code> — no hay ningún parámetro que lo redirija.
+                {t("docs.s01P2Pre")}
+                <strong className="text-white/85">{t("docs.s01P2Strong")}</strong>
+                {t("docs.s01P2Mid")}
+                <code>owner</code>
+                {t("docs.s01P2Post")}
               </p>
               <p>
-                Construido para el <em>Agentic Payments &amp; DeFAI Hackathon</em> de Celo —
-                Track 1 (volumen generado) y Track 2 (pagos x402) — pero operando con fondos
-                reales, no una demo: cada vault mintea una posición real en un pool público
-                de Uniswap V3 con liquidez de terceros.
+                {t("docs.s01P3Pre")}
+                <em>{t("docs.s01P3Em")}</em>
+                {t("docs.s01P3Post")}
               </p>
             </Section>
 
             {/* Los 3 roles */}
-            <Section id="roles" eyebrow="02" title="Los 3 roles">
-              <p>
-                Tres actores distintos, cada uno con permisos acotados a lo que le
-                corresponde — nadie tiene más poder del que necesita.
-              </p>
+            <Section id="roles" eyebrow="02" title={t("docs.s02Title")}>
+              <p>{t("docs.s02Intro")}</p>
 
               <div className="mt-6 grid gap-4 sm:grid-cols-3">
                 <RoleCard
-                  title="Plataforma"
-                  subtitle="PlatformConfig.sol · dueño del equipo"
-                  points={[
-                    "Fija el performance fee (% de las comisiones LP generadas)",
-                    "Fija el operador por defecto de vaults nuevos",
-                    "Fija el tope de depósito por vault, mientras no esté auditado",
-                  ]}
+                  title={t("docs.rolePlatformTitle")}
+                  subtitle={t("docs.rolePlatformSubtitle")}
+                  points={[t("docs.rolePlatformPoint1"), t("docs.rolePlatformPoint2"), t("docs.rolePlatformPoint3")]}
                 />
                 <RoleCard
-                  title="Owner (LP)"
-                  subtitle="Cualquier wallet · vos"
+                  title={t("docs.roleOwnerTitle")}
+                  subtitle={t("docs.roleOwnerSubtitle")}
                   points={[
-                    "Crea el vault y deposita USDT",
-                    "Define el rango, tope de rebalanceos y periodicidad",
-                    "Es el único destino posible de cualquier retiro",
-                    "Puede pausar, revocar al operador, o forzar un retiro de emergencia",
+                    t("docs.roleOwnerPoint1"),
+                    t("docs.roleOwnerPoint2"),
+                    t("docs.roleOwnerPoint3"),
+                    t("docs.roleOwnerPoint4"),
                   ]}
                   accent
                 />
                 <RoleCard
-                  title="Operador (keeper)"
+                  title={t("docs.roleOperatorTitle")}
                   subtitle={
                     <>
-                      Wallet de la plataforma · el <span className="text-accent">agente</span>
+                      {t("docs.roleOperatorSubtitlePre")}
+                      <span className="text-accent">{t("docs.roleOperatorSubtitleHighlight")}</span>
                     </>
                   }
-                  points={[
-                    "Arma la posición inicial y cada rebalanceo",
-                    "Nunca puede ser destino de un retiro de principal",
-                    "Cobra el performance fee, fijado por la plataforma, solo sobre comisiones LP realmente generadas",
-                  ]}
+                  points={[t("docs.roleOperatorPoint1"), t("docs.roleOperatorPoint2"), t("docs.roleOperatorPoint3")]}
                 />
               </div>
 
               <div className="mt-6 rounded-2xl border border-hairline bg-white/[0.02] p-5">
                 <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-                  Por qué se puede confiar en esto
+                  {t("docs.trustBoxTitle")}
                 </p>
                 <ul className="mt-3 flex flex-col gap-2 text-sm text-muted">
                   <li>
-                    <code>withdraw()</code>/<code>withdrawAll()</code> transfieren siempre a{" "}
-                    <code>owner</code> — dirección fija en el contrato, nunca un parámetro.
+                    <code>withdraw()</code>
+                    {t("docs.trustPoint1Mid")}
+                    <code>withdrawAll()</code>
+                    {t("docs.trustPoint1Post")}
+                    <code>owner</code>
+                    {t("docs.trustPoint1End")}
                   </li>
                   <li>
-                    <code>initPosition()</code>/<code>rebalance()</code> solo el operador
-                    puede llamarlas, pero el NFT de la posición y los fondos siempre quedan
-                    dentro del vault — el operador nunca es <code>recipient</code>.
+                    <code>initPosition()</code>
+                    {t("docs.trustPoint2Mid")}
+                    <code>rebalance()</code>
+                    {t("docs.trustPoint2Post")}
+                    <code>recipient</code>
+                    {t("docs.trustPoint2End")}
                   </li>
                   <li>
-                    Cualquier rango que proponga el operador se valida on-chain contra el
-                    precio de mercado (<code>maxRangeDeviationBps</code>) — no puede inventar
-                    un rango arbitrario.
+                    {t("docs.trustPoint3Pre")}
+                    <code>maxRangeDeviationBps</code>
+                    {t("docs.trustPoint3Post")}
                   </li>
                   <li>
-                    El owner puede revocar al operador (<code>setOperator(0x0)</code>) o
-                    forzar el cierre de la posición (<code>emergencyWithdrawPosition()</code>
-                    ) en cualquier momento, sin depender de que el operador coopere.
+                    {t("docs.trustPoint4Pre")}
+                    <code>setOperator(0x0)</code>
+                    {t("docs.trustPoint4Mid")}
+                    <code>emergencyWithdrawPosition()</code>
+                    {t("docs.trustPoint4Post")}
                   </li>
                 </ul>
               </div>
             </Section>
 
             {/* Ciclo de vida */}
-            <Section id="ciclo-de-vida" eyebrow="03" title="Ciclo de vida de un vault">
-              <p>Desde que se crea hasta que se retira todo, en orden:</p>
+            <Section id="ciclo-de-vida" eyebrow="03" title={t("docs.s03Title")}>
+              <p>{t("docs.s03Intro")}</p>
 
               <FlowDiagram
                 steps={[
-                  { who: "Owner", what: "createVault()", detail: "clona RangeVault vía el factory" },
-                  { who: "Owner", what: "configureTarget()", detail: "rango, tope de rebalanceos, periodicidad" },
-                  { who: "Owner", what: "deposit()", detail: "USDT únicamente" },
-                  { who: "Agente", what: "initPosition()", detail: "swapea lo necesario y mintea la posición" },
+                  { who: t("docs.flow1Who"), what: t("docs.flow1What"), detail: t("docs.flow1Detail") },
+                  { who: t("docs.flow2Who"), what: t("docs.flow2What"), detail: t("docs.flow2Detail") },
+                  { who: t("docs.flow3Who"), what: t("docs.flow3What"), detail: t("docs.flow3Detail") },
+                  { who: t("docs.flow4Who"), what: t("docs.flow4What"), detail: t("docs.flow4Detail") },
                 ]}
               />
 
               <div className="my-6 rounded-2xl border border-accent/30 bg-accent/[0.04] p-5">
                 <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
-                  Ciclo continuo, cada ~5 minutos
+                  {t("docs.cycleBoxTitle")}
                 </p>
                 <p className="mt-2 text-sm text-muted">
-                  El keeper chequea cada vault. Si corresponde, cierra la posición vieja,
-                  consulta a uni-lab.xyz (vía x402), swapea, y mintea una posición nueva —
-                  ver{" "}
+                  {t("docs.cycleBoxTextPre")}
                   <a href="#decision" className="text-accent underline-offset-4 hover:underline">
-                    cómo decide el agente
-                  </a>{" "}
-                  más abajo.
+                    {t("docs.cycleBoxLink")}
+                  </a>
+                  {t("docs.cycleBoxTextPost")}
                 </p>
               </div>
 
               <FlowDiagram
                 steps={[
-                  { who: "Owner", what: "withdraw() / withdrawAll()", detail: "en cualquier momento, parcial o total" },
-                  { who: "Owner", what: "closeVault()", detail: "opcional, una vez vacío — desactiva el vault para siempre" },
+                  { who: t("docs.flow5Who"), what: t("docs.flow5What"), detail: t("docs.flow5Detail") },
+                  { who: t("docs.flow6Who"), what: t("docs.flow6What"), detail: t("docs.flow6Detail") },
                 ]}
               />
             </Section>
 
             {/* Contratos */}
-            <Section id="contratos" eyebrow="04" title="Los contratos">
-              <p>
-                Tres contratos, cada uno con una responsabilidad acotada. Uno configura,
-                uno fabrica, uno sostiene los fondos — así se ve la relación entre los tres:
-              </p>
+            <Section id="contratos" eyebrow="04" title={t("docs.s04Title")}>
+              <p>{t("docs.s04Intro")}</p>
 
-              <ArchitectureDiagram />
+              <ArchitectureDiagram t={t} />
 
               <ContractBlock
                 name="PlatformConfig.sol"
-                desc="Configuración central que todos los vaults leen en vivo, no al crearse. Su dueño es un TimelockController, no una wallet directamente — todo cambio se programa y recién se aplica 24h después, dando tiempo real para reaccionar antes de que un cambio tome efecto."
+                desc={t("docs.platformConfigDesc")}
                 rows={[
-                  [
-                    "performanceFeeBps",
-                    "% de las comisiones de Uniswap que la plataforma corta antes de que lleguen al owner — nunca toca principal.",
-                  ],
-                  ["feeToken", "USDT — el token en que se mide maxDepositUsd."],
-                  ["defaultOperator", "Operador que se asigna a cada vault nuevo por defecto."],
-                  ["maxDepositUsd", "Tope global de depósito por vault, mientras el contrato no esté auditado."],
+                  ["performanceFeeBps", t("docs.platformConfigRow1Desc")],
+                  ["feeToken", t("docs.platformConfigRow2Desc")],
+                  ["defaultOperator", t("docs.platformConfigRow3Desc")],
+                  ["maxDepositUsd", t("docs.platformConfigRow4Desc")],
                 ]}
               />
 
               <ContractBlock
                 name="VaultFactory.sol"
-                desc="Deploya vaults nuevos como clones mínimos (EIP-1167) del RangeVault — mucho más barato en gas que desplegar el contrato completo cada vez."
+                desc={t("docs.vaultFactoryDesc")}
                 rows={[
-                  ["createVault(pool, token0, token1, fee)", "Clona RangeVault e inicializa el vault para msg.sender."],
-                  ["getVaultsByOwner(address)", "Lista los vaults de una wallet."],
-                  ["allVaults(i) / vaultCount()", "Enumeración global, usada para stats de la plataforma."],
+                  ["createVault(pool, token0, token1, fee)", t("docs.vaultFactoryRow1Desc")],
+                  ["getVaultsByOwner(address)", t("docs.vaultFactoryRow2Desc")],
+                  ["allVaults(i) / vaultCount()", t("docs.vaultFactoryRow3Desc")],
                 ]}
               />
 
-              <ContractBlock
-                name="RangeVault.sol"
-                desc="Un vault = una posición en un pool. Sostiene los fondos, el NFT de la posición, y aplica todos los guardrails."
-              >
-                <p className="mt-4 text-sm font-medium text-white/80">A dónde va cada peso</p>
-                <p className="mt-1 text-sm text-muted">
-                  El único flujo de salida de principal posible es hacia el owner. El
-                  operador solo puede cobrar su fee fijo por rebalanceo — nunca el capital.
-                </p>
-                <FundFlowDiagram />
+              <ContractBlock name="RangeVault.sol" desc={t("docs.rangeVaultDesc")}>
+                <p className="mt-4 text-sm font-medium text-white/80">{t("docs.fundFlowTitle")}</p>
+                <p className="mt-1 text-sm text-muted">{t("docs.fundFlowDesc")}</p>
+                <FundFlowDiagram t={t} />
 
-                <p className="mt-6 text-sm font-medium text-white/80">Ledgers internos</p>
+                <p className="mt-6 text-sm font-medium text-white/80">{t("docs.ledgersTitle")}</p>
                 <p className="mt-1 text-sm text-muted">
-                  Todo llega como USDT, pero se reparte en dos ledgers separados que ninguna
-                  función puede mezclar: <code>investableUsdt</code> (capital sin invertir
-                  todavía) y <code>reserveBalance</code> (reserva para reinyectar en
-                  rebalanceos futuros).
+                  {t("docs.ledgersTextPre")}
+                  <code>investableUsdt</code>
+                  {t("docs.ledgersTextMid")}
+                  <code>reserveBalance</code>
+                  {t("docs.ledgersTextPost")}
                 </p>
 
-                <p className="mt-5 text-sm font-medium text-white/80">Funciones del owner</p>
+                <p className="mt-5 text-sm font-medium text-white/80">{t("docs.ownerFunctionsTitle")}</p>
                 <FunctionTable
                   rows={[
-                    ["deposit(reserve, investable)", "Deposita USDT, lo reparte entre los dos ledgers."],
-                    ["configureTarget(...)", "Rango objetivo, tope de rebalanceos, reinyección, periodicidad."],
-                    ["setRiskParams(...)", "Slippage máximo, cooldown mínimo, tolerancia de desviación de rango."],
-                    ["increasePosition(swapIx, usdtAmount, ...)", "Suma capital a la posición abierta al instante, sin esperar al próximo rebalanceo."],
-                    ["withdraw(positionShareBps, fundsShareBps)", "Retiro parcial — posición y fondos idle, de forma independiente."],
-                    ["withdrawAll()", "Cierra la posición (si hay) y devuelve todo."],
-                    ["setOperator(address)", "Cambia o revoca (0x0) al operador — kill switch."],
-                    ["pause() / unpause()", "Bloquea initPosition()/rebalance() sin tocar los fondos."],
-                    ["emergencyWithdrawPosition()", "Fuerza el cierre de la posición, sin depender del operador."],
-                    ["closeVault()", "Desactiva el vault para siempre — requiere que ya esté vacío."],
+                    ["deposit(reserve, investable)", t("docs.ownerFn1Desc")],
+                    ["configureTarget(...)", t("docs.ownerFn2Desc")],
+                    ["setRiskParams(...)", t("docs.ownerFn3Desc")],
+                    ["increasePosition(swapIx, usdtAmount, ...)", t("docs.ownerFn4Desc")],
+                    ["withdraw(positionShareBps, fundsShareBps)", t("docs.ownerFn5Desc")],
+                    ["withdrawAll()", t("docs.ownerFn6Desc")],
+                    ["setOperator(address)", t("docs.ownerFn7Desc")],
+                    ["pause() / unpause()", t("docs.ownerFn8Desc")],
+                    ["emergencyWithdrawPosition()", t("docs.ownerFn9Desc")],
+                    ["closeVault()", t("docs.ownerFn10Desc")],
                   ]}
                 />
 
                 <p className="mt-5 text-sm font-medium text-white/80">
-                  Funciones del operador (<span className="text-accent">agente</span>)
+                  {t("docs.operatorFunctionsTitlePre")}
+                  <span className="text-accent">{t("docs.operatorFunctionsTitleHighlight")}</span>
+                  {t("docs.operatorFunctionsTitlePost")}
                 </p>
                 <FunctionTable
                   rows={[
-                    ["initPosition(swapIx, ...)", "Arma la posición inicial según el rango que configuró el owner."],
-                    ["rebalance(newTickLower, newTickUpper, swapIx, ...)", "Cierra la posición vigente y arma una nueva."],
-                    ["reinjectIntoPosition(swapIx, amount, ...)", "Suma reserva a la posición abierta, sin cerrarla."],
-                    ["sweepIdleDust(swapIx, ...)", "Swap correctivo sobre lo que haya quedado suelto, y lo suma a la posición."],
+                    ["initPosition(swapIx, ...)", t("docs.operatorFn1Desc")],
+                    ["rebalance(newTickLower, newTickUpper, swapIx, ...)", t("docs.operatorFn2Desc")],
+                    ["reinjectIntoPosition(swapIx, amount, ...)", t("docs.operatorFn3Desc")],
+                    ["sweepIdleDust(swapIx, ...)", t("docs.operatorFn4Desc")],
                   ]}
                 />
 
-                <p className="mt-5 text-sm font-medium text-white/80">Eventos principales</p>
+                <p className="mt-5 text-sm font-medium text-white/80">{t("docs.eventsTitle")}</p>
                 <p className="mt-1 text-sm leading-relaxed text-muted">
                   <code>PositionInitialized</code>, <code>Rebalanced</code>,{" "}
                   <code>LpFeesPaidToOwner</code>, <code>Withdrawn</code>,{" "}
                   <code>PositionIncreased</code>, <code>ReinjectedIntoPosition</code>,{" "}
-                  <code>IdleDustSwept</code> — la{" "}
+                  <code>IdleDustSwept</code>
+                  {t("docs.eventsTextPre")}
                   <Link href="/vaults" className="text-accent underline-offset-4 hover:underline">
-                    página de cada vault
-                  </Link>{" "}
-                  reconstruye su historial completo leyendo directo estos eventos, sin backend.
+                    {t("docs.eventsTextLink")}
+                  </Link>
+                  {t("docs.eventsTextPost")}
                 </p>
               </ContractBlock>
             </Section>
@@ -293,49 +283,40 @@ export default function Docs() {
               eyebrow="05"
               title={
                 <>
-                  Cómo decide el <span className="text-accent">agente</span>
+                  {t("docs.s05TitlePre")}
+                  <span className="text-accent">{t("docs.s05TitleHighlight")}</span>
                 </>
               }
             >
-              <p>
-                Cada ~5 minutos, para cada vault, el keeper corre la misma secuencia — sin
-                discreción humana:
-              </p>
+              <p>{t("docs.s05Intro")}</p>
               <ol className="mt-4 flex flex-col gap-2 text-sm text-muted">
                 <li>
-                  <strong className="text-white/80">1.</strong> ¿Quedan rebalanceos?{" "}
+                  <strong className="text-white/80">1.</strong> {t("docs.d1Pre")}
                   <code>rebalanceCount &lt; maxRebalances</code>
                 </li>
                 <li>
-                  <strong className="text-white/80">2.</strong> ¿Pasó el cooldown mínimo desde
-                  el último rebalanceo?
+                  <strong className="text-white/80">2.</strong> {t("docs.d2")}
                 </li>
                 <li>
-                  <strong className="text-white/80">3.</strong> ¿Toca el rebalanceo periódico,
-                  aunque el precio siga en rango?
+                  <strong className="text-white/80">3.</strong> {t("docs.d3")}
                 </li>
                 <li>
-                  <strong className="text-white/80">4.</strong> ¿El precio rompió el rango de
-                  la posición — por arriba o por abajo?
+                  <strong className="text-white/80">4.</strong> {t("docs.d4")}
                 </li>
               </ol>
               <p className="mt-4">
-                Cada caso arma un rango nuevo con una lógica distinta (el periódico mantiene
-                el piso y recentra el techo; romper el piso arma un rango 5% por debajo del
-                precio; romper el techo reconstruye desde cero, 100% en stablecoin). La guía
-                completa, con la matemática y ejemplos numéricos ciclo por ciclo, está en{" "}
+                {t("docs.s05OutroPre")}
                 <Link href="/recursos" className="text-accent underline-offset-4 hover:underline">
-                  Recursos
+                  {t("docs.s05OutroLink")}
                 </Link>
                 .
               </p>
             </Section>
 
             {/* Pagos */}
-            <Section id="pagos" eyebrow="06" title="Pagos: x402 y uni-lab.xyz">
+            <Section id="pagos" eyebrow="06" title={t("docs.s06Title")}>
               <p>
-                Para saber cómo recentrar el techo de un rango en cada rebalanceo, el keeper
-                consulta a{" "}
+                {t("docs.s06P1Pre")}
                 <a
                   href="https://uni-lab-xyz.vercel.app/api-docs"
                   target="_blank"
@@ -344,84 +325,71 @@ export default function Docs() {
                 >
                   uni-lab.xyz
                 </a>
-                , una API de cálculo pay-per-query. El pago se hace vía{" "}
-                <strong className="text-white/85">x402</strong> — el protocolo HTTP 402
-                &quot;Payment Required&quot;, resuelto con una autorización EIP-3009 firmada
-                (gasless), liquidada en USDC por el facilitator de Celo (
-                <code>api.x402.celo.org</code>).
+                {t("docs.s06P1Mid")}
+                <strong className="text-white/85">{t("docs.s06P1Strong")}</strong>
+                {t("docs.s06P1Post")}
+                <code>api.x402.celo.org</code>
+                {t("docs.s06P1End")}
               </p>
               <p>
-                Un detalle estructural importante: el vault, al ser un contrato inteligente,{" "}
-                <strong className="text-white/85">no puede firmar una autorización EIP-712</strong>{" "}
-                (no tiene clave privada). Por eso el pago sale siempre de la wallet propia del{" "}
-                <strong className="text-white/85">operador</strong> (en USDC), nunca del
-                vault — el vault nunca necesitó tener USDC ni pagar nada directamente.
+                {t("docs.s06P2Pre")}
+                <strong className="text-white/85">{t("docs.s06P2Strong")}</strong>
+                {t("docs.s06P2Mid")}
+                <strong className="text-white/85">{t("docs.s06P2Strong2")}</strong>
+                {t("docs.s06P2Post")}
               </p>
 
               <FlowDiagram
                 steps={[
-                  { who: "Keeper", what: "arma la consulta", detail: "A1, B1, C1, D1, E1 — ver Recursos" },
-                  { who: "Keeper", what: "paga vía x402", detail: "USDC del operador, autorización EIP-3009" },
-                  { who: "Facilitator", what: "liquida on-chain", detail: "api.x402.celo.org, gas propio" },
-                  { who: "uni-lab.xyz", what: "responde", detail: "el nuevo techo del rango (C1)" },
+                  { who: t("docs.payFlow1Who"), what: t("docs.payFlow1What"), detail: t("docs.payFlow1Detail") },
+                  { who: t("docs.payFlow2Who"), what: t("docs.payFlow2What"), detail: t("docs.payFlow2Detail") },
+                  { who: t("docs.payFlow3Who"), what: t("docs.payFlow3What"), detail: t("docs.payFlow3Detail") },
+                  { who: t("docs.payFlow4Who"), what: t("docs.payFlow4What"), detail: t("docs.payFlow4Detail") },
                 ]}
               />
             </Section>
 
             {/* Seguridad */}
-            <Section id="seguridad" eyebrow="07" title="Seguridad y guardrails">
+            <Section id="seguridad" eyebrow="07" title={t("docs.s07Title")}>
               <div className="grid gap-4 sm:grid-cols-2">
-                <GuardCard
-                  title="Rango validado contra el mercado"
-                  desc="_checkRangeNearMarket exige que el precio actual caiga dentro de [tickLower, tickUpper] (con un margen configurable) — no un centro derivado, sino los límites reales que calcula uni-lab."
-                />
-                <GuardCard
-                  title="Cooldown + tope duro"
-                  desc="minRebalanceInterval evita thrashing; maxRebalances es un techo de gasto en fees que el owner fija una sola vez, para toda la vida del vault."
-                />
-                <GuardCard
-                  title="Chequeo de gas antes de actuar"
-                  desc="El keeper estima el gas real de cada transacción y no la manda si el operador no tiene con qué pagarla — evita perder un pago a uni-lab en una tx que iba a fallar."
-                />
-                <GuardCard
-                  title="Barrido de capital suelto"
-                  desc="Tras cada mint, el contrato reintenta sumar cualquier sobrante a la posición. Si queda un sobrante de un solo token, el keeper detecta el capital ocioso en cada ciclo y dispara sweepIdleDust() con un swap correctivo real."
-                />
+                <GuardCard title={t("docs.guard1Title")} desc={t("docs.guard1Desc")} />
+                <GuardCard title={t("docs.guard2Title")} desc={t("docs.guard2Desc")} />
+                <GuardCard title={t("docs.guard3Title")} desc={t("docs.guard3Desc")} />
+                <GuardCard title={t("docs.guard4Title")} desc={t("docs.guard4Desc")} />
               </div>
             </Section>
 
             {/* Direcciones */}
-            <Section id="direcciones" eyebrow="08" title="Direcciones de referencia">
+            <Section id="direcciones" eyebrow="08" title={t("docs.s08Title")}>
               <AddrTable
                 rows={[
-                  ["Pool (USDT/WETH)", POOL, `Fee tier ${FEE_TIER / 10_000}%`],
-                  ["USDT (token0)", USDT, "6 decimales"],
-                  ["WETH (token1)", WETH, "18 decimales"],
-                  ["NonfungiblePositionManager", POSITION_MANAGER, "Uniswap V3 oficial en Celo"],
-                  ["SwapRouter02", SWAP_ROUTER02, "Uniswap V3 oficial en Celo"],
-                  ["Wallet de pago de uni-lab.xyz", UNILAB_PAYMENT_WALLET, "Recibe el settlement x402"],
+                  [t("docs.addrPoolLabel"), POOL, t("docs.addrPoolNote", { fee: FEE_TIER / 10_000 })],
+                  [t("docs.addrUsdtLabel"), USDT, t("docs.addrUsdtNote")],
+                  [t("docs.addrWethLabel"), WETH, t("docs.addrWethNote")],
+                  [t("docs.addrPosManagerLabel"), POSITION_MANAGER, t("docs.addrPosManagerNote")],
+                  [t("docs.addrSwapRouterLabel"), SWAP_ROUTER02, t("docs.addrSwapRouterNote")],
+                  [t("docs.addrUnilabLabel"), UNILAB_PAYMENT_WALLET, t("docs.addrUnilabNote")],
                 ]}
               />
               <p className="mt-4 text-sm text-muted">
-                Los contratos propios (PlatformConfig, VaultFactory, RangeVault) y su
-                historial de redeploys están documentados en detalle en{" "}
-                <code className="text-xs">PLAN.md</code> del repositorio — todos verificados
-                en Celoscan, código fuente público.
+                {t("docs.s08FooterPre")}
+                <code className="text-xs">PLAN.md</code>
+                {t("docs.s08FooterPost")}
               </p>
             </Section>
 
             {/* Glosario */}
-            <Section id="glosario" eyebrow="09" title="Glosario">
+            <Section id="glosario" eyebrow="09" title={t("docs.s09Title")}>
               <dl className="grid gap-4 sm:grid-cols-2">
                 {[
-                  ["Tick", "Unidad de precio de Uniswap V3. En este pool, un tick MÁS ALTO significa un precio de ETH MÁS BAJO (token1/token0 invertido)."],
-                  ["Liquidez concentrada", "En vez de proveer liquidez en todo el rango de precios posibles, se concentra en un rango específico — más eficiente, pero deja de cobrar fees si el precio sale de ese rango."],
-                  ["Rebalanceo", "Cerrar la posición actual y abrir una nueva con un rango distinto, siguiendo al precio."],
-                  ["Rebalanceo periódico", "Un rebalanceo forzado por tiempo, no por precio — genera actividad real aunque el precio siga en rango."],
-                  ["Dust / capital suelto", "Token0 o token1 que quedó sin invertir en la posición tras un swap imperfecto."],
-                  ["EIP-1167 (clone)", "Patrón de proxy mínimo — cada vault nuevo es una copia barata en gas del mismo contrato base."],
-                  ["x402", "Protocolo de pago HTTP 402, resuelto con una autorización EIP-3009 firmada, sin gas para quien paga."],
-                  ["Non-custodial", "El operador nunca puede retirar el principal — solo el owner puede."],
+                  [t("docs.g1Term"), t("docs.g1Def")],
+                  [t("docs.g2Term"), t("docs.g2Def")],
+                  [t("docs.g3Term"), t("docs.g3Def")],
+                  [t("docs.g4Term"), t("docs.g4Def")],
+                  [t("docs.g5Term"), t("docs.g5Def")],
+                  [t("docs.g6Term"), t("docs.g6Def")],
+                  [t("docs.g7Term"), t("docs.g7Def")],
+                  [t("docs.g8Term"), t("docs.g8Def")],
                 ].map(([term, def]) => (
                   <div key={term} className="rounded-xl border border-hairline bg-white/[0.02] p-4">
                     <dt className="text-sm font-semibold text-white/85">{term}</dt>
@@ -433,10 +401,10 @@ export default function Docs() {
 
             <div className="flex flex-wrap gap-3 border-t border-hairline pt-10">
               <Link href="/create" className="btn-primary !px-6 !py-3">
-                Crear vault
+                {t("docs.ctaCreate")}
               </Link>
               <Link href="/recursos" className="btn-secondary !px-6 !py-3">
-                Ver reglas de rebalanceo con ejemplos
+                {t("docs.ctaRecursos")}
               </Link>
             </div>
           </div>
@@ -445,6 +413,8 @@ export default function Docs() {
     </>
   );
 }
+
+type T = ReturnType<typeof useTranslation>["t"];
 
 function Section({
   id,
@@ -519,24 +489,20 @@ function FlowDiagram({ steps }: { steps: { who: string; what: string; detail: st
   );
 }
 
-function ArchitectureDiagram() {
+function ArchitectureDiagram({ t }: { t: T }) {
   return (
     <div className="my-6 overflow-x-auto">
       <div className="flex min-w-[560px] flex-col items-center gap-0">
         <DiagramBox
-          label="Plataforma"
+          label={t("docs.diagPlatformLabel")}
           name="PlatformConfig.sol"
-          detail="performanceFeeBps · defaultOperator · maxDepositUsd"
+          detail={t("docs.diagPlatformDetail")}
         />
-        <Connector label="configura, en vivo, a" />
-        <DiagramBox
-          label="Fábrica"
-          name="VaultFactory.sol"
-          detail="createVault() → clona (EIP-1167)"
-        />
-        <Connector label="deploya N instancias de" />
+        <Connector label={t("docs.diagConfiguresTo")} />
+        <DiagramBox label={t("docs.diagFactoryLabel")} name="VaultFactory.sol" detail={t("docs.diagFactoryDetail")} />
+        <Connector label={t("docs.diagDeploysN")} />
         <div className="flex w-full items-start justify-center gap-3">
-          {["Vault de Ana", "Vault de Bruno", "Vault de Cami"].map((v, i) => (
+          {[t("docs.diagVaultAna"), t("docs.diagVaultBruno"), t("docs.diagVaultCami")].map((v, i) => (
             <div
               key={v}
               className={
@@ -545,7 +511,7 @@ function ArchitectureDiagram() {
             >
               <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">RangeVault.sol</p>
               <p className="mt-1 text-xs font-medium text-white/85">{v}</p>
-              <p className="mt-1 text-[10px] text-muted">1 vault = 1 posición</p>
+              <p className="mt-1 text-[10px] text-muted">{t("docs.diagRangeVaultNote")}</p>
             </div>
           ))}
         </div>
@@ -575,30 +541,30 @@ function Connector({ label }: { label: string }) {
   );
 }
 
-function FundFlowDiagram() {
+function FundFlowDiagram({ t }: { t: T }) {
   return (
     <div className="my-5 overflow-x-auto">
       <div className="grid min-w-[640px] grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-2">
         {/* Row 1: Owner -> Vault */}
-        <FlowNode label="Owner" detail="deposita USDT" />
+        <FlowNode label={t("docs.fundFlowOwnerLabel")} detail={t("docs.fundFlowOwnerDepositDetail")} />
         <Arrow text="deposit()" />
-        <FlowNode label="RangeVault" detail="investableUsdt + reserveBalance" highlight />
-        <Arrow text="swap + mint" />
-        <FlowNode label="Posición Uniswap V3" detail="NFT queda en el vault" />
+        <FlowNode label={t("docs.fundFlowVaultLabel")} detail={t("docs.fundFlowVaultLedgersDetail")} highlight />
+        <Arrow text={t("docs.arrowSwapMint")} />
+        <FlowNode label={t("docs.fundFlowPositionLabel")} detail={t("docs.fundFlowPositionNftDetail")} />
 
         {/* Row 2: return paths */}
-        <FlowNode label="Owner" detail="único destino de withdraw()" />
+        <FlowNode label={t("docs.fundFlowOwnerLabel")} detail={t("docs.fundFlowOwnerWithdrawDetail")} />
         <Arrow text="withdraw()" reverse />
-        <FlowNode label="RangeVault" detail="fees LP + principal" highlight />
-        <Arrow text="collect()" reverse />
-        <FlowNode label="Posición Uniswap V3" detail="fees acumuladas" />
+        <FlowNode label={t("docs.fundFlowVaultLabel")} detail={t("docs.fundFlowVaultFeesDetail")} highlight />
+        <Arrow text={t("docs.arrowCollect")} reverse />
+        <FlowNode label={t("docs.fundFlowPositionLabel")} detail={t("docs.fundFlowPositionFeesDetail")} />
 
         {/* Row 3: operator fee, off to the side */}
         <div />
         <div />
-        <FlowNode label="Operador" detail="cobra % de las comisiones LP" small />
-        <Arrow text="performance fee" small />
-        <FlowNode label="RangeVault" detail="nunca el principal" highlight small />
+        <FlowNode label={t("docs.fundFlowOperatorLabel")} detail={t("docs.fundFlowOperatorDetail")} small />
+        <Arrow text={t("docs.arrowPerformanceFee")} small />
+        <FlowNode label={t("docs.fundFlowVaultLabel")} detail={t("docs.fundFlowVaultNeverPrincipalDetail")} highlight small />
       </div>
     </div>
   );

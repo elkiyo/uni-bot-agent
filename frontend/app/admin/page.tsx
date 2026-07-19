@@ -18,6 +18,7 @@ import { USDC } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 interface UniLabCallRow {
   id: number;
@@ -39,6 +40,7 @@ export default function Admin() {
   const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { switchChainAsync } = useSwitchChain();
+  const { t } = useTranslation();
 
   const { data, refetch } = useReadContracts({
     contracts: [
@@ -312,7 +314,7 @@ export default function Admin() {
         try {
           await switchChainAsync({ chainId: chain.id });
         } catch {
-          setError(`Cambiá tu wallet a ${chain.name} para continuar.`);
+          setError(t("admin.switchChainError", { chain: chain.name }));
           return;
         }
       }
@@ -330,21 +332,18 @@ export default function Admin() {
     <>
       <Header />
       <main className="section flex-1 pb-24 pt-32">
-        <span className="eyebrow">Operaciones</span>
+        <span className="eyebrow">{t("admin.eyebrow")}</span>
         <h1
           className="mt-5 text-3xl font-semibold leading-[1.12] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Panel operativo
+          {t("admin.title")}
         </h1>
-        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
-          Salud de la plataforma en vivo — capital bajo gestión, estado del operador, y la
-          configuración global que aplica a todos los vaults.
-        </p>
+        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">{t("admin.subtitle")}</p>
 
         {availableChains.length > 1 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Red:</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("admin.networkLabel")}</span>
             {availableChains.map((c) => (
               <button
                 key={c.id}
@@ -363,21 +362,21 @@ export default function Admin() {
         )}
 
         {!data && Boolean(chain.platformConfigAddress) && (
-          <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Cargando…</p>
+          <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("admin.loading")}</p>
         )}
 
         {data && !isPlatformOwner && !isPendingOwner && (
           <div className="glass mt-10 rounded-2xl p-8 text-center">
             <p className="text-sm text-muted">
-              Este panel es solo para el dueño de la plataforma en {chain.name}.
+              {t("admin.ownerOnlyPre", { chain: chain.name })}
               {connected ? (
                 <>
-                  {" "}
-                  Conectá la wallet dueña (<code className="break-all font-mono text-xs">{String(owner)}</code>)
-                  para continuar.
+                  {t("admin.ownerOnlyConnectedPre")}
+                  <code className="break-all font-mono text-xs">{String(owner)}</code>
+                  {t("admin.ownerOnlyConnectedPost")}
                 </>
               ) : (
-                " Conectá tu wallet para continuar."
+                t("admin.ownerOnlyDisconnected")
               )}
             </p>
           </div>
@@ -386,16 +385,16 @@ export default function Admin() {
         {data && isPendingOwner && (
           <div className="glass mt-10 rounded-2xl border-accent/35 bg-accent/[0.06] p-6 sm:p-8">
             <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-              Transferencia de ownership pendiente
+              {t("admin.pendingTransferTitle")}
             </h2>
             <p className="mt-2 text-sm text-muted">
-              El dueño actual (<code className="break-all font-mono text-xs">{String(owner)}</code>) propuso
-              transferirte el ownership de la plataforma en {chain.name}. Tenés que aceptarlo desde esta wallet
-              para que se complete.
+              {t("admin.pendingTransferTextPre")}
+              <code className="break-all font-mono text-xs">{String(owner)}</code>
+              {t("admin.pendingTransferTextMid", { chain: chain.name })}
             </p>
             {busy && (
               <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                Procesando: {busy}… firmá en tu wallet
+                {t("admin.processingLabel", { action: busy })}
               </p>
             )}
             {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
@@ -413,7 +412,7 @@ export default function Admin() {
               disabled={Boolean(busy)}
               className="btn-primary mt-6 !px-5 !py-2.5"
             >
-              Aceptar ownership
+              {t("admin.acceptOwnership")}
             </button>
           </div>
         )}
@@ -422,18 +421,21 @@ export default function Admin() {
           <>
             {(!chain.platformConfigAddress || !chain.factoryAddress) && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
-            Los contratos todavía no están configurados en {chain.name}.
+            {t("admin.contractsNotDeployed", { chain: chain.name })}
           </div>
         )}
 
         {operatorGasLow && (
           <div className="glass mt-8 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
             <p className="text-sm font-medium text-negative">
-              El operador tiene menos de {chain.lowGasThreshold} {chain.viemChain.nativeCurrency.symbol} en {chain.name} —
-              puede quedarse sin gas para rebalancear o barrer dust en cualquier momento.
+              {t("admin.lowGasWarning", {
+                threshold: chain.lowGasThreshold,
+                symbol: chain.viemChain.nativeCurrency.symbol,
+                chain: chain.name,
+              })}
             </p>
             <p className="mt-1 font-mono text-xs text-muted">
-              Mandale {chain.viemChain.nativeCurrency.symbol} a {String(defaultOperator)}
+              {t("admin.lowGasSendHint", { symbol: chain.viemChain.nativeCurrency.symbol, address: String(defaultOperator) })}
             </p>
           </div>
         )}
@@ -441,22 +443,22 @@ export default function Admin() {
         {data && (
           <>
             <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-              Capital bajo gestión
+              {t("admin.capitalUnderManagement")}
             </p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <Stat label="TVL total" value={tvlUsd !== undefined ? `$${tvlUsd.toFixed(2)}` : "…"} accent />
+              <Stat label={t("admin.statTvlTotal")} value={tvlUsd !== undefined ? `$${tvlUsd.toFixed(2)}` : "…"} accent />
               <Stat
-                label="En posiciones"
+                label={t("admin.statInPositions")}
                 value={ethPrice !== undefined ? `$${totalPositionValueUsd.toFixed(2)}` : "…"}
               />
               <Stat
-                label="Capital libre"
+                label={t("admin.statFreeCapital")}
                 value={`${totalIdleUsdtNum.toFixed(2)} ${chain.stableSymbol}${
                   totalIdleWethNum > 0 ? ` + ${totalIdleWethNum.toFixed(6)} ${chain.volatileSymbol}` : ""
                 }`}
               />
               <Stat
-                label="Comisiones LP generadas (bruto)"
+                label={t("admin.statLpFeesGross")}
                 value={
                   platformStats
                     ? `${(platformStats.totalLpFees0Usd + platformStats.totalPerformanceFee0Usd).toFixed(2)} ${chain.stableSymbol}${
@@ -469,36 +471,36 @@ export default function Admin() {
               />
             </div>
 
-            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Vaults</p>
+            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{t("admin.vaultsLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <Stat label="Activos" value={String(activeVaults.length)} accent />
-              <Stat label="Cerrados" value={String(closedVaultsCount)} />
+              <Stat label={t("admin.statActive")} value={String(activeVaults.length)} accent />
+              <Stat label={t("admin.statClosed")} value={String(closedVaultsCount)} />
               <Stat
-                label="Fuera de rango ahora"
+                label={t("admin.statOutOfRangeNow")}
                 value={String(vaultsOutOfRange)}
                 accent={vaultsOutOfRange > 0}
                 negative={vaultsOutOfRange > 0}
               />
-              <Stat label="Rebalanceos totales" value={platformStats ? String(platformStats.totalRebalances) : "…"} />
+              <Stat label={t("admin.statTotalRebalances")} value={platformStats ? String(platformStats.totalRebalances) : "…"} />
             </div>
 
-            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Operador</p>
+            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{t("admin.operatorLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
-                label={`${chain.viemChain.nativeCurrency.symbol} (gas, ${chain.name})`}
+                label={t("admin.statGasLabel", { symbol: chain.viemChain.nativeCurrency.symbol, chain: chain.name })}
                 value={operatorGas ? `${Number(operatorGas.formatted).toFixed(3)} ${chain.viemChain.nativeCurrency.symbol}` : "…"}
                 negative={operatorGasLow}
               />
               <Stat
-                label="USDC (x402, Celo)"
+                label={t("admin.statUsdcLabel")}
                 value={operatorUsdc !== undefined ? `${formatUnits(operatorUsdc as bigint, 6)} USDC` : "…"}
               />
               <Stat
-                label="Consultas a uni-lab"
-                value={uniLabCalls ? `${x402Ok} ok / ${x402Failed} fallidas` : "…"}
+                label={t("admin.statUnilabQueries")}
+                value={uniLabCalls ? t("admin.statUnilabValue", { ok: x402Ok, failed: x402Failed }) : "…"}
               />
               <Stat
-                label="Revenue de plataforma"
+                label={t("admin.statPlatformRevenue")}
                 value={
                   platformStats
                     ? `$${(
@@ -511,31 +513,34 @@ export default function Admin() {
               />
             </div>
 
-            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Configuración</p>
+            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{t("admin.configLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
-                label="Tope por vault"
+                label={t("admin.statCapPerVault")}
                 value={`${formatUnits((maxDepositUsd as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
               />
               <Stat
-                label="Performance fee"
-                value={`${Number((performanceFeeBps as bigint) ?? 0n) / 100}% de las comisiones LP`}
+                label={t("admin.statPerformanceFee")}
+                value={t("admin.statPerformanceFeeValue", { pct: Number((performanceFeeBps as bigint) ?? 0n) / 100 })}
               />
               <Stat
-                label="Fee de creación"
-                value={`${formatUnits((creationFeeUsdt as bigint) ?? 0n, 6)} ${chain.stableSymbol} · una vez por vault`}
+                label={t("admin.statCreationFee")}
+                value={t("admin.statCreationFeeValue", {
+                  amount: formatUnits((creationFeeUsdt as bigint) ?? 0n, 6),
+                  symbol: chain.stableSymbol,
+                })}
               />
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                  Operador por defecto
+                  {t("admin.statDefaultOperator")}
                 </span>
                 <p className="mt-2 break-all font-mono text-xs text-white/90">{String(defaultOperator)}</p>
               </div>
               <div className="glass rounded-2xl p-5">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">Tesorería</span>
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{t("admin.statTreasury")}</span>
                 <p className="mt-2 break-all font-mono text-xs text-white/90">{String(treasury)}</p>
               </div>
-              <Stat label="Precio ETH" value={ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"} />
+              <Stat label={t("admin.statEthPrice")} value={ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"} />
             </div>
 
             <VolumeChart vaultAddresses={vaultAddresses} chain={chain} />
@@ -549,15 +554,15 @@ export default function Admin() {
               className="text-xl font-semibold tracking-tight"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Editar configuración
+              {t("admin.editConfigTitle")}
             </h2>
 
             <div className="mt-6 flex flex-col gap-6">
               <AdminField
-                label="Nuevo operador por defecto (address)"
+                label={t("admin.fieldNewOperator")}
                 value={newOperator}
                 onChange={setNewOperator}
-                action="Actualizar"
+                action={t("admin.actionUpdate")}
                 disabled={Boolean(busy)}
                 onSubmit={() =>
                   withTx("operator", () =>
@@ -572,10 +577,10 @@ export default function Admin() {
                 }
               />
               <AdminField
-                label={`Nuevo tope de depósito por vault (${chain.stableSymbol})`}
+                label={t("admin.fieldNewCap", { symbol: chain.stableSymbol })}
                 value={newCap}
                 onChange={setNewCap}
-                action="Actualizar"
+                action={t("admin.actionUpdate")}
                 disabled={Boolean(busy)}
                 onSubmit={() =>
                   withTx("cap", () =>
@@ -590,10 +595,10 @@ export default function Admin() {
                 }
               />
               <AdminField
-                label="Nuevo performance fee (%, sobre comisiones LP)"
+                label={t("admin.fieldNewPerformanceFee")}
                 value={newPerformanceFeePct}
                 onChange={setNewPerformanceFeePct}
-                action="Actualizar"
+                action={t("admin.actionUpdate")}
                 disabled={Boolean(busy)}
                 onSubmit={() =>
                   withTx("performanceFee", () =>
@@ -608,10 +613,10 @@ export default function Admin() {
                 }
               />
               <AdminField
-                label={`Nuevo fee de creación (${chain.stableSymbol}, una vez por vault)`}
+                label={t("admin.fieldNewCreationFee", { symbol: chain.stableSymbol })}
                 value={newCreationFee}
                 onChange={setNewCreationFee}
-                action="Actualizar"
+                action={t("admin.actionUpdate")}
                 disabled={Boolean(busy)}
                 onSubmit={() =>
                   withTx("creationFee", () =>
@@ -626,10 +631,10 @@ export default function Admin() {
                 }
               />
               <AdminField
-                label="Nueva tesorería (address)"
+                label={t("admin.fieldNewTreasury")}
                 value={newTreasury}
                 onChange={setNewTreasury}
-                action="Actualizar"
+                action={t("admin.actionUpdate")}
                 disabled={Boolean(busy)}
                 onSubmit={() =>
                   withTx("treasury", () =>
@@ -647,23 +652,20 @@ export default function Admin() {
 
             <div className="mt-8 border-t border-hairline pt-6">
               <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-negative">
-                Transferir ownership
+                {t("admin.transferOwnershipTitle")}
               </h3>
-              <p className="mt-2 text-sm text-muted">
-                Transferencia en dos pasos: proponés un nuevo dueño acá, y esa wallet tiene que entrar a este mismo
-                panel y aceptarla — así no se pierde el control de la plataforma por un address mal tipeado.
-              </p>
+              <p className="mt-2 text-sm text-muted">{t("admin.transferOwnershipDesc")}</p>
               {hasPendingTransfer && (
                 <p className="mt-2 font-mono text-xs text-accent">
-                  Transferencia pendiente de aceptar por {String(pendingOwner)}
+                  {t("admin.pendingTransferBy", { address: String(pendingOwner) })}
                 </p>
               )}
               <div className="mt-4">
                 <AdminField
-                  label={`Nuevo dueño de la plataforma en ${chain.name} (address)`}
+                  label={t("admin.fieldNewOwner", { chain: chain.name })}
                   value={newOwner}
                   onChange={setNewOwner}
-                  action="Proponer"
+                  action={t("admin.actionPropose")}
                   disabled={Boolean(busy)}
                   onSubmit={() =>
                     withTx("transferOwnership", () =>
@@ -682,7 +684,7 @@ export default function Admin() {
 
             {busy && (
               <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                Procesando: {busy}… firmá en tu wallet
+                {t("admin.processingLabel", { action: busy })}
               </p>
             )}
             {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
@@ -695,24 +697,22 @@ export default function Admin() {
               className="text-xl font-semibold tracking-tight"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Consultas a uni-lab.xyz
+              {t("admin.unilabCallsTitle")}
             </h2>
-            <p className="mt-2 text-sm text-muted">
-              Últimas 50 llamadas pagas del keeper — request, respuesta, y si el vault ya la usó.
-            </p>
+            <p className="mt-2 text-sm text-muted">{t("admin.unilabCallsSubtitle")}</p>
 
             {uniLabCalls === null && (
               <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                Cargando…
+                {t("admin.loading")}
               </p>
             )}
             {uniLabCalls?.length === 0 && (
-              <p className="mt-6 text-sm text-muted">Todavía no hay consultas registradas.</p>
+              <p className="mt-6 text-sm text-muted">{t("admin.noCallsYet")}</p>
             )}
             {uniLabCalls && uniLabCalls.length > 0 && (
               <div className="mt-6 flex flex-col gap-3">
                 {uniLabCalls.map((call) => (
-                  <UniLabCallRowView key={call.id} call={call} />
+                  <UniLabCallRowView key={call.id} call={call} t={t} />
                 ))}
               </div>
             )}
@@ -725,7 +725,7 @@ export default function Admin() {
   );
 }
 
-function UniLabCallRowView({ call }: { call: UniLabCallRow }) {
+function UniLabCallRowView({ call, t }: { call: UniLabCallRow; t: ReturnType<typeof useTranslation>["t"] }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
@@ -738,7 +738,7 @@ function UniLabCallRowView({ call }: { call: UniLabCallRow }) {
         <span
           className={`font-mono text-[11px] uppercase tracking-[0.12em] ${call.ok ? "text-accent" : "text-negative"}`}
         >
-          {call.ok ? "ok" : "error"} · {call.http_status} · {call.duration_ms}ms
+          {call.ok ? t("admin.okLabel") : t("admin.errorShortLabel")} · {call.http_status} · {call.duration_ms}ms
         </span>
         <span className="font-mono text-[11px] text-muted">
           {new Date(call.created_at).toLocaleString()}
@@ -747,14 +747,14 @@ function UniLabCallRowView({ call }: { call: UniLabCallRow }) {
       {open && (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Request</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">{t("admin.requestLabel")}</span>
             <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-black/40 p-3 text-[11px] text-white/70">
               {JSON.stringify(call.request, null, 2)}
             </pre>
           </div>
           <div>
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
-              {call.ok ? "Response" : "Error"}
+              {call.ok ? t("admin.responseLabel") : t("admin.errorLabel")}
             </span>
             <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-black/40 p-3 text-[11px] text-white/70">
               {JSON.stringify(call.ok ? call.response : call.error, null, 2)}

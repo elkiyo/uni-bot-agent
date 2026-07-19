@@ -1,114 +1,17 @@
+"use client";
+
 import { Header } from "../components/Header";
-
-const fields = [
-  {
-    name: "Monto de inversión",
-    what: "El capital (USDT) con el que el agente arma la posición inicial.",
-    example: "100 USDT",
-  },
-  {
-    name: "Precio mínimo",
-    what: "El piso del rango — no tiene que ser simétrico con el máximo.",
-    example: "$1720.32",
-  },
-  {
-    name: "Precio máximo",
-    what: "El techo del rango.",
-    example: "$2102.61",
-  },
-  {
-    name: "Tope de rebalanceos",
-    what: (
-      <>
-        Tu techo de gasto en fees — cuántos rebalanceos como máximo en toda la vida del vault. En{" "}
-        <code>0</code>, el agente nunca actúa, ni por reloj ni por precio.
-      </>
-    ),
-    example: "10",
-  },
-  {
-    name: "Tope de reinyección por ciclo",
-    what: (
-      <>
-        Máximo que el agente puede mover de la reserva por rebalanceo. En <code>0</code>, nunca reinyecta.
-      </>
-    ),
-    example: "10 USDT",
-  },
-  {
-    name: "Rebalanceo periódico",
-    what: (
-      <>
-        Cada cuántas horas se fuerza un rebalanceo aunque el precio siga en rango. En <code>0</code>,
-        desactivado.
-      </>
-    ),
-    example: "24 horas",
-  },
-];
-
-const steps = [
-  {
-    title: "¿Hay posición y quedan rebalanceos disponibles?",
-    body: (
-      <code className="font-mono text-[13px]">rebalanceCount &lt; maxRebalances</code>
-    ),
-    result: { kind: "no" as const, text: "Si no → se detiene acá, no hace nada este tick." },
-  },
-  {
-    title: "¿Pasó el cooldown mínimo desde el último rebalanceo?",
-    body: (
-      <code className="font-mono text-[13px]">ahora ≥ últimoRebalanceo + minRebalanceInterval</code>
-    ),
-    result: { kind: "no" as const, text: "Si no → se detiene acá, aunque esté fuera de rango." },
-  },
-  {
-    title: "¿Ya toca el rebalanceo periódico?",
-    body: (
-      <code className="font-mono text-[13px]">ahora ≥ últimoRebalanceo + periodicRebalanceInterval</code>
-    ),
-    result: { kind: "yes" as const, text: "Si sí → rebalancea por reloj (Caso 1) y termina acá." },
-  },
-  {
-    title: "¿El precio actual sigue dentro del rango de la posición?",
-    body: "Compara el tick actual del pool contra los ticks de la posición abierta.",
-    result: { kind: "yes" as const, text: "Si rompió el piso → Caso 2. Si rompió el techo → Caso 3." },
-  },
-];
-
-const cases = [
-  {
-    color: "sky",
-    name: "En rango, toca el reloj",
-    trigger: "Caso periódico",
-    desc: "El precio sigue perfecto dentro del rango, pero ya pasó el intervalo periódico configurado — el agente rearma la posición igual, para generar actividad real constante (no solo reactiva). El piso del rango (D1) se mantiene exactamente donde estaba; solo el techo se recentra al precio actual.",
-    example: "D1 = $1710 (piso, sin cambios) + precio actual = $1800 → nueva posición [$1710 – $1800]",
-  },
-  {
-    color: "negative",
-    name: "Rompió el piso",
-    trigger: "Fuera de rango, abajo",
-    desc: "El precio cayó por debajo del piso de la posición — dejó de cobrar fees. El agente cierra, consulta a uni-lab.xyz el nuevo split, y arma una posición nueva con un piso fresco 5% por debajo del precio actual.",
-    example: "posición vieja [$1710 – $1770] + precio cae a $1700 → D1 = $1700 × 0.95 = $1615",
-  },
-  {
-    color: "accent",
-    name: "Rompió el techo",
-    trigger: "Fuera de rango, arriba",
-    desc: "El precio subió por encima del techo — la posición ya quedó ~100% en stablecoin. Esto es intencional: el diseño del rango deja cero margen arriba a propósito, para capturar la ganancia apenas el precio sube. No consulta a uni-lab (no hay split que calcular con todo en un solo token) — arma una posición nueva de cero, local.",
-    example: "techo viejo = $1800, roto + precio actual = $1810 → [$1810 × 0.95, $1810 × 1.03] = [$1720 – $1864]",
-  },
-];
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 const timeline = [
-  { evt: "Init", kind: "init", price: "$1800.00", d1: "$1710.00", c1: "$1854.00", width: "7.77%" },
-  { evt: "Periódico", kind: "sky", price: "$1800.00", d1: "$1710.00 →", c1: "$1854.00 → $1800.00", width: "5.00%" },
-  { evt: "Techo", kind: "accent", price: "$1808.00", d1: "$1710.00 → $1717.60", c1: "$1800.00 → $1862.24", width: "7.77%" },
-  { evt: "Periódico", kind: "sky", price: "$1830.00", d1: "$1717.60 →", c1: "$1862.24 → $1830.00", width: "6.14%" },
-  { evt: "Techo", kind: "accent", price: "$1850.00", d1: "$1717.60 → $1757.50", c1: "$1830.00 → $1905.50", width: "7.77%" },
-  { evt: "Piso", kind: "negative", price: "$1770.00", d1: "$1778.40 → $1681.50", c1: "$1928.16 → $1770.00", width: "5.00%" },
-  { evt: "Periódico", kind: "sky", price: "$1735.00", d1: "$1681.50 →", c1: "$1770.00 → $1735.00", width: "3.08%" },
-];
+  { evtKey: "eventInit", kind: "init", price: "$1800.00", d1: "$1710.00", c1: "$1854.00", width: "7.77%" },
+  { evtKey: "eventPeriodico", kind: "sky", price: "$1800.00", d1: "$1710.00 →", c1: "$1854.00 → $1800.00", width: "5.00%" },
+  { evtKey: "eventTecho", kind: "accent", price: "$1808.00", d1: "$1710.00 → $1717.60", c1: "$1800.00 → $1862.24", width: "7.77%" },
+  { evtKey: "eventPeriodico", kind: "sky", price: "$1830.00", d1: "$1717.60 →", c1: "$1862.24 → $1830.00", width: "6.14%" },
+  { evtKey: "eventTecho", kind: "accent", price: "$1850.00", d1: "$1717.60 → $1757.50", c1: "$1830.00 → $1905.50", width: "7.77%" },
+  { evtKey: "eventPiso", kind: "negative", price: "$1770.00", d1: "$1778.40 → $1681.50", c1: "$1928.16 → $1770.00", width: "5.00%" },
+  { evtKey: "eventPeriodico", kind: "sky", price: "$1735.00", d1: "$1681.50 →", c1: "$1770.00 → $1735.00", width: "3.08%" },
+] as const;
 
 const pillClass: Record<string, string> = {
   init: "!border-hairline !text-faint",
@@ -130,60 +33,141 @@ const caseTagColor: Record<string, string> = {
 };
 
 export default function RecursosPage() {
+  const { t } = useTranslation();
+
+  const fields = [
+    { name: t("recursos.field1Name"), what: <>{t("recursos.field1What")}</>, example: t("recursos.field1Example") },
+    { name: t("recursos.field2Name"), what: <>{t("recursos.field2What")}</>, example: t("recursos.field2Example") },
+    { name: t("recursos.field3Name"), what: <>{t("recursos.field3What")}</>, example: t("recursos.field3Example") },
+    {
+      name: t("recursos.field4Name"),
+      what: (
+        <>
+          {t("recursos.field4WhatPre")}
+          <code>0</code>
+          {t("recursos.field4WhatPost")}
+        </>
+      ),
+      example: t("recursos.field4Example"),
+    },
+    {
+      name: t("recursos.field5Name"),
+      what: (
+        <>
+          {t("recursos.field5WhatPre")}
+          <code>0</code>
+          {t("recursos.field5WhatPost")}
+        </>
+      ),
+      example: t("recursos.field5Example"),
+    },
+    {
+      name: t("recursos.field6Name"),
+      what: (
+        <>
+          {t("recursos.field6WhatPre")}
+          <code>0</code>
+          {t("recursos.field6WhatPost")}
+        </>
+      ),
+      example: t("recursos.field6Example"),
+    },
+  ];
+
+  const steps = [
+    {
+      title: t("recursos.step1Title"),
+      body: <code className="font-mono text-[13px]">rebalanceCount &lt; maxRebalances</code>,
+      result: { kind: "no" as const, text: t("recursos.step1No") },
+    },
+    {
+      title: t("recursos.step2Title"),
+      body: <code className="font-mono text-[13px]">ahora ≥ últimoRebalanceo + minRebalanceInterval</code>,
+      result: { kind: "no" as const, text: t("recursos.step2No") },
+    },
+    {
+      title: t("recursos.step3Title"),
+      body: <code className="font-mono text-[13px]">ahora ≥ últimoRebalanceo + periodicRebalanceInterval</code>,
+      result: { kind: "yes" as const, text: t("recursos.step3Yes") },
+    },
+    {
+      title: t("recursos.step4Title"),
+      body: t("recursos.step4Body"),
+      result: { kind: "yes" as const, text: t("recursos.step4Yes") },
+    },
+  ];
+
+  const cases = [
+    {
+      color: "sky",
+      name: t("recursos.case1Name"),
+      trigger: t("recursos.case1Trigger"),
+      desc: t("recursos.case1Desc"),
+      example: "D1 = $1710 (piso, sin cambios) + precio actual = $1800 → nueva posición [$1710 – $1800]",
+    },
+    {
+      color: "negative",
+      name: t("recursos.case2Name"),
+      trigger: t("recursos.case2Trigger"),
+      desc: t("recursos.case2Desc"),
+      example: "posición vieja [$1710 – $1770] + precio cae a $1700 → D1 = $1700 × 0.95 = $1615",
+    },
+    {
+      color: "accent",
+      name: t("recursos.case3Name"),
+      trigger: t("recursos.case3Trigger"),
+      desc: t("recursos.case3Desc"),
+      example: "techo viejo = $1800, roto + precio actual = $1810 → [$1810 × 0.95, $1810 × 1.03] = [$1720 – $1864]",
+    },
+  ];
+
   return (
     <>
       <Header />
       <main className="section flex-1 pb-24 pt-32">
-        <span className="eyebrow">Recursos</span>
+        <span className="eyebrow">{t("recursos.eyebrow")}</span>
         <h1
           className="mt-5 text-balance text-3xl font-semibold leading-[1.1] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Cómo decide el <span className="text-accent">agente</span> cuándo rebalancear
+          {t("recursos.titlePre")}
+          <span className="text-accent">{t("recursos.titleHighlight")}</span>
+          {t("recursos.titlePost")}
         </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">
-          El agente revisa cada vault cada 5 minutos y decide entre tres caminos, siempre en el mismo orden.
-          Esta guía explica los campos que configurás al crear un vault, la lógica de decisión paso a paso, y
-          los tres casos con ejemplos numéricos reales.
-        </p>
+        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">{t("recursos.subtitle")}</p>
 
         {/* §1 fields */}
         <section className="mt-16">
           <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            1. Los 6 campos que configurás
+            {t("recursos.section1Title")}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Los que pedís al crear el vault, en el mismo orden en que aparecen en el formulario — cada uno
-            controla una cosa distinta, no hay valores por defecto.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section1Subtitle")}</p>
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {fields.map((f) => (
               <div key={f.name} className="glass rounded-2xl p-5">
                 <p className="font-mono text-xs text-accent">{f.name}</p>
                 <p className="mt-2 text-sm leading-relaxed text-white/90">{f.what}</p>
                 <p className="mt-3 border-t border-hairline pt-3 font-mono text-xs text-faint">
-                  <b className="text-muted">Ej:</b> {f.example}
+                  <b className="text-muted">{t("recursos.exampleLabel")}</b> {f.example}
                 </p>
               </div>
             ))}
           </div>
           <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted">
-            Un séptimo valor, <code className="text-white/80">minRebalanceInterval</code> (el cooldown piso),
-            no se tipea — el formulario de creación lo deja fijo en <code className="text-white/80">0</code>{" "}
-            (sin piso) automáticamente. Sigue siendo relevante para la decisión del agente (paso 2 de abajo),
-            simplemente no es algo que elijas vos al crear el vault.
+            {t("recursos.seventhFieldPre")}
+            <code className="text-white/80">minRebalanceInterval</code>
+            {t("recursos.seventhFieldMid")}
+            <code className="text-white/80">0</code>
+            {t("recursos.seventhFieldPost")}
           </p>
         </section>
 
         {/* §2 decision order */}
         <section className="mt-16">
           <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            2. El orden de decisión
+            {t("recursos.section2Title")}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Cada tick, para cada vault, el agente corre esta secuencia — y el orden importa: el reloj
-            periódico y la salida de rango son disparadores independientes, no uno depende del otro.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section2Subtitle")}</p>
           <ol className="mt-6 flex flex-col gap-5">
             {steps.map((s, i) => (
               <li key={s.title} className="flex gap-4">
@@ -209,11 +193,9 @@ export default function RecursosPage() {
         {/* §3 cases */}
         <section className="mt-16">
           <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            3. Los tres casos, con ejemplo
+            {t("recursos.section3Title")}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Mutuamente excluyentes — en un tick dado, el vault cae en uno solo de los tres.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section3Subtitle")}</p>
           <div className="mt-5 flex flex-col gap-4">
             {cases.map((c) => (
               <div key={c.name} className={`glass rounded-2xl border-l-4 ${caseBorder[c.color]} p-6`}>
@@ -223,7 +205,9 @@ export default function RecursosPage() {
                 </div>
                 <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{c.desc}</p>
                 <div className="mt-4 rounded-xl border border-hairline bg-white/[0.02] p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Ejemplo</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+                    {t("recursos.exampleLabelUpper")}
+                  </p>
                   <p className="mt-2 break-words font-mono text-xs text-white/80">{c.example}</p>
                 </div>
               </div>
@@ -234,17 +218,22 @@ export default function RecursosPage() {
         {/* §4 timeline */}
         <section className="mt-16">
           <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            4. La vida de un vault, ciclo por ciclo
+            {t("recursos.section4Title")}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Una simulación con precio real moviéndose — mismo vault, distintos casos disparándose uno tras
-            otro. El piso (D1) solo cambia en un Caso 2 o 3; en el Caso periódico queda intacto.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section4Subtitle")}</p>
           <div className="mt-5 overflow-x-auto rounded-2xl border border-hairline">
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-hairline bg-white/[0.02]">
-                  {["Evento", "Precio", "D1 (piso)", "C1 (techo)", "Ancho"].map((h) => (
+                  {(
+                    [
+                      t("recursos.colEvento"),
+                      t("recursos.colPrecio"),
+                      t("recursos.colD1"),
+                      t("recursos.colC1"),
+                      t("recursos.colAncho"),
+                    ] as const
+                  ).map((h) => (
                     <th
                       key={h}
                       className="whitespace-nowrap px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-faint"
@@ -259,7 +248,7 @@ export default function RecursosPage() {
                   <tr key={i} className="border-b border-hairline last:border-0">
                     <td className="whitespace-nowrap px-4 py-3">
                       <span className={`eyebrow !px-2.5 !py-0.5 !text-[10px] ${pillClass[row.kind]}`}>
-                        {row.evt}
+                        {t(`recursos.${row.evtKey}` as "recursos.eventInit")}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted">{row.price}</td>
@@ -276,36 +265,34 @@ export default function RecursosPage() {
         {/* §5 pitfall */}
         <section className="mt-16">
           <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            5. El error más común
+            {t("recursos.section5Title")}
           </h2>
           <div className="mt-5 rounded-2xl border border-negative/35 bg-negative/[0.06] p-6">
             <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-negative">
-              Confirmado en producción — dos vaults reales quedaron así
+              {t("recursos.pitfallConfirmed")}
             </p>
             <p className="mt-3 text-sm text-white/90">
-              <b>Síntoma:</b> el vault muestra &quot;Fuera de rango&quot; en el panel, pero pasan los ticks y
-              nunca rebalancea.
+              <b>{t("recursos.pitfallSymptomLabel")}</b> {t("recursos.pitfallSymptomText")}
             </p>
             <p className="mt-2 text-sm text-white/90">
-              <b>Causa real:</b> <code>maxRebalances = 0</code>. El paso 1 de la sección 2 se detiene ahí
-              siempre — el agente ni siquiera llega a mirar el precio. No importa qué tan fuera de rango
-              esté, ni cuánto falte para el reloj periódico.
+              <b>{t("recursos.pitfallCauseLabel")}</b> <code>maxRebalances = 0</code>
+              {t("recursos.pitfallCauseMid")}
             </p>
             <p className="mt-2 text-sm text-white/90">
-              <b>Cómo pasa:</b> al desactivar &quot;reinyección&quot; y &quot;periódico&quot; poniendo{" "}
-              <code>0</code> en esos campos, es fácil poner <code>0</code> por error en &quot;tope de
-              rebalanceos&quot; también — son campos vecinos en el mismo formulario, pero significan cosas
-              completamente distintas.
+              <b>{t("recursos.pitfallHowLabel")}</b> {t("recursos.pitfallHowPre")}
+              <code>0</code>
+              {t("recursos.pitfallHowMid")}
+              <code>0</code>
+              {t("recursos.pitfallHowPost")}
             </p>
             <p className="mt-2 text-sm text-white/90">
-              <b>Arreglo:</b> &quot;Reconfigurar agente&quot; → subir el tope de rebalanceos por encima de 0.
-              El agente lo agarra en el próximo tick, sin esperar el reloj periódico.
+              <b>{t("recursos.pitfallFixLabel")}</b> {t("recursos.pitfallFixText")}
             </p>
           </div>
         </section>
 
         <p className="mt-16 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-          Fuente: frontend/lib/keeper/monitor.ts + frontend/lib/keeper/rebalancer.ts
+          {t("recursos.sourceLabel")} frontend/lib/keeper/monitor.ts + frontend/lib/keeper/rebalancer.ts
         </p>
       </main>
     </>

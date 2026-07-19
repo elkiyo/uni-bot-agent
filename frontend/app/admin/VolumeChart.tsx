@@ -5,9 +5,11 @@ import type { Address } from "viem";
 import { usePublicClient } from "wagmi";
 import { fetchMintVolumeEvents, type MintVolumeEvent } from "@/lib/dashboard/mintVolume";
 import type { ChainDef } from "@/lib/chains";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 type Granularity = "day" | "week" | "month" | "year";
 type VolumeEvent = MintVolumeEvent;
+type T = ReturnType<typeof useTranslation>["t"];
 
 /**
  * "Volumen movido por el agente" — the USD value of every position the
@@ -20,6 +22,7 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
   const publicClient = usePublicClient({ chainId: chain.id });
   const [events, setEvents] = useState<VolumeEvent[] | null>(null);
   const [granularity, setGranularity] = useState<Granularity>("day");
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!publicClient || vaultAddresses.length === 0) return;
@@ -37,16 +40,22 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
     // eslint-disable-next-line react-hooks/exhaustive-deps -- vaultAddresses is a derived array, re-created every render; length is enough here
   }, [publicClient, vaultAddresses.length, chain.factoryDeployBlock]);
 
+  const granularityLabels: Record<Granularity, string> = {
+    day: t("volumeChart.granularityDay"),
+    week: t("volumeChart.granularityWeek"),
+    month: t("volumeChart.granularityMonth"),
+    year: t("volumeChart.granularityYear"),
+  };
+
   return (
     <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            Volumen movido por el <span className="text-accent">agente</span>
+            {t("volumeChart.titlePre")}
+            <span className="text-accent">{t("volumeChart.titleHighlight")}</span>
           </h2>
-          <p className="mt-1 text-sm text-muted">
-            Valor de cada posición armada — cada apertura y cada rebalanceo mueve capital real.
-          </p>
+          <p className="mt-1 text-sm text-muted">{t("volumeChart.subtitle")}</p>
         </div>
         <div className="flex gap-1.5 rounded-full border border-hairline p-1">
           {(["day", "week", "month", "year"] as const).map((g) => (
@@ -59,26 +68,39 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
                   : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
               }
             >
-              {{ day: "Diario", week: "Semanal", month: "Mensual", year: "Anual" }[g]}
+              {granularityLabels[g]}
             </button>
           ))}
         </div>
       </div>
 
       {events === null && (
-        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-          Escaneando eventos on-chain…
-        </p>
+        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("volumeChart.scanning")}</p>
       )}
-      {events && events.length === 0 && (
-        <p className="mt-8 text-sm text-muted">Todavía no hay posiciones armadas para graficar.</p>
-      )}
-      {events && events.length > 0 && <BarChart events={events} granularity={granularity} />}
+      {events && events.length === 0 && <p className="mt-8 text-sm text-muted">{t("volumeChart.noData")}</p>}
+      {events && events.length > 0 && <BarChart events={events} granularity={granularity} t={t} />}
     </div>
   );
 }
 
-function bucketKey(ts: number, granularity: Granularity): { key: string; label: string; sortKey: number } {
+function monthLabels(t: T): string[] {
+  return [
+    t("volumeChart.monthJan"),
+    t("volumeChart.monthFeb"),
+    t("volumeChart.monthMar"),
+    t("volumeChart.monthApr"),
+    t("volumeChart.monthMay"),
+    t("volumeChart.monthJun"),
+    t("volumeChart.monthJul"),
+    t("volumeChart.monthAug"),
+    t("volumeChart.monthSep"),
+    t("volumeChart.monthOct"),
+    t("volumeChart.monthNov"),
+    t("volumeChart.monthDec"),
+  ];
+}
+
+function bucketKey(ts: number, granularity: Granularity, t: T): { key: string; label: string; sortKey: number } {
   const d = new Date(ts * 1000);
   if (granularity === "day") {
     const key = d.toISOString().slice(0, 10);
@@ -93,17 +115,17 @@ function bucketKey(ts: number, granularity: Granularity): { key: string; label: 
   }
   if (granularity === "month") {
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const labels = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    const labels = monthLabels(t);
     return { key, label: labels[d.getMonth()], sortKey: new Date(d.getFullYear(), d.getMonth(), 1).getTime() };
   }
   const key = String(d.getFullYear());
   return { key, label: key, sortKey: new Date(d.getFullYear(), 0, 1).getTime() };
 }
 
-function BarChart({ events, granularity }: { events: VolumeEvent[]; granularity: Granularity }) {
+function BarChart({ events, granularity, t }: { events: VolumeEvent[]; granularity: Granularity; t: T }) {
   const buckets = new Map<string, { label: string; sortKey: number; usd: number }>();
   for (const e of events) {
-    const { key, label, sortKey } = bucketKey(e.timestamp, granularity);
+    const { key, label, sortKey } = bucketKey(e.timestamp, granularity, t);
     const existing = buckets.get(key);
     if (existing) existing.usd += e.usd;
     else buckets.set(key, { label, sortKey, usd: e.usd });
@@ -120,7 +142,8 @@ function BarChart({ events, granularity }: { events: VolumeEvent[]; granularity:
   return (
     <div className="mt-8">
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-        Total del período mostrado: <span className="text-accent">${total.toFixed(2)}</span>
+        {t("volumeChart.periodTotal")}
+        <span className="text-accent">${total.toFixed(2)}</span>
       </p>
       <div className="mt-4 flex items-end gap-2 overflow-x-auto pb-2" style={{ minHeight: 180 }}>
         {sorted.map((b) => (
