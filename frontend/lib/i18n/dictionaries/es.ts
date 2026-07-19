@@ -519,6 +519,7 @@ const es = {
     colRebalances: "Rebalanceos",
     colStatus: "Estado",
     colHash: "Hash",
+    colPoolRange: "Estado del pool",
 
     historyTitle: "Historial de vaults",
     historySubtitle:

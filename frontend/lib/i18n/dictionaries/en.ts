@@ -521,6 +521,7 @@ const en: Dictionary = {
     colRebalances: "Rebalances",
     colStatus: "Status",
     colHash: "Hash",
+    colPoolRange: "Pool status",
 
     historyTitle: "Vault history",
     historySubtitle:

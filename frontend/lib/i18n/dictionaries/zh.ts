@@ -521,6 +521,7 @@ const zh: Dictionary = {
     colRebalances: "再平衡次数",
     colStatus: "状态",
     colHash: "哈希",
+    colPoolRange: "资金池状态",
 
     historyTitle: "金库历史",
     historySubtitle:

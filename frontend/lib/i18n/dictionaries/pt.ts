@@ -521,6 +521,7 @@ const pt: Dictionary = {
     colRebalances: "Rebalanceamentos",
     colStatus: "Status",
     colHash: "Hash",
+    colPoolRange: "Status do pool",
 
     historyTitle: "Histórico de vaults",
     historySubtitle:

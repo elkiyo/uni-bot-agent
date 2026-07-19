@@ -575,6 +575,7 @@ function VaultHistoryTable({
   const SORTABLE_COLUMNS = sortableColumns(t);
   const STATUS_LABEL = statusLabels(t);
   const [statusFilter, setStatusFilter] = useState<VaultStatus | "all">("all");
+  const [poolRangeFilter, setPoolRangeFilter] = useState<"all" | "in" | "out" | "none">("all");
   const [chainFilter, setChainFilter] = useState<string>("all");
   const [poolFilter, setPoolFilter] = useState<string>("all");
   const [versionFilter, setVersionFilter] = useState<string>("all");
@@ -589,6 +590,12 @@ function VaultHistoryTable({
 
   const filteredRows = rows
     .filter((r) => statusFilter === "all" || r.status === statusFilter)
+    .filter((r) => {
+      if (poolRangeFilter === "all") return true;
+      if (poolRangeFilter === "none") return r.inRange === null;
+      if (poolRangeFilter === "in") return r.inRange === true;
+      return r.inRange === false;
+    })
     .filter((r) => chainFilter === "all" || String(r.chain.id) === chainFilter)
     .filter((r) => poolFilter === "all" || r.poolLabel === poolFilter)
     .filter(() => versionFilter === "all" || versionFilter === "Uniswap V3")
@@ -640,6 +647,16 @@ function VaultHistoryTable({
                   options={[{ value: "all", label: t("dashboard.colVersion") }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
                 />
                 <th className="px-4 py-3 font-normal">{t("dashboard.colRange")}</th>
+                <FilterHeader
+                  value={poolRangeFilter}
+                  onChange={(v) => setPoolRangeFilter(v as "all" | "in" | "out" | "none")}
+                  options={[
+                    { value: "all", label: t("dashboard.colPoolRange") },
+                    { value: "in", label: t("vaults.inRange") },
+                    { value: "out", label: t("vaults.outOfRange") },
+                    { value: "none", label: t("vaults.noPosition") },
+                  ]}
+                />
                 <SortableHeader column={SORTABLE_COLUMNS[1]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[2]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
@@ -676,6 +693,21 @@ function VaultHistoryTable({
                       : row.priceRange
                         ? `$${formatPrice(row.priceRange[0])} – $${formatPrice(row.priceRange[1])}`
                         : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {snapshotLoading ? (
+                      "…"
+                    ) : row.inRange === null ? (
+                      <span className="font-mono text-[11px] text-faint">—</span>
+                    ) : (
+                      <span
+                        className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] ${
+                          row.inRange ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative"
+                        }`}
+                      >
+                        {row.inRange ? t("vaults.inRange") : t("vaults.outOfRange")}
+                      </span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                     {snapshotLoading ? "…" : usd(row.valueUsd)}

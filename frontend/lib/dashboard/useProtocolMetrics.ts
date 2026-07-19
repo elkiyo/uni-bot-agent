@@ -68,6 +68,10 @@ export interface VaultRow {
   /** Live price range [low, high] in USD/ETH terms — null when there's no
    * open position (never initialized, or closed) to derive a range from. */
   priceRange: readonly [number, number] | null;
+  /** Whether the pool's CURRENT tick still falls inside this vault's open
+   * position range — null when there's no open position to check (never
+   * initialized, or closed), same convention as priceRange. */
+  inRange: boolean | null;
   feesUsd: number;
   /** feesUsd as a % of the vault's current value — a coarse, non-annualized
    * proxy for return (fees generated relative to what's deployed right now,
@@ -321,6 +325,24 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     return map;
   }, [openPositions, positionData]);
 
+  // Whether the pool's live tick still sits inside the position's range —
+  // Uniswap always mints with tickLower < tickUpper numerically, so this is
+  // a plain comparison regardless of the price/tick inversion elsewhere.
+  const inRangeByVault = useMemo(() => {
+    const map = new Map<string, boolean>();
+    openPositions.forEach(({ chain, record }, i) => {
+      const position = positionData?.[i]?.result as
+        | readonly [bigint, string, string, string, number, number, number, bigint, bigint, bigint, bigint, bigint]
+        | undefined;
+      if (!position) return;
+      const [, , , , , tickLower, tickUpper] = position;
+      const currentTick = currentTickByPool.get(`${chain.id}:${record.pool}`);
+      if (currentTick === undefined) return;
+      map.set(record.address, currentTick >= tickLower && currentTick <= tickUpper);
+    });
+    return map;
+  }, [openPositions, positionData, currentTickByPool]);
+
   // Event aggregation: one multi-address chunked scan per chain covers every
   // vault on that chain at once.
   const eventQueries = useQueries({
@@ -503,6 +525,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           txHash: v.record.txHash,
           valueUsd,
           priceRange: priceRangeByVault.get(v.record.address) ?? null,
+          inRange: inRangeByVault.get(v.record.address) ?? null,
           feesUsd,
           yieldPct: valueUsd > 0 ? (feesUsd / valueUsd) * 100 : 0,
           rebalanceCount: Number(v.rebalanceCount),
@@ -548,6 +571,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     ledgers,
     positionValueByVault,
     priceRangeByVault,
+    inRangeByVault,
     ethPriceByChain,
     eventQueries.map((q) => q.data).join("|"),
     mintVolumeQueries.map((q) => q.data?.length).join("|"),
