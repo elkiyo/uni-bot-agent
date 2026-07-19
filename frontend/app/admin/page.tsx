@@ -69,14 +69,20 @@ export default function Admin() {
       },
       { address: chain.platformConfigAddress || undefined, abi: platformConfigAbi, functionName: "treasury", chainId: chain.id },
       { address: chain.factoryAddress || undefined, abi: chain.factoryAbi, functionName: "vaultCount", chainId: chain.id },
+      { address: chain.platformConfigAddress || undefined, abi: platformConfigAbi, functionName: "pendingOwner", chainId: chain.id },
     ],
     query: { enabled: Boolean(chain.platformConfigAddress && chain.factoryAddress) },
   });
 
-  const [owner, defaultOperator, maxDepositUsd, performanceFeeBps, creationFeeUsdt, treasury, vaultCount] =
+  const [owner, defaultOperator, maxDepositUsd, performanceFeeBps, creationFeeUsdt, treasury, vaultCount, pendingOwner] =
     data?.map((d) => d.result) ?? [];
   const isPlatformOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
+  );
+  const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+  const hasPendingTransfer = Boolean(pendingOwner && (pendingOwner as string).toLowerCase() !== ZERO_ADDRESS);
+  const isPendingOwner = Boolean(
+    connected && hasPendingTransfer && (connected as string).toLowerCase() === (pendingOwner as string).toLowerCase(),
   );
 
   // All vault addresses, to sum Rebalanced events across the whole platform.
@@ -293,6 +299,7 @@ export default function Admin() {
   const [newPerformanceFeePct, setNewPerformanceFeePct] = useState("");
   const [newCreationFee, setNewCreationFee] = useState("");
   const [newTreasury, setNewTreasury] = useState("");
+  const [newOwner, setNewOwner] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -355,7 +362,65 @@ export default function Admin() {
           </div>
         )}
 
-        {(!chain.platformConfigAddress || !chain.factoryAddress) && (
+        {!data && Boolean(chain.platformConfigAddress) && (
+          <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Cargando…</p>
+        )}
+
+        {data && !isPlatformOwner && !isPendingOwner && (
+          <div className="glass mt-10 rounded-2xl p-8 text-center">
+            <p className="text-sm text-muted">
+              Este panel es solo para el dueño de la plataforma en {chain.name}.
+              {connected ? (
+                <>
+                  {" "}
+                  Conectá la wallet dueña (<code className="break-all font-mono text-xs">{String(owner)}</code>)
+                  para continuar.
+                </>
+              ) : (
+                " Conectá tu wallet para continuar."
+              )}
+            </p>
+          </div>
+        )}
+
+        {data && isPendingOwner && (
+          <div className="glass mt-10 rounded-2xl border-accent/35 bg-accent/[0.06] p-6 sm:p-8">
+            <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+              Transferencia de ownership pendiente
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              El dueño actual (<code className="break-all font-mono text-xs">{String(owner)}</code>) propuso
+              transferirte el ownership de la plataforma en {chain.name}. Tenés que aceptarlo desde esta wallet
+              para que se complete.
+            </p>
+            {busy && (
+              <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                Procesando: {busy}… firmá en tu wallet
+              </p>
+            )}
+            {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
+            <button
+              onClick={() =>
+                withTx("acceptOwnership", () =>
+                  writeContractAsync({
+                    address: chain.platformConfigAddress || "0x0000000000000000000000000000000000000000",
+                    abi: platformConfigAbi,
+                    functionName: "acceptOwnership",
+                    chainId: chain.id,
+                  }),
+                )
+              }
+              disabled={Boolean(busy)}
+              className="btn-primary mt-6 !px-5 !py-2.5"
+            >
+              Aceptar ownership
+            </button>
+          </div>
+        )}
+
+        {data && isPlatformOwner && (
+          <>
+            {(!chain.platformConfigAddress || !chain.factoryAddress) && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
             Los contratos todavía no están configurados en {chain.name}.
           </div>
@@ -477,15 +542,6 @@ export default function Admin() {
           </>
         )}
 
-        {data && !isPlatformOwner && (
-          <div className="glass mt-8 rounded-2xl p-6">
-            <p className="text-sm text-muted">
-              Conectá la wallet dueña de la plataforma (
-              <code className="break-all font-mono text-xs">{String(owner)}</code>) para editar
-              esta configuración.
-            </p>
-          </div>
-        )}
 
         {isPlatformOwner && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
@@ -589,6 +645,41 @@ export default function Admin() {
               />
             </div>
 
+            <div className="mt-8 border-t border-hairline pt-6">
+              <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-negative">
+                Transferir ownership
+              </h3>
+              <p className="mt-2 text-sm text-muted">
+                Transferencia en dos pasos: proponés un nuevo dueño acá, y esa wallet tiene que entrar a este mismo
+                panel y aceptarla — así no se pierde el control de la plataforma por un address mal tipeado.
+              </p>
+              {hasPendingTransfer && (
+                <p className="mt-2 font-mono text-xs text-accent">
+                  Transferencia pendiente de aceptar por {String(pendingOwner)}
+                </p>
+              )}
+              <div className="mt-4">
+                <AdminField
+                  label={`Nuevo dueño de la plataforma en ${chain.name} (address)`}
+                  value={newOwner}
+                  onChange={setNewOwner}
+                  action="Proponer"
+                  disabled={Boolean(busy)}
+                  onSubmit={() =>
+                    withTx("transferOwnership", () =>
+                      writeContractAsync({
+                        address: chain.platformConfigAddress || "0x0000000000000000000000000000000000000000",
+                        abi: platformConfigAbi,
+                        functionName: "transferOwnership",
+                        args: [newOwner as `0x${string}`],
+                        chainId: chain.id,
+                      }),
+                    )
+                  }
+                />
+              </div>
+            </div>
+
             {busy && (
               <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
                 Procesando: {busy}… firmá en tu wallet
@@ -626,6 +717,8 @@ export default function Admin() {
               </div>
             )}
           </div>
+        )}
+          </>
         )}
       </main>
     </>
