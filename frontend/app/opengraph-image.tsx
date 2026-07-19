@@ -23,9 +23,21 @@ export default function OpengraphImage() {
           padding: "80px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+        <div
+          style={{
+            display: "flex",
+            fontSize: 20,
+            fontWeight: 600,
+            letterSpacing: 4,
+            textTransform: "uppercase",
+            color: "#fcff52",
+          }}
+        >
+          AI Agent
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 24, marginTop: 16 }}>
           <img src={logoDataUri} width={76} height={76} alt="" style={{ borderRadius: "50%" }} />
-          <div style={{ display: "flex", fontSize: 52, fontWeight: 700, color: "#ffffff" }}>AI Agent</div>
+          <div style={{ display: "flex", fontSize: 52, fontWeight: 700, color: "#ffffff" }}>AutoRange</div>
         </div>
         <div style={{ display: "flex", marginTop: 40, fontSize: 30, color: "#a1a1aa", maxWidth: 920, lineHeight: 1.4 }}>
           Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper.

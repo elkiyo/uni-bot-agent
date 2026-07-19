@@ -17,7 +17,7 @@ const interTight = Inter_Tight({
   subsets: ["latin"],
 });
 
-const title = "AI Agent — Vaults no-custodiales en Uniswap V3";
+const title = "AutoRange — Vaults no-custodiales en Uniswap V3";
 const description =
   "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper. Vos depositás y retirás; el agente solo rebalancea.";
 
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://autorange.xyz"),
   title,
   description,
-  openGraph: { title, description, siteName: "AI Agent" },
+  openGraph: { title, description, siteName: "AutoRange" },
   twitter: { card: "summary_large_image", title, description },
 };
 

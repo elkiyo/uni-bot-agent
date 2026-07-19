@@ -36,6 +36,7 @@ export default function Home() {
         <div className="grid items-center gap-10 lg:grid-cols-[1fr_320px]">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-3">
+              <span className="eyebrow !border-accent/25 !text-accent">AI Agent</span>
               <span className="eyebrow">Uniswap V3 · {chain.name} Mainnet</span>
               <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
                 <span className="relative flex h-1.5 w-1.5">
@@ -49,7 +50,7 @@ export default function Home() {
               className="mt-6 text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              AI <span className="text-accent">Agent</span>
+              Auto<span className="text-accent">Range</span>
             </h1>
             <p
               className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-white/90 sm:text-2xl"
@@ -106,7 +107,7 @@ export default function Home() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/brand/logo-mark-256.png"
-              alt="AI Agent"
+              alt="AutoRange"
               className="h-16 w-16 rounded-full shadow-[0_0_36px_rgba(252,255,82,0.18)]"
             />
             <div className="glass w-full rounded-2xl p-6">
@@ -346,7 +347,7 @@ export default function Home() {
               </p>
             </div>
             <div className="glass rounded-2xl p-5" style={{ borderColor: "rgba(252,255,82,0.25)" }}>
-              <h3 className="text-sm font-semibold text-accent">Cómo opera AI Agent</h3>
+              <h3 className="text-sm font-semibold text-accent">Cómo opera AutoRange</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">
                 Cada usuario tiene su propio contrato, aislado del resto. Un problema en un vault{" "}
                 <span className="text-white/80">queda contenido a ese vault</span> — nunca se propaga
@@ -412,7 +413,7 @@ export default function Home() {
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                Sin AI Agent · gestión manual experta
+                Sin AutoRange · gestión manual experta
               </p>
               <div className="mt-3 flex h-8 overflow-hidden rounded-md bg-white/[0.03]">
                 <div
@@ -425,7 +426,7 @@ export default function Home() {
             </div>
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                Con AI Agent · automático, sin experiencia
+                Con AutoRange · automático, sin experiencia
               </p>
               <div className="mt-3 flex h-8 gap-0.5 overflow-hidden rounded-md bg-white/[0.03]">
                 <div
@@ -440,7 +441,7 @@ export default function Home() {
                 />
               </div>
               <p className="mt-2 text-[11px] text-faint">
-                Tramo violeta = $100 · 1% para AI Agent (10% de lo ganado, nunca del capital)
+                Tramo violeta = $100 · 1% para AutoRange (10% de lo ganado, nunca del capital)
               </p>
             </div>
           </div>

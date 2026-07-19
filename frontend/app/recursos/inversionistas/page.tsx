@@ -2,9 +2,9 @@ import Link from "next/link";
 import { Header } from "../../components/Header";
 
 export const metadata = {
-  title: "AI Agent — Para inversionistas",
+  title: "AutoRange — Para inversionistas",
   description:
-    "Cómo opera AI Agent explicado sin jerga técnica: qué DEX y qué pools usa, seguridad a nivel protocolo y usuario, y de dónde sale el ingreso de la plataforma.",
+    "Cómo opera AutoRange explicado sin jerga técnica: qué DEX y qué pools usa, seguridad a nivel protocolo y usuario, y de dónde sale el ingreso de la plataforma.",
 };
 
 export default function InversionistasPage() {
@@ -17,7 +17,7 @@ export default function InversionistasPage() {
           className="mt-5 text-balance text-3xl font-semibold leading-[1.1] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Cómo opera AI Agent, explicado sin jerga técnica
+          Cómo opera AutoRange, explicado sin jerga técnica
         </h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">
           Una presentación completa para inversionistas: qué DEX y qué pools usamos, cómo se reparten las
@@ -51,7 +51,7 @@ export default function InversionistasPage() {
         <div className="mt-10 overflow-hidden rounded-2xl border border-hairline bg-black">
           <iframe
             src="/inversionistas/presentacion.html"
-            title="AI Agent — Presentación para inversionistas"
+            title="AutoRange — Presentación para inversionistas"
             className="aspect-video w-full"
             style={{ border: "none" }}
           />

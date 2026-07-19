@@ -27,13 +27,13 @@ export function Header() {
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/logo-mark-64.png" alt="AI Agent" className="h-8 w-8 shrink-0 rounded-full" />
+            <img src="/brand/logo-mark-64.png" alt="AutoRange" className="h-8 w-8 shrink-0 rounded-full" />
             <span className="flex flex-col leading-none">
               <span className="text-[12.5px] font-semibold tracking-tight text-white">
-                AI Agent
+                AutoRange
               </span>
-              <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted">
-                Vaults multichain
+              <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-accent">
+                AI Agent
               </span>
             </span>
           </Link>
