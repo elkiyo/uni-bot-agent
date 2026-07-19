@@ -42,7 +42,7 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            Volumen movido por el agente
+            Volumen movido por el <span className="text-accent">agente</span>
           </h2>
           <p className="mt-1 text-sm text-muted">
             Valor de cada posición armada — cada apertura y cada rebalanceo mueve capital real.

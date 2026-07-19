@@ -150,7 +150,17 @@ function ChainTab({ label, active, onClick }: { label: string; active: boolean; 
   );
 }
 
-function Stat({ label, value, accent, sub }: { label: string; value: string; accent?: boolean; sub?: string }) {
+function Stat({
+  label,
+  value,
+  accent,
+  sub,
+}: {
+  label: React.ReactNode;
+  value: string;
+  accent?: boolean;
+  sub?: string;
+}) {
   return (
     <div className={accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"}>
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
@@ -205,7 +215,11 @@ function StatGrid({ metrics }: { metrics: ReturnType<typeof useProtocolMetrics> 
         sub="Performance fee"
       />
       <Stat
-        label="Gas reembolsado al agente"
+        label={
+          <>
+            Gas reembolsado al <span className="text-accent">agente</span>
+          </>
+        }
         value={metrics.eventsLoading ? "…" : usd(metrics.gasReimbursedUsd)}
         sub="Solo Arbitrum — costo real medido on-chain"
       />
@@ -250,7 +264,7 @@ function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocol
 
 function ChartShell({ title, subtitle, isLoading, empty, children }: {
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
   isLoading: boolean;
   empty: boolean;
   children: React.ReactNode;
@@ -284,7 +298,16 @@ function VolumeSeriesChart({
     value: Number(b.value.toFixed(2)),
   }));
   return (
-    <ChartShell title="Volumen" subtitle="Valor de cada posición armada por el agente" isLoading={isLoading} empty={data.length === 0}>
+    <ChartShell
+      title="Volumen"
+      subtitle={
+        <>
+          Valor de cada posición armada por el <span className="text-accent">agente</span>
+        </>
+      }
+      isLoading={isLoading}
+      empty={data.length === 0}
+    >
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
@@ -355,7 +378,16 @@ function RebalanceSeriesChart({
     count: b.count,
   }));
   return (
-    <ChartShell title="Rebalanceos" subtitle="Cantidad de rebalanceos ejecutados por el agente" isLoading={isLoading} empty={data.length === 0}>
+    <ChartShell
+      title="Rebalanceos"
+      subtitle={
+        <>
+          Cantidad de rebalanceos ejecutados por el <span className="text-accent">agente</span>
+        </>
+      }
+      isLoading={isLoading}
+      empty={data.length === 0}
+    >
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />

@@ -559,7 +559,11 @@ export default function CreateVault() {
                 />
                 {chain.supportsGasReserve && (
                   <Field
-                    label="Presupuesto de gas para el agente"
+                    label={
+                      <>
+                        Presupuesto de gas para el <span className="text-accent">agente</span>
+                      </>
+                    }
                     suffix={chain.stableSymbol}
                     value={gasReserveAmount}
                     onChange={setGasReserveAmount}
@@ -718,7 +722,7 @@ function Field({
   hint,
   placeholder,
 }: {
-  label: string;
+  label: React.ReactNode;
   value: string;
   onChange: (v: string) => void;
   suffix?: string;

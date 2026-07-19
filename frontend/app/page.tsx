@@ -155,7 +155,11 @@ export default function Home() {
             },
             {
               n: "02",
-              t: "El agente opera",
+              t: (
+                <>
+                  El <span className="text-accent">agente</span> opera
+                </>
+              ),
               d: "Consulta uni-lab.xyz (pagando vía x402 con su propia wallet), hace el swap necesario y mintea la posición. Rebalancea si el precio sale del rango o en el intervalo que definas.",
             },
             {
@@ -185,7 +189,9 @@ export default function Home() {
 
         {/* Cómo decide el agente */}
         <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
-          <span className="eyebrow">El agente</span>
+          <span className="eyebrow">
+            El <span className="text-accent">agente</span>
+          </span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: "var(--font-display)" }}

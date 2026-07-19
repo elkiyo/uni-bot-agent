@@ -139,7 +139,7 @@ export default function RecursosPage() {
           className="mt-5 text-balance text-3xl font-semibold leading-[1.1] tracking-tight sm:text-4xl"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Cómo decide el agente cuándo rebalancear
+          Cómo decide el <span className="text-accent">agente</span> cuándo rebalancear
         </h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">
           El agente revisa cada vault cada 5 minutos y decide entre tres caminos, siempre en el mismo orden.

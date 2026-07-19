@@ -640,7 +640,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             {/* Vault configuration — what was set at create/reconfigure time */}
             <div className="glass mt-4 rounded-2xl p-5">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                Configuración del agente
+                Configuración del <span className="text-accent">agente</span>
               </span>
               <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
                 <ConfigRow
@@ -720,7 +720,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 <div className="mt-8">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    Reconfigurar agente
+                    Reconfigurar <span className="text-accent">agente</span>
                   </span>
                   <p className="mt-1 text-xs text-faint">
                     {targetConfigured

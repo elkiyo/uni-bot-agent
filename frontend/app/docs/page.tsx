@@ -116,7 +116,11 @@ export default function Docs() {
                 />
                 <RoleCard
                   title="Operador (keeper)"
-                  subtitle="Wallet de la plataforma · el agente"
+                  subtitle={
+                    <>
+                      Wallet de la plataforma · el <span className="text-accent">agente</span>
+                    </>
+                  }
                   points={[
                     "Arma la posición inicial y cada rebalanceo",
                     "Nunca puede ser destino de un retiro de principal",
@@ -257,7 +261,9 @@ export default function Docs() {
                   ]}
                 />
 
-                <p className="mt-5 text-sm font-medium text-white/80">Funciones del operador (agente)</p>
+                <p className="mt-5 text-sm font-medium text-white/80">
+                  Funciones del operador (<span className="text-accent">agente</span>)
+                </p>
                 <FunctionTable
                   rows={[
                     ["initPosition(swapIx, ...)", "Arma la posición inicial según el rango que configuró el owner."],
@@ -282,7 +288,15 @@ export default function Docs() {
             </Section>
 
             {/* Cómo decide el agente */}
-            <Section id="decision" eyebrow="05" title="Cómo decide el agente">
+            <Section
+              id="decision"
+              eyebrow="05"
+              title={
+                <>
+                  Cómo decide el <span className="text-accent">agente</span>
+                </>
+              }
+            >
               <p>
                 Cada ~5 minutos, para cada vault, el keeper corre la misma secuencia — sin
                 discreción humana:
@@ -440,7 +454,7 @@ function Section({
 }: {
   id: string;
   eyebrow: string;
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -466,7 +480,7 @@ function RoleCard({
   accent,
 }: {
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
   points: string[];
   accent?: boolean;
 }) {
