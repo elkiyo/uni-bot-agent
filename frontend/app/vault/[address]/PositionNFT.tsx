@@ -14,7 +14,7 @@ import type { ChainDef } from "@/lib/chains";
  * base64 JSON — plus a composition breakdown styled after Uniswap's own
  * position page (value + volatile/stable split bar, fees-earned card).
  */
-export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainDef }) {
+export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: ChainDef; pool: `0x${string}` }) {
   const { data: uri } = useReadContract({
     address: chain.positionManager,
     abi: positionManagerAbi,
@@ -32,7 +32,7 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
         args: [tokenId],
         chainId: chain.id,
       },
-      { address: chain.pool, abi: uniswapV3PoolAbi, functionName: "slot0", chainId: chain.id },
+      { address: pool, abi: uniswapV3PoolAbi, functionName: "slot0", chainId: chain.id },
     ],
     query: { refetchInterval: 15_000 },
   });
@@ -49,17 +49,17 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
   // between rebalances even while the position is actively earning.
   const { data: feeReads } = useReadContracts({
     contracts: [
-      { address: chain.pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128", chainId: chain.id },
-      { address: chain.pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128", chainId: chain.id },
+      { address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128", chainId: chain.id },
+      { address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128", chainId: chain.id },
       {
-        address: chain.pool,
+        address: pool,
         abi: uniswapV3PoolAbi,
         functionName: "ticks",
         args: [position?.[5] ?? 0],
         chainId: chain.id,
       },
       {
-        address: chain.pool,
+        address: pool,
         abi: uniswapV3PoolAbi,
         functionName: "ticks",
         args: [position?.[6] ?? 0],
@@ -81,7 +81,7 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
 
   if (!position) return null;
 
-  const [, , , , , tickLower, tickUpper, liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128, tokensOwed0, tokensOwed1] =
+  const [, , , , fee, tickLower, tickUpper, liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128, tokensOwed0, tokensOwed1] =
     position;
   const currentTick = slot0 ? Number(slot0[1]) : undefined;
 
@@ -171,7 +171,7 @@ export function PositionNFT({ tokenId, chain }: { tokenId: bigint; chain: ChainD
           <span className="eyebrow !border-negative/40 !text-negative">Fuera de rango</span>
         )}
         <span className="eyebrow">
-          {chain.stableSymbol} / {chain.volatileSymbol} · {chain.feeTier / 10_000}%
+          {chain.stableSymbol} / {chain.volatileSymbol} · {fee / 10_000}%
         </span>
       </div>
       <p className="mt-1 text-sm text-muted">

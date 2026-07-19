@@ -48,6 +48,8 @@ const reads = (address: `0x${string}`, chainId: number, vaultAbi: ChainDef["vaul
     "recenterMarginBps",
     "exitTopCeilingMarginBps",
     "creationFeeCharged",
+    "feeTier",
+    "pool",
   ].map((functionName) => ({ address, abi: vaultAbi, functionName, chainId }) as const);
 
 export function VaultDetail({ address }: { address: `0x${string}` }) {
@@ -100,7 +102,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     recenterMarginBps,
     exitTopCeilingMarginBps,
     creationFeeCharged,
+    feeTierRaw,
+    poolRaw,
   ] = data?.map((d) => d.result) ?? [];
+  // A vault's real pool/fee tier is chosen at creation time (createVault's
+  // caller picks any pool for the pair, not necessarily chain.pool/
+  // chain.feeTier's "default" one) — reading them live instead of assuming
+  // the chain default matters for display, for increasePosition's swap fee
+  // below, AND for every slot0/tickSpacing read this page does (a wrong
+  // pool address there means wrong price/tickSpacing for the vault's real
+  // position). Confirmed live 2026-07-19: a real vault (0x5cD98eC8...4A5dEcb)
+  // was created against Arbitrum's USDC/WETH 0.30% pool, not the 0.05%
+  // default, and every one of these read chain.pool/chain.feeTier before
+  // this fix.
+  const feeTier = feeTierRaw !== undefined ? Number(feeTierRaw) : chain.feeTier;
+  const poolAddress = (poolRaw as `0x${string}` | undefined) ?? chain.pool;
 
   const { data: creationFeeUsdtRaw } = useReadContract({
     address: chain.platformConfigAddress || undefined,
@@ -140,13 +156,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const { data: feesSummary } = useVaultFeesSummary(address, chain);
   const { data: depositSummary } = useVaultDepositSummary(address, chain);
   const { data: tickSpacing } = useReadContract({
-    address: chain.pool,
+    address: poolAddress,
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
     chainId: chain.id,
   });
   const { data: slot0 } = useReadContract({
-    address: chain.pool,
+    address: poolAddress,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
     chainId: chain.id,
@@ -439,7 +455,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             token0ToToken1: swap.sellStable === chain.stableIsToken0,
             amountIn: swap.amountIn,
             amountOutMinimum: 0n,
-            fee: chain.feeTier,
+            fee: feeTier,
           },
           usdtAmount,
           0n,
@@ -481,7 +497,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       <main className="section flex-1 pb-24 pt-32">
         <div className="flex flex-wrap items-center gap-3">
           <span className="eyebrow">
-            Vault · {chain.stableSymbol}/{chain.volatileSymbol} {chain.feeTier / 10_000}%
+            Vault · {chain.stableSymbol}/{chain.volatileSymbol} {feeTier / 10_000}%
           </span>
           {paused ? (
             <span className="eyebrow !border-negative/40 !text-negative">Pausado</span>
@@ -567,7 +583,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
             </div>
 
-            {hasPosition && <PositionNFT tokenId={positionTokenId as bigint} chain={chain} />}
+            {hasPosition && <PositionNFT tokenId={positionTokenId as bigint} chain={chain} pool={poolAddress} />}
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="glass rounded-2xl p-5">

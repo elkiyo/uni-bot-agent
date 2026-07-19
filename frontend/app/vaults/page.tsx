@@ -201,6 +201,8 @@ const cardReads = (address: `0x${string}`, vaultAbi: ChainDef["vaultAbi"]) =>
     "maxRebalances",
     "investableUsdt",
     "reserveBalance",
+    "pool",
+    "feeTier",
   ].map((functionName) => ({ address, abi: vaultAbi, functionName }) as const);
 
 function VaultCard({
@@ -219,21 +221,27 @@ function VaultCard({
   const { setSelectedChainId } = useSelectedChain();
   const onNavigate = () => setSelectedChainId(chain.id);
 
+  const { data } = useReadContracts({
+    contracts: cardReads(vaultAddress, chain.vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
+    query: { refetchInterval: 15_000 },
+  });
+  const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance, poolRaw, feeTierRaw] =
+    data?.map((d) => d.result) ?? [];
+  // A vault's real pool/fee tier is chosen at creation time, not necessarily
+  // chain.pool/chain.feeTier's "default" one — see VaultDetail.tsx's own
+  // comment on the same read (confirmed live 2026-07-19 against a real vault
+  // on Arbitrum's 0.30% pool, not the 0.05% default).
+  const poolAddress = (poolRaw as `0x${string}` | undefined) ?? chain.pool;
+  const feeTier = feeTierRaw !== undefined ? Number(feeTierRaw) : chain.feeTier;
+
   const { data: slot0 } = useReadContract({
-    address: chain.pool,
+    address: poolAddress,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
     chainId: chain.id,
     query: { refetchInterval: 15_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
-
-  const { data } = useReadContracts({
-    contracts: cardReads(vaultAddress, chain.vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
-    query: { refetchInterval: 15_000 },
-  });
-  const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance] =
-    data?.map((d) => d.result) ?? [];
   const { data: feesSummary } = useVaultFeesSummary(vaultAddress, chain);
 
   const hasPosition = Boolean(positionTokenId && (positionTokenId as bigint) > 0n);
@@ -348,7 +356,7 @@ function VaultCard({
 
       <p className="mt-4 break-all font-mono text-xs text-white/70">{vaultAddress}</p>
       <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-        {chain.stableSymbol} / {chain.volatileSymbol} · {chain.feeTier / 10_000}%
+        {chain.stableSymbol} / {chain.volatileSymbol} · {feeTier / 10_000}%
       </p>
 
       {/* Headline: what the position is actually worth right now, and where */}

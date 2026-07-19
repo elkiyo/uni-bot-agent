@@ -19,18 +19,29 @@ import { Store } from "./store";
 import { logEvent, logUniLabCall } from "./logger";
 import { erc20Abi, swapRouter02Abi, uniswapV3FactoryAbi } from "../contracts";
 
-async function currentTick(chain: ChainRuntime): Promise<number> {
+// Takes the VAULT's own pool explicitly — never chain.pool, the chain's
+// "default" pool. createVault() lets the owner pick any fee-tier pool for
+// the pair, and every call site below already has the vault's own contract
+// in scope to read pool() from. Confirmed live 2026-07-19: a real Arbitrum
+// vault (0x5cD98eC8...4A5dEcb) sits on the 0.30% pool while chain.pool is
+// the 0.05% one — every one of these used to read the wrong pool's price
+// for such a vault.
+async function currentTick(chain: ChainRuntime, pool: Address): Promise<number> {
   const [, tick] = (await chain.publicClient.readContract({
-    address: chain.pool,
+    address: pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
   })) as readonly [bigint, number, number, number, number, number, boolean];
   return tick;
 }
 
-async function tickSpacing(chain: ChainRuntime): Promise<number> {
+// Same reasoning as currentTick above — a vault on a non-default pool has a
+// different real tickSpacing (e.g. 60 for a 0.30% pool vs. 10 for 0.05%);
+// aligning a new range to the wrong one would make Uniswap's mint() revert
+// (or worse, silently accept ticks that only happen to be common multiples).
+async function tickSpacing(chain: ChainRuntime, pool: Address): Promise<number> {
   return (await chain.publicClient.readContract({
-    address: chain.pool,
+    address: pool,
     abi: uniswapV3PoolAbi,
     functionName: "tickSpacing",
   })) as number;
@@ -221,11 +232,12 @@ const DUST_SWEEP_MIN_USD = 1; // not worth the gas below this
 export async function maybeSweepIdleDust(chain: ChainRuntime, vaultAddress: Address): Promise<void> {
   try {
     const vault = vaultContract(chain, vaultAddress);
-    const [positionTokenId, idleUsdt, positionManager, maxSlippageBps] = await Promise.all([
+    const [positionTokenId, idleUsdt, positionManager, maxSlippageBps, pool] = await Promise.all([
       vault.read.positionTokenId() as Promise<bigint>,
       vault.read.investableUsdt() as Promise<bigint>,
       vault.read.positionManager() as Promise<Address>,
       vault.read.maxSlippageBps() as Promise<bigint>,
+      vault.read.pool() as Promise<Address>,
     ]);
     if (positionTokenId === 0n) return;
 
@@ -236,7 +248,7 @@ export async function maybeSweepIdleDust(chain: ChainRuntime, vaultAddress: Addr
         functionName: "balanceOf",
         args: [vaultAddress],
       }) as Promise<bigint>,
-      currentTick(chain),
+      currentTick(chain, pool),
       chain.publicClient.readContract({
         address: positionManager,
         abi: positionManagerAbi,
@@ -575,14 +587,15 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
   }
 
   const vault = vaultContract(chain, vaultAddress);
-  const [targetTickLower, targetTickUpper, investableUsdt, maxSlippageBps] = await Promise.all([
+  const [targetTickLower, targetTickUpper, investableUsdt, maxSlippageBps, pool] = await Promise.all([
     vault.read.targetTickLower() as Promise<number>,
     vault.read.targetTickUpper() as Promise<number>,
     vault.read.investableUsdt() as Promise<bigint>,
     vault.read.maxSlippageBps() as Promise<bigint>,
+    vault.read.pool() as Promise<Address>,
   ]);
 
-  const tick = await currentTick(chain);
+  const tick = await currentTick(chain, pool);
   const ethPrice = ethPriceFromTick(tick, chain.stableIsToken0);
 
   // Sized locally, corrected against a real Uniswap Quoter call for the
@@ -731,6 +744,7 @@ async function runRebalanceViaUniLab(
     recenterMarginBps,
     platformConfig,
     maxSlippageBps,
+    pool,
   ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.reinjectionAmount() as Promise<bigint>, // owner's per-cycle ceiling — see RangeVault.sol
@@ -745,11 +759,12 @@ async function runRebalanceViaUniLab(
     (vault.read.recenterMarginBps() as Promise<bigint>).catch(() => 500n),
     vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
     vault.read.maxSlippageBps() as Promise<bigint>,
+    vault.read.pool() as Promise<Address>,
   ]);
 
   const [tick, spacing, position] = await Promise.all([
-    currentTick(chain),
-    tickSpacing(chain),
+    currentTick(chain, pool),
+    tickSpacing(chain, pool),
     chain.publicClient.readContract({
       address: positionManager,
       abi: positionManagerAbi,
@@ -1070,6 +1085,7 @@ async function runRebalanceExitTop(chain: ChainRuntime, vaultAddress: Address): 
     exitTopCeilingMarginBps,
     platformConfig,
     maxSlippageBps,
+    pool,
   ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.positionManager() as Promise<Address>,
@@ -1081,11 +1097,12 @@ async function runRebalanceExitTop(chain: ChainRuntime, vaultAddress: Address): 
     (vault.read.exitTopCeilingMarginBps() as Promise<bigint>).catch(() => 300n),
     vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
     vault.read.maxSlippageBps() as Promise<bigint>,
+    vault.read.pool() as Promise<Address>,
   ]);
 
   const [tick, spacing, position] = await Promise.all([
-    currentTick(chain),
-    tickSpacing(chain),
+    currentTick(chain, pool),
+    tickSpacing(chain, pool),
     chain.publicClient.readContract({
       address: positionManager,
       abi: positionManagerAbi,

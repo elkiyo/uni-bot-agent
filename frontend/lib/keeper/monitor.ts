@@ -62,7 +62,10 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
   const periodicDue = periodicInterval > 0n && now >= lastRebalanceTimestamp + periodicInterval;
   if (periodicDue) return { kind: "rebalance", reason: "periodic" };
 
-  const posManager = (await vault.read.positionManager()) as Address;
+  const [posManager, vaultPool] = (await Promise.all([
+    vault.read.positionManager(),
+    vault.read.pool(),
+  ])) as [Address, Address];
   const positions = (await chain.publicClient.readContract({
     address: posManager,
     abi: positionManagerAbi,
@@ -71,8 +74,15 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
   })) as readonly [bigint, Address, Address, Address, number, number, number, bigint, bigint, bigint, bigint, bigint];
 
   const [, , , , , tickLower, tickUpper] = positions;
+  // The vault's own pool — NOT necessarily chain.pool, the chain's "default"
+  // pool. createVault() lets the owner pick any fee-tier pool for the pair;
+  // a vault on a different one had its out-of-range check (and, before this
+  // fix, every rebalance/tickSpacing computation in rebalancer.ts) silently
+  // reading the WRONG pool's price. Confirmed live 2026-07-19: a real
+  // Arbitrum vault (0x5cD98eC8...4A5dEcb) sits on the 0.30% pool while
+  // chain.pool is the 0.05% one.
   const [, currentTick] = (await chain.publicClient.readContract({
-    address: chain.pool,
+    address: vaultPool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
   })) as readonly [bigint, number, number, number, number, number, boolean];
