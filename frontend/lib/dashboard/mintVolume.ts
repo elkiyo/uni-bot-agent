@@ -3,7 +3,16 @@ import { positionManagerAbi, uniswapV3PoolAbi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
 import { estimatePositionAmounts } from "../keeper/swapMath";
 import { getLogsChunkedMulti } from "../getLogsChunked";
+import { withRetry, mapWithConcurrency } from "../concurrency";
 import type { ChainDef } from "../chains";
+
+// A full 300-way burst against a free public RPC (forno.celo.org) is exactly
+// the kind of load that trips a rate limit — bound it like getLogsChunked.ts
+// does, and retry each mint's read independently instead of silently
+// dropping it (the previous behavior: any single failed historical read —
+// common under a burst that size — just vanished from "Volumen", making the
+// chart understate real activity with no indication anything was wrong).
+const CONCURRENCY = 6;
 
 export interface MintVolumeEvent {
   timestamp: number; // seconds
@@ -72,9 +81,9 @@ export async function fetchMintVolumeEvents(
     mints = mints.sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1)).slice(0, MAX_MINTS);
   }
 
-  const results = await Promise.all(
-    mints.map(async ({ tokenId, blockNumber }): Promise<MintVolumeEvent | null> => {
-      try {
+  const results = await mapWithConcurrency(mints, CONCURRENCY, async ({ tokenId, blockNumber }): Promise<MintVolumeEvent | null> => {
+    try {
+      return await withRetry(async () => {
         const [position, slot0, block] = await Promise.all([
           publicClient.readContract({
             address: chain.positionManager,
@@ -99,11 +108,11 @@ export async function fetchMintVolumeEvents(
         const volatileRaw = chain.stableIsToken0 ? amount1Raw : amount0Raw;
         const usd = stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
         return { timestamp: Number(block.timestamp), usd };
-      } catch {
-        return null; // RPC couldn't serve this historical block — skip, don't fail the whole scan
-      }
-    }),
-  );
+      });
+    } catch {
+      return null; // RPC couldn't serve this historical block even after retrying — skip, don't fail the whole scan
+    }
+  });
 
   return results.filter((e): e is MintVolumeEvent => e !== null);
 }

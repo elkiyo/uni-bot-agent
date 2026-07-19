@@ -75,6 +75,16 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        {metrics.chainErrors.length > 0 && (
+          <div className="glass mt-8 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
+            <p className="text-sm font-medium text-negative">
+              No se pudo leer la cadena completa de {metrics.chainErrors.map((e) => e.chainName).join(", ")} — los
+              números de esa red pueden estar incompletos, no son necesariamente cero real. Reintentando
+              automáticamente.
+            </p>
+          </div>
+        )}
+
         <StatGrid metrics={metrics} />
 
         {metrics.poolTypes.length > 0 && <PoolTypeChart poolTypes={metrics.poolTypes} />}

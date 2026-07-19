@@ -49,6 +49,11 @@ export interface RebalanceEvent {
   gasReimbursedUsd: number;
 }
 
+export interface ChainFetchError {
+  chainId: number;
+  chainName: string;
+}
+
 export type VaultStatus = "active" | "no_position" | "closed";
 
 export interface VaultRow {
@@ -110,6 +115,10 @@ export interface ProtocolMetrics {
    * fully accurate once BOTH have resolved (see vaultRowsLoading). */
   vaultRows: VaultRow[];
   vaultRowsLoading: boolean;
+  /** Chains whose scan ultimately failed after retries — numbers for these
+   * chains are NOT trustworthy as "confirmed zero" while this is non-empty;
+   * see this hook's own docstring for why that distinction matters. */
+  chainErrors: ChainFetchError[];
 }
 
 const EMPTY_COUNTS: VaultCounts = { total: 0, withPosition: 0, closed: 0 };
@@ -144,6 +153,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       queryKey: ["dashboard-vault-directory", chain.id, chain.factoryAddress],
       staleTime: 60_000,
       refetchInterval: 60_000,
+      retry: 3,
       queryFn: async (): Promise<VaultCreationRecord[]> => {
         const publicClient = publicClientFor(chain.id);
         if (!publicClient) return [];
@@ -152,6 +162,14 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     })),
   });
   const directoryLoading = directoryQueries.some((q) => q.isLoading);
+  // A chain whose directory scan ultimately failed (all retries exhausted,
+  // in getLogsChunkedMulti AND react-query's own outer retry) must NOT be
+  // silently treated as "this chain has 0 vaults" — that's indistinguishable
+  // from real empty data otherwise, which is exactly the bug reported
+  // 2026-07-18 (Celo's dashboard numbers came back as confirmed-looking
+  // zeros while real vaults/fees/rebalances existed). Surfaced instead of
+  // swallowed so the UI can tell "empty" from "failed to load" apart.
+  const directoryErrorChains = chains.filter((_, i) => directoryQueries[i].isError);
 
   const vaultRefs: VaultRef[] = useMemo(
     () =>
@@ -311,6 +329,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       enabled: vaultRefs.some((r) => r.chain.id === chain.id),
       staleTime: 30_000,
       refetchInterval: 30_000,
+      retry: 3,
       queryFn: async () => {
         const publicClient = publicClientFor(chain.id);
         const addresses = vaultRefs.filter((r) => r.chain.id === chain.id).map((r) => r.record.address);
@@ -334,12 +353,14 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
   // make the WHOLE flag flip false prematurely (its query never even
   // started), showing confirmed-looking $0.00 before that chain was scanned.
   const eventsLoading = directoryLoading || eventQueries.some((q) => q.isLoading);
+  const eventsErrorChains = chains.filter((_, i) => eventQueries[i].isError);
 
   const mintVolumeQueries = useQueries({
     queries: chains.map((chain) => ({
       queryKey: ["dashboard-mint-volume", chain.id, vaultRefs.filter((r) => r.chain.id === chain.id).length],
       enabled: vaultRefs.some((r) => r.chain.id === chain.id),
       staleTime: 60_000,
+      retry: 3,
       queryFn: async () => {
         const publicClient = publicClientFor(chain.id);
         const addresses = vaultRefs.filter((r) => r.chain.id === chain.id).map((r) => r.record.address);
@@ -350,6 +371,17 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
   });
   // Same reasoning as eventsLoading above.
   const mintVolumeLoading = directoryLoading || mintVolumeQueries.some((q) => q.isLoading);
+  const mintVolumeErrorChains = chains.filter((_, i) => mintVolumeQueries[i].isError);
+
+  const erroredChainIds = [
+    ...new Set(
+      [...directoryErrorChains, ...eventsErrorChains, ...mintVolumeErrorChains].map((c) => c.id),
+    ),
+  ];
+  const chainErrors: ChainFetchError[] = erroredChainIds.map((id) => ({
+    chainId: id,
+    chainName: chains.find((c) => c.id === id)?.name ?? String(id),
+  }));
 
   return useMemo(() => {
     const snapshotLoading = directoryLoading || ledgerLoading || positionLoading || poolLoading;
@@ -502,6 +534,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       mintVolumeLoading,
       vaultRows,
       vaultRowsLoading,
+      chainErrors,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- eventQueries/mintVolumeQueries are fresh arrays every render; their .data is what actually matters
   }, [
@@ -518,5 +551,8 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     ethPriceByChain,
     eventQueries.map((q) => q.data).join("|"),
     mintVolumeQueries.map((q) => q.data?.length).join("|"),
+    directoryQueries.map((q) => q.isError).join("|"),
+    eventQueries.map((q) => q.isError).join("|"),
+    mintVolumeQueries.map((q) => q.isError).join("|"),
   ]);
 }
