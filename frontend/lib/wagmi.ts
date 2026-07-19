@@ -19,9 +19,20 @@ const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID 
 // zeros instead of real data. viem's fallback() transport automatically
 // retries against the second URL when the first errors, rather than every
 // read on this app depending on a single third-party RPC's uptime.
+//
+// Arbitrum additionally gets a dedicated NodeReal endpoint as its FIRST
+// choice (2026-07-19) — the dashboard's read pattern (multicalls + chunked
+// multi-address getLogs scans across every vault) is heavy enough to trip
+// public RPCs' rate limits on its own, independent of the CORS issue above.
+// NodeReal doesn't support Celo, so Celo keeps its public-RPC fallback pair.
+const arbitrumRpcUrl = process.env.NEXT_PUBLIC_ARBITRUM_RPC_URL;
 const transports = {
   [celo.id]: fallback([http("https://forno.celo.org"), http("https://rpc.ankr.com/celo")]),
-  [arbitrum.id]: fallback([http("https://arb1.arbitrum.io/rpc"), http("https://rpc.ankr.com/arbitrum")]),
+  [arbitrum.id]: fallback([
+    ...(arbitrumRpcUrl ? [http(arbitrumRpcUrl)] : []),
+    http("https://arb1.arbitrum.io/rpc"),
+    http("https://rpc.ankr.com/arbitrum"),
+  ]),
 };
 
 // Both chains listed here regardless of whether Arbitrum's contracts are
