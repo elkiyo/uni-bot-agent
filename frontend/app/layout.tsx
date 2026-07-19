@@ -3,6 +3,7 @@ import { Inter, Inter_Tight } from "next/font/google";
 import "@rainbow-me/rainbowkit/styles.css";
 import "./globals.css";
 import { Providers } from "./providers";
+import { MobileBottomNav } from "./components/MobileBottomNav";
 
 // Same type pairing as the reference design (hackathon.celocolombia.org):
 // Inter for body, Inter Tight for display headings.
@@ -40,7 +41,10 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${inter.variable} ${interTight.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <MobileBottomNav />
+        </Providers>
       </body>
     </html>
   );

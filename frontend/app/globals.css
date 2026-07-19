@@ -47,6 +47,14 @@ body {
   color: #050505;
 }
 
+/* Clearance for MobileBottomNav (fixed, md:hidden) so it never covers
+   the tail end of page content on small screens. */
+@media (max-width: 767px) {
+  body {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+  }
+}
+
 /* --- shared utilities, same names/recipes as the reference site --- */
 
 .section {
