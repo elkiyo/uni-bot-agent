@@ -153,7 +153,7 @@ export const CHAINS: Record<number, ChainDef> = {
   [ARBITRUM.id]: ARBITRUM,
 };
 
-export const DEFAULT_CHAIN_ID = CELO.id;
+export const DEFAULT_CHAIN_ID = ARBITRUM.id;
 
 export function getChain(id: number): ChainDef {
   return CHAINS[id] ?? CHAINS[DEFAULT_CHAIN_ID];

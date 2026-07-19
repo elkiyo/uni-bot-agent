@@ -19,8 +19,8 @@ const SelectedChainContext = createContext<SelectedChainContextValue | undefined
  * Arbitrum vaults/pools without having to switch their wallet's network
  * first, and only switch at the moment of actually signing something — see
  * the write-flow guard in each write handler). Persisted to localStorage so
- * it survives reloads; defaults to Celo for first-time and disconnected
- * visitors, same as before this existed.
+ * it survives reloads; defaults to DEFAULT_CHAIN_ID (Arbitrum) for
+ * first-time and disconnected visitors.
  */
 export function SelectedChainProvider({ children }: { children: ReactNode }) {
   const [selectedChainId, setSelectedChainIdState] = useState<number>(DEFAULT_CHAIN_ID);
