@@ -923,11 +923,18 @@ async function runRebalanceViaUniLab(
   // caused live 2026-07-19 (vault 0x00a393AB...78F52b): real LP fees pushed
   // the position slightly above its original committed capital (A1=$500.18
   // vs. B1=$500.00, both otherwise clean/correct numbers) and the call still
-  // failed. Their calculator apparently assumes B1 >= A1 always holds; B1 is
-  // meant to be a floor on what's at stake, never below current value, so
-  // capping it up to A1 here is consistent with (not a workaround of) B1's
-  // own "entire committed capital" definition above.
-  const cappedAmountToRecoverUsd = Math.max(amountToRecoverUsd, positionValueUsd);
+  // failed. B1 is meant to be a floor on what's at stake, never below
+  // current value, so capping it up here is consistent with (not a
+  // workaround of) B1's own "entire committed capital" definition above.
+  //
+  // B1 == A1 exactly (tested live 2026-07-19, same vault) still 500'd — their
+  // calculator apparently needs B1 STRICTLY greater than A1, not just >=.
+  // Testing a small margin above A1 next: 0.5%, comfortably above float
+  // rounding noise but small enough not to distort the real "amount to
+  // recover" for vaults where B1 is legitimately already far above A1 (the
+  // common case — this margin only ever matters when they're this close).
+  const B1_MIN_MARGIN_OVER_A1 = 1.005;
+  const cappedAmountToRecoverUsd = Math.max(amountToRecoverUsd, positionValueUsd * B1_MIN_MARGIN_OVER_A1);
 
   const baseParams = {
     currentLiquidityUsd: positionValueUsd,
