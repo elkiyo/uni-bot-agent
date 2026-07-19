@@ -1,5 +1,5 @@
 import "server-only";
-import { BaseError, ContractFunctionRevertedError, parseEventLogs, type Abi, type Address, type Log } from "viem";
+import { BaseError, ContractFunctionRevertedError, parseEventLogs, type Abi, type Address } from "viem";
 import { operatorAccount, type ChainRuntime } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
 import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
@@ -18,6 +18,7 @@ function toToken0ToToken1(sellStable: boolean, chain: ChainRuntime): boolean {
 import { Store } from "./store";
 import { logEvent, logUniLabCall } from "./logger";
 import { erc20Abi, swapRouter02Abi, uniswapV3FactoryAbi } from "../contracts";
+import { getLogsChunkedMulti } from "../getLogsChunked";
 
 // Takes the VAULT's own pool explicitly — never chain.pool, the chain's
 // "default" pool. createVault() lets the owner pick any fee-tier pool for
@@ -679,17 +680,19 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
  * contract itself only ever emits them with the real amounts it just
  * transferFrom'd.
  */
-const EVENT_SCAN_CHUNK = 5_000n; // forno.celo.org's eth_getLogs range cap — see lib/getLogsChunked.ts
-
 async function getCumulativeInvestmentUsd(chain: ChainRuntime, vaultAddress: Address, fromBlock: bigint): Promise<number> {
-  const latestBlock = await chain.publicClient.getBlockNumber();
-  const logs: Log[] = [];
-  let from = fromBlock;
-  while (from <= latestBlock) {
-    const to = from + EVENT_SCAN_CHUNK > latestBlock ? latestBlock : from + EVENT_SCAN_CHUNK;
-    logs.push(...(await chain.publicClient.getLogs({ address: vaultAddress, fromBlock: from, toBlock: to })));
-    from = to + 1n;
-  }
+  // Was a hand-rolled chunked scan with no retry — forno.celo.org confirmed
+  // flaky in a way plain retry-on-error can't catch (an identical eth_getLogs
+  // request for the same range intermittently comes back empty, a
+  // "successful" response, not a thrown error — see lib/getLogsChunked.ts's
+  // own docstring). Confirmed live 2026-07-19 (vault 0x00a393AB...78F52b):
+  // B1 flip-flopped between 0 and its real value (500) across consecutive
+  // rebalance attempts minutes apart, sending uni-lab.xyz a degenerate B1=0
+  // roughly every other cycle and burning a real x402 payment each time for
+  // nothing. getLogsChunkedMulti re-verifies a suspiciously empty chunk
+  // before trusting it — the same fix already applied to the dashboard's
+  // scans, just missing here since this was its own separate implementation.
+  const logs = await getLogsChunkedMulti(chain.publicClient, { address: [vaultAddress], fromBlock, toBlock: "latest" });
   const events = parseEventLogs({ abi: chain.vaultAbi, logs });
 
   let totalDepositedRaw = 0n;
