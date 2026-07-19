@@ -241,6 +241,7 @@ const es = {
       "Arte generado 100% on-chain por el contrato de Uniswap V3 — el NFT vive dentro del vault, nunca en la wallet del operador.",
     loadingNft: "Cargando NFT…",
     viewExplorer: "Ver NFT en el explorer →",
+    viewOnUniswap: "Ver posición en Uniswap →",
     position: "Posición",
     feesEarned: "Comisiones ganadas",
     feesCaption:

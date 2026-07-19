@@ -243,6 +243,7 @@ const en: Dictionary = {
       "Art generated 100% on-chain by the Uniswap V3 contract — the NFT lives inside the vault, never in the operator's wallet.",
     loadingNft: "Loading NFT…",
     viewExplorer: "View NFT on explorer →",
+    viewOnUniswap: "View position on Uniswap →",
     position: "Position",
     feesEarned: "Fees earned",
     feesCaption:

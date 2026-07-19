@@ -203,6 +203,14 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
           >
             {t("positionNft.viewExplorer")}
           </a>
+          <a
+            href={`https://app.uniswap.org/positions/v3/${chain.uniswapAppSlug}/${String(tokenId)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary mt-3 block w-full !py-2.5 text-center !text-xs"
+          >
+            {t("positionNft.viewOnUniswap")}
+          </a>
         </div>
 
         {/* Uniswap-style breakdown */}

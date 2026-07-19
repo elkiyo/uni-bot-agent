@@ -243,6 +243,7 @@ const zh: Dictionary = {
       "该图像 100% 由 Uniswap V3 合约在链上生成——NFT 始终保存在金库中，绝不会出现在运营方的钱包里。",
     loadingNft: "正在加载 NFT…",
     viewExplorer: "在区块浏览器中查看 NFT →",
+    viewOnUniswap: "在 Uniswap 上查看仓位 →",
     position: "仓位",
     feesEarned: "已赚取手续费",
     feesCaption:

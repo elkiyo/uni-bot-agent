@@ -31,6 +31,11 @@ export interface ChainDef {
   factoryAddress: `0x${string}` | "";
   platformConfigAddress: `0x${string}` | "";
   explorerBaseUrl: string;
+  // Network slug Uniswap's own app uses in its position URLs —
+  // https://app.uniswap.org/positions/v3/{uniswapAppSlug}/{tokenId} — so a
+  // vault's real, on-chain-minted position can be opened straight on the
+  // official Uniswap interface, not just our own read-only display.
+  uniswapAppSlug: string;
   // Uniswap V3 decides token0/token1 by raw address sort order, not by which
   // one is the stablecoin — true on Celo (USDT < WETH) but false on Arbitrum
   // (WETH < USDC). Every tick<->price conversion and every swap-direction
@@ -98,6 +103,7 @@ const CELO: ChainDef = {
   factoryAddress: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS_CELO || "") as `0x${string}` | "",
   platformConfigAddress: (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS_CELO || "") as `0x${string}` | "",
   explorerBaseUrl: "https://celoscan.io",
+  uniswapAppSlug: "celo",
   lowGasThreshold: 1,
   stableIsToken0: computeStableIsToken0(CELO_STABLE, CELO_VOLATILE),
   vaultAbi: rangeVaultAbi,
@@ -138,6 +144,7 @@ const ARBITRUM: ChainDef = {
   factoryAddress: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   platformConfigAddress: (process.env.NEXT_PUBLIC_PLATFORM_CONFIG_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   explorerBaseUrl: "https://arbiscan.io",
+  uniswapAppSlug: "arbitrum",
   // ~$15-20 at typical ETH prices — comfortably covers dozens of rebalance
   // cycles at Arbitrum's real gas prices (~0.04 gwei observed 2026-07-17),
   // while still catching a genuinely empty wallet.

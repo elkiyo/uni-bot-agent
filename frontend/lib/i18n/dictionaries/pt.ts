@@ -243,6 +243,7 @@ const pt: Dictionary = {
       "Arte gerada 100% on-chain pelo contrato da Uniswap V3 — o NFT vive dentro do vault, nunca na carteira do operador.",
     loadingNft: "Carregando NFT…",
     viewExplorer: "Ver NFT no explorer →",
+    viewOnUniswap: "Ver posição na Uniswap →",
     position: "Posição",
     feesEarned: "Comissões ganhas",
     feesCaption:
