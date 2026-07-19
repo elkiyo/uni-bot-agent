@@ -36,7 +36,6 @@ export default function Home() {
         <div className="grid items-center gap-10 lg:grid-cols-[1fr_320px]">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="eyebrow !border-accent/25 !text-accent">AI Agent</span>
               <span className="eyebrow">Uniswap V3 · {chain.name} Mainnet</span>
               <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
                 <span className="relative flex h-1.5 w-1.5">
@@ -52,6 +51,9 @@ export default function Home() {
             >
               Auto<span className="text-accent">Range</span>
             </h1>
+            <p className="mt-2 font-mono text-xs uppercase tracking-[0.22em] text-accent">
+              AI Agent
+            </p>
             <p
               className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-white/90 sm:text-2xl"
               style={{ fontFamily: "var(--font-display)" }}
