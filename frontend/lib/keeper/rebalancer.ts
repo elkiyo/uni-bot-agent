@@ -917,9 +917,21 @@ async function runRebalanceViaUniLab(
   // "amount to recover" smaller than the real capital at stake.
   const amountToRecoverUsd = await getCumulativeInvestmentUsd(chain, vaultAddress, BigInt(record.createdAtBlock));
 
+  // uni-lab.xyz's /rc-rlp-rebalance returns 500 ("input combination doesn't
+  // produce a valid rebalance range" — its own documented meaning) whenever
+  // A1 (currentLiquidityUsd, the position's live value) exceeds B1 — root-
+  // caused live 2026-07-19 (vault 0x00a393AB...78F52b): real LP fees pushed
+  // the position slightly above its original committed capital (A1=$500.18
+  // vs. B1=$500.00, both otherwise clean/correct numbers) and the call still
+  // failed. Their calculator apparently assumes B1 >= A1 always holds; B1 is
+  // meant to be a floor on what's at stake, never below current value, so
+  // capping it up to A1 here is consistent with (not a workaround of) B1's
+  // own "entire committed capital" definition above.
+  const cappedAmountToRecoverUsd = Math.max(amountToRecoverUsd, positionValueUsd);
+
   const baseParams = {
     currentLiquidityUsd: positionValueUsd,
-    amountToRecoverUsd,
+    amountToRecoverUsd: cappedAmountToRecoverUsd,
     currentPriceVolatileAsset: ethPrice,
     newLowerBound: newLowerPrice,
     reinvestmentAmountUsd: reinjectionUsd,
