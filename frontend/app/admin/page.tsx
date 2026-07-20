@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   useAccount,
   useBalance,
@@ -340,6 +341,13 @@ export default function Admin() {
           {t("admin.title")}
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">{t("admin.subtitle")}</p>
+
+        <Link
+          href="/admin/referrals"
+          className="mt-4 inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-accent hover:underline"
+        >
+          {t("admin.referralsLink")}
+        </Link>
 
         {availableChains.length > 1 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">

@@ -15,6 +15,7 @@ export function Header() {
     { href: "/vaults", label: t("header.navVaults") },
     { href: "/create", label: t("header.navCreate") },
     { href: "/dashboard", label: t("header.navDashboard") },
+    { href: "/referrals", label: t("header.navReferrals") },
   ];
 
   const resourceLinks = [
