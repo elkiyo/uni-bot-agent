@@ -3,7 +3,6 @@ import {
   metaMaskWallet,
   rabbyWallet,
   rainbowWallet,
-  coinbaseWallet,
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig } from "wagmi";
@@ -83,13 +82,19 @@ const walletConnectMetadata = {
 // confirmed 2026-07-20 that the generic WalletConnect tile itself fails to
 // load for at least one real user/device, while named-wallet tiles (which
 // deep-link directly instead of going through that generic flow) work fine.
-// walletConnectWallet is kept at the end as the catch-all for any wallet not
-// explicitly listed here.
+//
+// RainbowKit's mobile connect sheet only shows 4 tiles inline — a 5th
+// (coinbaseWallet) got silently dropped even though it was in this array,
+// confirmed live 2026-07-20. Dropped coinbaseWallet rather than rabbyWallet
+// to keep Rabby visible, since that's the one actually being requested here.
+// walletConnectWallet is kept as the catch-all for any wallet not explicitly
+// listed — RainbowKit bumps it to the front labeled "Reciente" once a
+// visitor has used it before, which is expected/fine.
 const connectors = connectorsForWallets(
   [
     {
       groupName: "Popular",
-      wallets: [metaMaskWallet, rabbyWallet, rainbowWallet, coinbaseWallet, walletConnectWallet],
+      wallets: [metaMaskWallet, rabbyWallet, rainbowWallet, walletConnectWallet],
     },
   ],
   walletConnectMetadata,
