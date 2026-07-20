@@ -1,4 +1,12 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { connectorsForWallets } from "@rainbow-me/rainbowkit";
+import {
+  metaMaskWallet,
+  rabbyWallet,
+  rainbowWallet,
+  coinbaseWallet,
+  walletConnectWallet,
+} from "@rainbow-me/rainbowkit/wallets";
+import { createConfig } from "wagmi";
 import { fallback, http } from "viem";
 import { celo, arbitrum } from "wagmi/chains";
 
@@ -49,14 +57,6 @@ const transports = {
   ]),
 };
 
-// Both chains listed here regardless of whether Arbitrum's contracts are
-// deployed yet — this only controls which networks the WALLET can connect
-// to/switch between (RainbowKit's own network UI, used by the
-// switch-network-before-write guard). Which chain's DATA is shown while
-// browsing is a separate, independent selection — see useSelectedChain.tsx —
-// and is further gated by chains.ts's deployedChains() so an undeployed
-// chain never appears as a viewing option even though the wallet could
-// still technically connect to it.
 // appUrl/appIcon/appDescription feed WalletConnect's pairing metadata — a
 // mobile wallet uses `appUrl` to know where to deep-link/redirect back to
 // after the user approves. Left unset before, WalletConnect fell back to
@@ -69,12 +69,42 @@ const transports = {
 // listening, so the PWA just hangs on "connecting" forever. Hardcoding it to
 // the same canonical origin used in layout.tsx's metadataBase removes that
 // ambiguity regardless of which display mode the page was opened in.
-export const wagmiConfig = getDefaultConfig({
+const walletConnectMetadata = {
   appName: "AutoRange",
   appDescription: "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper.",
   appUrl: "https://autorange.xyz",
   appIcon: "https://autorange.xyz/brand/logo-mark-256.png",
   projectId: walletConnectProjectId,
+};
+
+// Explicit wallet list (replaces RainbowKit's getDefaultConfig/auto-detected
+// list) so Rabby shows up as its own named tile next to MetaMask instead of
+// only being reachable through the generic "WalletConnect" fallback tile —
+// confirmed 2026-07-20 that the generic WalletConnect tile itself fails to
+// load for at least one real user/device, while named-wallet tiles (which
+// deep-link directly instead of going through that generic flow) work fine.
+// walletConnectWallet is kept at the end as the catch-all for any wallet not
+// explicitly listed here.
+const connectors = connectorsForWallets(
+  [
+    {
+      groupName: "Popular",
+      wallets: [metaMaskWallet, rabbyWallet, rainbowWallet, coinbaseWallet, walletConnectWallet],
+    },
+  ],
+  walletConnectMetadata,
+);
+
+// Both chains listed here regardless of whether Arbitrum's contracts are
+// deployed yet — this only controls which networks the WALLET can connect
+// to/switch between (RainbowKit's own network UI, used by the
+// switch-network-before-write guard). Which chain's DATA is shown while
+// browsing is a separate, independent selection — see useSelectedChain.tsx —
+// and is further gated by chains.ts's deployedChains() so an undeployed
+// chain never appears as a viewing option even though the wallet could
+// still technically connect to it.
+export const wagmiConfig = createConfig({
+  connectors,
   chains: [celo, arbitrum],
   transports,
   ssr: true,
