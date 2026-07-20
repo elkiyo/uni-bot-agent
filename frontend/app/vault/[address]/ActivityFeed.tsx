@@ -2,8 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
-import { formatUnits, parseEventLogs, type Log } from "viem";
-import { getLogsChunked } from "@/lib/getLogsChunked";
+import { formatUnits } from "viem";
+import { useVaultEventLogs } from "@/lib/useVaultEventLogs";
 import type { ChainDef } from "@/lib/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
@@ -27,19 +27,14 @@ interface FeedItem {
 export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
   const publicClient = usePublicClient({ chainId: chain.id });
   const { t, locale } = useTranslation();
+  const { data: eventLogs } = useVaultEventLogs(address, chain);
 
   const { data: items } = useQuery({
-    queryKey: ["vault-activity", chain.id, address, locale],
-    enabled: Boolean(publicClient),
-    refetchInterval: 10_000,
+    queryKey: ["vault-activity", chain.id, address, locale, eventLogs?.length],
+    enabled: Boolean(publicClient && eventLogs),
     queryFn: async (): Promise<FeedItem[]> => {
-      if (!publicClient) return [];
-      const logs = await getLogsChunked(publicClient, {
-        address,
-        fromBlock: chain.factoryDeployBlock,
-        toBlock: "latest",
-      });
-      const parsed = parseEventLogs({ abi: chain.vaultAbi, logs: logs as Log[] });
+      if (!publicClient || !eventLogs) return [];
+      const parsed = eventLogs;
 
       const feed: FeedItem[] = [];
       for (const log of parsed) {

@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
-import { formatUnits, parseEventLogs, type Log } from "viem";
+import { formatUnits } from "viem";
 import { ethPriceFromTick } from "@/lib/priceMath";
-import { getLogsChunked } from "@/lib/getLogsChunked";
+import { useVaultEventLogs } from "@/lib/useVaultEventLogs";
 import type { ChainDef } from "@/lib/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
@@ -46,19 +46,14 @@ interface PositionRecord {
 export function PositionHistory({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
   const publicClient = usePublicClient({ chainId: chain.id });
   const { t, locale } = useTranslation();
+  const { data: eventLogs } = useVaultEventLogs(address, chain);
 
   const { data: positions } = useQuery({
-    queryKey: ["vault-position-history", chain.id, address],
-    enabled: Boolean(publicClient),
-    refetchInterval: 20_000,
+    queryKey: ["vault-position-history", chain.id, address, eventLogs?.length],
+    enabled: Boolean(publicClient && eventLogs),
     queryFn: async (): Promise<PositionRecord[]> => {
-      if (!publicClient) return [];
-      const logs = await getLogsChunked(publicClient, {
-        address,
-        fromBlock: chain.factoryDeployBlock,
-        toBlock: "latest",
-      });
-      const parsed = parseEventLogs({ abi: chain.vaultAbi, logs: logs as Log[] });
+      if (!publicClient || !eventLogs) return [];
+      const parsed = eventLogs;
 
       const targetConfigs: Array<{ tickLower: number; tickUpper: number; blockNumber: bigint }> = [];
       const rebalances: OpenEvent[] = [];
