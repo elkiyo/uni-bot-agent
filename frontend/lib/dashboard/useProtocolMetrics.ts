@@ -10,7 +10,7 @@ import { deployedChains, type ChainDef } from "../chains";
 import { positionManagerAbi, uniswapV3PoolAbi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
 import { estimatePositionAmounts } from "../keeper/swapMath";
-import { getLogsChunkedMulti } from "../getLogsChunked";
+import { fetchNewLogs } from "../incrementalLogScan";
 import { fetchAllVaultCreations, type VaultCreationRecord } from "./vaultDirectory";
 import { fetchMintVolumeEvents, type MintVolumeEvent } from "./mintVolume";
 import type { ConfiguredChainId } from "../useVaultCreationTimes";
@@ -18,6 +18,11 @@ import type { ConfiguredChainId } from "../useVaultCreationTimes";
 function publicClientFor(chainId: number): PublicClient | undefined {
   return getPublicClient(wagmiConfig, { chainId: chainId as ConfiguredChainId }) as PublicClient | undefined;
 }
+
+// Accumulated fee/rebalance event logs + their block timestamps, per chain —
+// module scope so it survives navigating away from and back to the
+// dashboard, same reasoning as vaultDirectory.ts/mintVolume.ts's caches.
+const eventScanCache = new Map<number, { logs: Log[]; blockTimestamps: Map<bigint, number> }>();
 
 interface VaultRef {
   chain: ChainDef;
@@ -344,7 +349,11 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
   }, [openPositions, positionData, currentTickByPool]);
 
   // Event aggregation: one multi-address chunked scan per chain covers every
-  // vault on that chain at once.
+  // vault on that chain at once. Only logs/blocks NEW since this chain's own
+  // last scan get fetched (see fetchNewLogs/eventScanCache) — the accumulated
+  // result (not just the delta) is what's returned and cached, so a 30s
+  // refetch on a page that's been open a while costs roughly nothing instead
+  // of re-scanning the chain's entire history from factoryDeployBlock again.
   const eventQueries = useQueries({
     queries: chains.map((chain) => ({
       queryKey: ["dashboard-vault-events", chain.id, vaultRefs.filter((r) => r.chain.id === chain.id).length],
@@ -356,15 +365,29 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         const publicClient = publicClientFor(chain.id);
         const addresses = vaultRefs.filter((r) => r.chain.id === chain.id).map((r) => r.record.address);
         if (!publicClient || addresses.length === 0) return { logs: [] as Log[], blockTimestamps: new Map<bigint, number>() };
-        const logs = await getLogsChunkedMulti(publicClient, {
+
+        const freshLogs = await fetchNewLogs(`events:${chain.id}`, publicClient, {
           address: addresses,
           fromBlock: chain.factoryDeployBlock,
-          toBlock: "latest",
         });
-        const uniqueBlocks = [...new Set(logs.map((l) => l.blockNumber))].filter((bn): bn is bigint => bn !== null);
-        const blocks = await Promise.all(uniqueBlocks.map((bn) => publicClient.getBlock({ blockNumber: bn })));
-        const blockTimestamps = new Map(uniqueBlocks.map((bn, i) => [bn, Number(blocks[i].timestamp)]));
-        return { logs, blockTimestamps };
+
+        let cache = eventScanCache.get(chain.id);
+        if (!cache) {
+          cache = { logs: [], blockTimestamps: new Map() };
+          eventScanCache.set(chain.id, cache);
+        }
+        if (freshLogs.length > 0) {
+          const uniqueBlocks = [...new Set(freshLogs.map((l) => l.blockNumber))].filter(
+            (bn): bn is bigint => bn !== null,
+          );
+          const newBlocks = uniqueBlocks.filter((bn) => !cache!.blockTimestamps.has(bn));
+          if (newBlocks.length > 0) {
+            const blocks = await Promise.all(newBlocks.map((bn) => publicClient.getBlock({ blockNumber: bn })));
+            newBlocks.forEach((bn, i) => cache!.blockTimestamps.set(bn, Number(blocks[i].timestamp)));
+          }
+          cache.logs = [...cache.logs, ...freshLogs];
+        }
+        return { logs: cache.logs, blockTimestamps: cache.blockTimestamps };
       },
     })),
   });

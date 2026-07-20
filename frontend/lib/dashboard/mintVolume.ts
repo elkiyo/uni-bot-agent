@@ -2,7 +2,7 @@ import { parseEventLogs, type Address, type PublicClient } from "viem";
 import { positionManagerAbi, uniswapV3PoolAbi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
 import { estimatePositionAmounts } from "../keeper/swapMath";
-import { getLogsChunkedMulti } from "../getLogsChunked";
+import { fetchNewLogs } from "../incrementalLogScan";
 import { withRetry, mapWithConcurrency } from "../concurrency";
 import type { ChainDef } from "../chains";
 
@@ -34,6 +34,13 @@ type PositionTuple = readonly [
   bigint,
 ];
 
+// Resolved events per chain, keyed by tokenId — see incrementalLogScan.ts's
+// own docstring for why this lives at module scope. Once a mint's USD value
+// is resolved it never changes (it's a historical, block-pinned read), so
+// caching by tokenId (not re-resolving on every call) is exactly correct,
+// not just an optimization.
+const resolvedMintsCache = new Map<number, Map<string, MintVolumeEvent>>();
+
 /**
  * "Volumen movido por el agente" — the USD value of every position built on
  * `chain`, one entry per initPosition()/rebalance() across ALL of
@@ -45,6 +52,10 @@ type PositionTuple = readonly [
  * position rebalanced again since would read back as empty otherwise).
  * Needs an RPC that still has that historical state; any block it can't
  * serve is skipped rather than failing the whole result.
+ *
+ * Only NEW mints (since this function's own last call for this chain) get
+ * the expensive per-mint historical reads — already-resolved mints are
+ * served straight from resolvedMintsCache.
  */
 export async function fetchMintVolumeEvents(
   publicClient: PublicClient,
@@ -53,10 +64,9 @@ export async function fetchMintVolumeEvents(
 ): Promise<MintVolumeEvent[]> {
   if (vaultAddresses.length === 0) return [];
 
-  const rawLogs = await getLogsChunkedMulti(publicClient, {
+  const rawLogs = await fetchNewLogs(`mintVolume:${chain.id}`, publicClient, {
     address: vaultAddresses,
     fromBlock: chain.factoryDeployBlock,
-    toBlock: "latest",
   });
 
   const parsed = parseEventLogs({ abi: chain.vaultAbi, logs: rawLogs });
@@ -81,9 +91,15 @@ export async function fetchMintVolumeEvents(
     mints = mints.sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1)).slice(0, MAX_MINTS);
   }
 
-  const results = await mapWithConcurrency(mints, CONCURRENCY, async ({ tokenId, blockNumber }): Promise<MintVolumeEvent | null> => {
+  let cache = resolvedMintsCache.get(chain.id);
+  if (!cache) {
+    cache = new Map();
+    resolvedMintsCache.set(chain.id, cache);
+  }
+
+  await mapWithConcurrency(mints, CONCURRENCY, async ({ tokenId, blockNumber }): Promise<void> => {
     try {
-      return await withRetry(async () => {
+      const event = await withRetry(async () => {
         const [position, slot0, block] = await Promise.all([
           publicClient.readContract({
             address: chain.positionManager,
@@ -109,10 +125,12 @@ export async function fetchMintVolumeEvents(
         const usd = stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
         return { timestamp: Number(block.timestamp), usd };
       });
+      cache!.set(tokenId.toString(), event);
     } catch {
-      return null; // RPC couldn't serve this historical block even after retrying — skip, don't fail the whole scan
+      // RPC couldn't serve this historical block even after retrying — skip,
+      // don't fail the whole scan. Not cached, so a later call retries it.
     }
   });
 
-  return results.filter((e): e is MintVolumeEvent => e !== null);
+  return [...cache.values()];
 }
