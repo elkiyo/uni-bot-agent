@@ -6,7 +6,6 @@ import { WagmiProvider } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi";
 import { SelectedChainProvider } from "@/lib/useSelectedChain";
 import { LanguageProvider } from "@/lib/i18n/LanguageProvider";
-import { AuthSessionProvider } from "@/lib/auth/AuthSessionProvider";
 
 const queryClient = new QueryClient();
 
@@ -23,9 +22,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={theme}>
           <LanguageProvider>
-            <SelectedChainProvider>
-              <AuthSessionProvider>{children}</AuthSessionProvider>
-            </SelectedChainProvider>
+            <SelectedChainProvider>{children}</SelectedChainProvider>
           </LanguageProvider>
         </RainbowKitProvider>
       </QueryClientProvider>

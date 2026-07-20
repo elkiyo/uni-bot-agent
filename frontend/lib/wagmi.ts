@@ -57,8 +57,23 @@ const transports = {
 // and is further gated by chains.ts's deployedChains() so an undeployed
 // chain never appears as a viewing option even though the wallet could
 // still technically connect to it.
+// appUrl/appIcon/appDescription feed WalletConnect's pairing metadata — a
+// mobile wallet uses `appUrl` to know where to deep-link/redirect back to
+// after the user approves. Left unset before, WalletConnect fell back to
+// auto-detecting it from window.location at connect time, which is exactly
+// where an installed PWA (display: "standalone" in manifest.ts) diverges
+// from a normal browser tab: standalone mode's window.location/referrer
+// behavior is inconsistent across mobile WebKit/Chrome, so the auto-detected
+// URL could end up wrong or unstable — the wallet approves the connection,
+// but the redirect-back never lands where the pairing session is actually
+// listening, so the PWA just hangs on "connecting" forever. Hardcoding it to
+// the same canonical origin used in layout.tsx's metadataBase removes that
+// ambiguity regardless of which display mode the page was opened in.
 export const wagmiConfig = getDefaultConfig({
-  appName: "UniAgent",
+  appName: "AutoRange",
+  appDescription: "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper.",
+  appUrl: "https://autorange.xyz",
+  appIcon: "https://autorange.xyz/brand/logo-mark-256.png",
   projectId: walletConnectProjectId,
   chains: [celo, arbitrum],
   transports,
