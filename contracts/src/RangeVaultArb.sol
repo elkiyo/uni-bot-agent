@@ -91,7 +91,7 @@ contract RangeVaultArb is Initializable, ReentrancyGuardUpgradeable, IERC721Rece
 
     // ---------------------------------------------------------------------
     // Ledgers — all three are carved out of the same stable-leg balance but
-    // must never be spent on each other's behalf (see PLAN.md "Nota de
+    // must never be spent on each other's behalf (see autorange.md "Nota de
     // contabilidad").
     // ---------------------------------------------------------------------
 

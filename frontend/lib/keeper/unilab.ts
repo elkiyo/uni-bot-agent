@@ -32,7 +32,7 @@ export async function registerAgent(agentName: string, agentWallet: string): Pro
 // succeeded (initPosition always used the locally-computed balanced-deposit
 // ratio), so paying for it was a real cost to the owner for no benefit. Only
 // rebalance() consults uni-lab now, where the answer genuinely drives the
-// outcome. See PLAN.md.
+// outcome. See autorange.md.
 
 export interface RcRlpRebalanceParams {
   currentLiquidityUsd: number; // A1

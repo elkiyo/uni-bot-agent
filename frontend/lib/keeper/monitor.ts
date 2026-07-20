@@ -18,7 +18,7 @@ const DUST_SWEEP_MIN_USD = 1;
 
 /**
  * Free, read-only check of whether a vault needs attention right now. Mirrors
- * PLAN.md "Reglas de rebalanceo": out-of-range or periodic trigger the paid
+ * autorange.md "Reglas de rebalanceo": out-of-range or periodic trigger the paid
  * uni-lab.xyz call + rebalance; a cost gate against dust-sized positions and the
  * on-chain cooldown/maxRebalances guardrails are enforced again by the contract
  * itself, this is just the off-chain pre-check so we don't waste a paid API call
@@ -44,7 +44,7 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
     // A configured-but-unfunded vault (owner hasn't deposited yet, or the
     // deposit tx failed) can't mint — attempting init would just revert at
     // gas estimation every cycle. Wait until it's funded. Unlike rebalance(),
-    // initPosition() doesn't call uni-lab at all anymore (see PLAN.md — the
+    // initPosition() doesn't call uni-lab at all anymore (see autorange.md — the
     // response was never used even when the call succeeded), so usdtBudget
     // isn't a precondition here; it only matters once the vault starts
     // rebalancing.

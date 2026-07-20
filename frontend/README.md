@@ -1,7 +1,7 @@
 # frontend
 
 Next.js 16 (App Router) + wagmi v2 + viem + RainbowKit. LP self-service (create/manage
-vaults) and the platform admin panel — see `../PLAN.md` "frontend/".
+vaults) and the platform admin panel — see `../autorange.md` "frontend/".
 
 ## Setup
 

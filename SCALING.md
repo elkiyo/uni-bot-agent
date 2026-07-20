@@ -1,7 +1,7 @@
 # Escalado — estado actual y roadmap
 
 Qué está en producción hoy, qué es el eslabón débil, y en qué orden escalar. Ver
-`PLAN.md` para el diseño de base.
+`autorange.md` para el diseño de base.
 
 ## Estado actual (hackathon)
 
@@ -134,7 +134,7 @@ hay sincronización automática entre las dos copias.
   contrato no esté auditado — **no subirlo por demanda; subirlo después de
   auditar**. Es ajustable en vivo desde el panel admin.
 - El fee de plataforma también es ajustable en vivo; recordar que aplica a
-  todos los vaults existentes al instante (trade-off documentado en PLAN.md).
+  todos los vaults existentes al instante (trade-off documentado en autorange.md).
 
 ### 5. Multi-pool y multi-chain (post-hackathon)
 - `VaultFactory.createVault(pool, token0, token1, fee)` ya acepta cualquier

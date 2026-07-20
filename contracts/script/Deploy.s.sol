@@ -19,9 +19,9 @@ import {VaultFactory} from "../src/VaultFactory.sol";
 /// Required env vars: PLATFORM_OWNER (your Ledger/Safe address —
 /// becomes PlatformConfig's direct owner via Ownable2Step; can be handed off
 /// to a multisig or a timelock later with transferOwnership(), no redeploy
-/// needed — see PLAN.md), DEFAULT_OPERATOR (the platform's keeper wallet —
-/// see PLAN.md "Los 3 roles del sistema"), MAX_DEPOSIT_USD (6 decimals, hard
-/// cap per vault while unaudited — see PLAN.md "Riesgos"),
+/// needed — see autorange.md), DEFAULT_OPERATOR (the platform's keeper wallet —
+/// see autorange.md "Los 3 roles del sistema"), MAX_DEPOSIT_USD (6 decimals, hard
+/// cap per vault while unaudited — see autorange.md "Riesgos"),
 /// PERFORMANCE_FEE_BPS (basis points cut of LP trading fees, e.g. 1_000 =
 /// 10%), CREATION_FEE_USDT (one-time fee charged on a vault's first
 /// deposit(), 6 decimals, default 0 = disabled), TREASURY (where

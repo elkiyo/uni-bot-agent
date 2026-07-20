@@ -373,7 +373,7 @@ export default function Docs() {
               />
               <p className="mt-4 text-sm text-muted">
                 {t("docs.s08FooterPre")}
-                <code className="text-xs">PLAN.md</code>
+                <code className="text-xs">autorange.md</code>
                 {t("docs.s08FooterPost")}
               </p>
             </Section>

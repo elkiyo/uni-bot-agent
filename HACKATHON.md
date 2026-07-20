@@ -111,7 +111,7 @@ Tres bugs reales encontrados y corregidos en el camino, en orden:
 **¿Cómo se eligen los ganadores?**
 > The winner will be selected according to the focus of each track considering a combination of project's alignment with the ecosystem mission, delivery of consistent transactions and onchain activity, and real-world utility. Our incredible judges will conduct an additional manual review to ensure fair judgment and identify any attempts at sybil attacks.
 
-→ Esto confirma lo que ya está documentado en `PLAN.md` sección "Riesgos": el rebalanceo periódico forzado es defendible (mismo patrón que Gamma/Arrakis) pero va a pasar por revisión manual anti-sybil — el ciclo de reinyección (movimiento de capital real, fees reales pagados) es justamente lo que le da sustancia económica genuina y hay que dejarlo explícito en la demo.
+→ Esto confirma lo que ya está documentado en `autorange.md` sección "Riesgos": el rebalanceo periódico forzado es defendible (mismo patrón que Gamma/Arrakis) pero va a pasar por revisión manual anti-sybil — el ciclo de reinyección (movimiento de capital real, fees reales pagados) es justamente lo que le da sustancia económica genuina y hay que dejarlo explícito en la demo.
 
 **¿Qué son los Attribution Tags?**
 > Attribution Codes are built on ERC-8021 and shipped as a free, open-source SDK (@celo/attribution-tags on npm), added with one line of code. It doesn't change what a transaction does, it just tags it as coming from your project so it's visible on a public dashboard.
@@ -127,7 +127,7 @@ Tres bugs reales encontrados y corregidos en el camino, en orden:
 | Repo público de GitHub | ✅ `github.com/elkiyo/uni-bot-agent` |
 | Código de Attribution Tags integrado | ✅ `@celo/attribution-tags`, `toDataSuffix()` en cada tx del keeper |
 | **Registro en celobuilders.xyz (obtener el tag)** | ✅ Hecho — `celo_e38cdd3210a6`, cargado en Vercel |
-| Lógica económica real, no wash-trading aparente | ✅ Documentado explícitamente en `PLAN.md` (ciclo de reinyección alternada, mismo patrón que gestores reales) |
+| Lógica económica real, no wash-trading aparente | ✅ Documentado explícitamente en `autorange.md` (ciclo de reinyección alternada, mismo patrón que gestores reales) |
 | Registro ERC-8004 (8004scan.io) | ❌ Pendiente |
 | `agentWalletAddress` en la submission | ✅ Hecho (2026-07-15) — `0xAe3921825fEC520cADa98EB0790BC91a61d4286b` |
 | Soporte x402 (uni-lab.xyz servidor + keeper cliente) | ✅ Hecho (2026-07-15) — pago real confirmado on-chain, ver sección "Track 2" arriba |

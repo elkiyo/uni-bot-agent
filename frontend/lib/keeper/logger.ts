@@ -27,7 +27,7 @@ export interface UniLabCallLog {
 /**
  * Full audit trail of every uni-lab.xyz query — request body, HTTP status,
  * raw response (or error), and latency. This is the paid API the agent's
- * design revolves around (PLAN.md), so keeping every request/response pair
+ * design revolves around (autorange.md), so keeping every request/response pair
  * is what makes a rebalance decision reconstructable after the fact.
  * Persisted to the keeper_unilab_calls Postgres table (schema.sql) since the
  * function's filesystem doesn't survive invocations.

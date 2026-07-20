@@ -13,7 +13,7 @@ import {IPlatformConfig} from "./interfaces/IPlatformConfig.sol";
 
 /// @title RangeVault
 /// @notice Non-custodial Uniswap V3 concentrated-liquidity vault. One vault == one
-/// position on one pool. See PLAN.md ("Garantía no-custodial") for the full rationale;
+/// position on one pool. See autorange.md ("Garantía no-custodial") for the full rationale;
 /// in short: `owner` (the LP) is the only address that can ever receive principal back
 /// via withdraw(); `operator` (the platform's keeper) can only trigger initPosition()/
 /// rebalance(), which always keep funds and the position NFT inside this contract, and
@@ -72,11 +72,11 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
     // ---------------------------------------------------------------------
     // Ledgers — both are carved out of the same token0 balance but must
-    // never be spent on each other's behalf (see PLAN.md "Nota de contabilidad").
+    // never be spent on each other's behalf (see autorange.md "Nota de contabilidad").
     // A third ledger, usdtBudget (earmarked for uni-lab.xyz's on-chain
     // payUniLabFee()), was retired 2026-07-15 when uni-lab payments moved
     // entirely to x402 (the operator's own USDC, no vault budget involved) —
-    // see HACKATHON.md "Track 2 — x402" and PLAN.md's backlog note.
+    // see HACKATHON.md "Track 2 — x402" and autorange.md's backlog note.
     // ---------------------------------------------------------------------
 
     uint256 public investableUsdt; // capital not yet deployed into a position
@@ -131,7 +131,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     bool public paused;
 
     /// @notice Permanently deactivated via closeVault() once verifiably empty.
-    /// See PLAN.md — a closed vault can never deposit/configure/build a position
+    /// See autorange.md — a closed vault can never deposit/configure/build a position
     /// again, so a leftover clone address can't silently reactivate if someone
     /// (accidentally or not) sends it tokens after the owner walked away.
     bool public closed;
@@ -472,7 +472,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     }
 
     // ---------------------------------------------------------------------
-    // Operator: rebalance (out-of-range or periodic — see PLAN.md "Reglas de
+    // Operator: rebalance (out-of-range or periodic — see autorange.md "Reglas de
     // rebalanceo"). newTickLower/newTickUpper and the swap instruction are
     // computed off-chain by the keeper from uni-lab.xyz's /rc-rlp-rebalance
     // response; this function only enforces the guardrails and moves funds.
@@ -539,7 +539,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
         _executeSwap(swapIx);
 
         // 3) Reinjection this cycle: the keeper decides whether to reinject and how
-        // much (informed by uni-lab's live simulation — see PLAN.md), not a fixed
+        // much (informed by uni-lab's live simulation — see autorange.md), not a fixed
         // alternating pattern the contract forces. Bounded by the owner's per-cycle
         // ceiling (`reinjectionAmount`, set in configureTarget) and by what's
         // actually sitting in reserve — the keeper can never move more than either.
@@ -574,7 +574,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
 
         positionTokenId = newTokenId;
 
-        // Same dust top-up as initPosition() — see PLAN.md backlog note
+        // Same dust top-up as initPosition() — see autorange.md backlog note
         // (2026-07-14 production case: ~10% of a rebalance left unswept).
         (uint256 swept0,) = _sweepDustIntoPosition(newTokenId, amount0 - used0, amount1 - used1);
 
@@ -721,7 +721,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     /// future reinjection cycles. Leaves whatever isn't withdrawn operating
     /// normally, unlike withdrawAll()/emergencyWithdrawPosition() which
     /// always close everything. Always `owner`, never a parameter — see
-    /// PLAN.md. Untracked token1 dust (see initPosition()/rebalance()) isn't
+    /// autorange.md. Untracked token1 dust (see initPosition()/rebalance()) isn't
     /// split proportionally here — it stays in the vault and gets picked up
     /// by the next cycle, same as today.
     function withdraw(uint256 positionShareBps, uint256 fundsShareBps) external onlyOwner nonReentrant {
@@ -784,7 +784,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     }
 
     /// @notice Closes the position (if any) and sends every token0/token1 the vault
-    /// holds to `owner`. Always `owner`, never a parameter — see PLAN.md.
+    /// holds to `owner`. Always `owner`, never a parameter — see autorange.md.
     function withdrawAll() external onlyOwner nonReentrant {
         if (positionTokenId != 0) {
             (,,,,,,, uint128 liquidity,,,,) = positionManager.positions(positionTokenId);
@@ -898,7 +898,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     /// @dev A mint's amount0Desired/amount1Desired rarely land in the exact
     /// ratio the range needs, leaving one side as dust that would otherwise
     /// sit idle until the next rebalance (confirmed in production 2026-07-14:
-    /// ~10% of a rebalance left unswept in a shallow pool — see PLAN.md
+    /// ~10% of a rebalance left unswept in a shallow pool — see autorange.md
     /// backlog note). Top up the position just minted with whatever's left,
     /// instead of a separate swap+re-mint. Uniswap's own ratio math applies
     /// here too, so this reduces the dust but generally won't zero it out.
@@ -977,7 +977,7 @@ contract RangeVault is Initializable, ReentrancyGuardUpgradeable, IERC721Receive
     /// keeping the existing floor and only recentering the ceiling) can land
     /// its midpoint arbitrarily far from price while the range itself still
     /// correctly contains it, which the old center-distance check rejected
-    /// (see PLAN.md, 2026-07-15).
+    /// (see autorange.md, 2026-07-15).
     /// `maxRangeDeviationBps` is slack (1 bps == 1 tick, exact in Uniswap V3's
     /// `1.0001^tick` pricing) allowed OUTSIDE the strict bounds — room for the
     /// pool price to move between an off-chain quote and this tx landing

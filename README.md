@@ -12,7 +12,7 @@ settled in USDT on Celo) for rebalance-range calculations, and charges a platfor
 rebalance, capped by the vault owner and priced by the platform.
 
 Full design rationale, decision history, and the reasoning behind every guardrail live in
-[`PLAN.md`](./PLAN.md) — read that first.
+[`autorange.md`](./autorange.md) — read that first.
 
 ## Layout
 
@@ -31,15 +31,26 @@ Full design rationale, decision history, and the reasoning behind every guardrai
 - [x] `frontend/` — Mis vaults, crear vault, detalle de vault, panel admin. Builds,
       lints, and all four routes render.
 - [x] **Deployed to Celo mainnet**, Ledger-signed:
-  - `PlatformConfig`: [`0xC419B014fA6364B6f71375430042ACf3965E5d55`](https://celoscan.io/address/0xC419B014fA6364B6f71375430042ACf3965E5d55)
-  - `VaultFactory`: [`0xCF281b7bc1dEd843542008a577D7bdaa8F41B0Cb`](https://celoscan.io/address/0xCF281b7bc1dEd843542008a577D7bdaa8F41B0Cb)
-  - `RangeVault` implementation: [`0xC352dbB3b85a7015717167EC5126D94abc77Ac94`](https://celoscan.io/address/0xC352dbB3b85a7015717167EC5126D94abc77Ac94)
+  - `PlatformConfig`: [`0xa9527c757c4863De2296a72697ABa9fEa6E0da9D`](https://celoscan.io/address/0xa9527c757c4863De2296a72697ABa9fEa6E0da9D)
+  - `VaultFactory`: [`0xa431a0bD0978d872C720cD3E3277e31cd6026e90`](https://celoscan.io/address/0xa431a0bD0978d872C720cD3E3277e31cd6026e90)
+  - `RangeVault` implementation: [`0xd3d07BF083239Bb8ff356a8A621Eae5de54B0cB6`](https://celoscan.io/address/0xd3d07BF083239Bb8ff356a8A621Eae5de54B0cB6)
   - All constructor values (owner, defaultOperator, rebalanceFee, feeToken,
     maxDepositUsd, and the factory's positionManager/swapRouter/uniLabPaymentWallet
     links) re-read from chain and confirmed to match after deploy.
+- [x] **Deployed to Arbitrum One mainnet** (`RangeVaultArb`/`VaultFactoryArb` — a
+  fork of the Celo contracts that generalizes token0/token1 ordering, since
+  Uniswap V3 sorts by address and WETH < USDC on Arbitrum, the reverse of USDT <
+  WETH on Celo; see `contracts/src/RangeVaultArb.sol` for the full rationale):
+  - `PlatformConfig`: [`0xCF281b7bc1dEd843542008a577D7bdaa8F41B0Cb`](https://arbiscan.io/address/0xCF281b7bc1dEd843542008a577D7bdaa8F41B0Cb)
+  - `VaultFactoryArb`: [`0x93590F9a18Ed444dD90ECBeCA094aa9367452472`](https://arbiscan.io/address/0x93590F9a18Ed444dD90ECBeCA094aa9367452472)
+  - `RangeVaultArb` implementation: [`0x03825Da2629575C57f3b5791ffb6f876Bd62fBF4`](https://arbiscan.io/address/0x03825Da2629575C57f3b5791ffb6f876Bd62fBF4)
+
+  (Note: an earlier Celo-style `VaultFactory`/`RangeVault` pair was deployed to
+  Arbitrum first and hit the token-ordering bug described above in production;
+  it's abandoned — `VaultFactoryArb` above is the one in use.)
 - [x] `agent/.env` and `frontend/.env.local` point at the deployed addresses (both
       gitignored — see each package's `.env*.example` for the non-secret template)
-- [ ] Hackathon registration (`celobuilders.xyz`) — deliberately last, see `PLAN.md` Context
+- [ ] Hackathon registration (`celobuilders.xyz`) — deliberately last, see `autorange.md` Context
 
 ## Quickstart
 

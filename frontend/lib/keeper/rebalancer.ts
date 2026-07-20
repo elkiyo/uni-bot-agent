@@ -610,7 +610,7 @@ export async function runInitPosition(chain: ChainRuntime, vaultAddress: Address
   // consultation whose answer is discarded either way is a real cost to the
   // owner for zero benefit, so initPosition no longer calls uni-lab at all;
   // only rebalance() does, where the API's answer (the new upper bound)
-  // genuinely drives the outcome. See PLAN.md.
+  // genuinely drives the outcome. See autorange.md.
   const swapFee = await pickDeepestSwapFee(chain);
   const swapIx = await sizeInitialSwapAccurate(
     chain,

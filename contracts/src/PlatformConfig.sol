@@ -7,7 +7,7 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 /// @notice Central, live-read configuration for the uni-bot-agent platform. Every
 /// RangeVault reads performanceFeeBps/defaultOperator/maxDepositUsd from here at call
 /// time instead of copying them at creation — so the platform owner can adjust pricing
-/// and risk limits for every vault at once. See PLAN.md ("Los 3 roles del sistema") for
+/// and risk limits for every vault at once. See autorange.md ("Los 3 roles del sistema") for
 /// why this is a separate contract from RangeVault: it is the *platform's* knob, not
 /// something an individual vault owner or the operator can touch.
 ///
@@ -27,7 +27,7 @@ contract PlatformConfig is Ownable2Step {
     address public defaultOperator;
 
     /// @notice Global cap on total USDT a single vault may hold, while RangeVault is
-    /// unaudited (see PLAN.md "Riesgos"). Zero means "no cap" — kept non-zero deliberately
+    /// unaudited (see autorange.md "Riesgos"). Zero means "no cap" — kept non-zero deliberately
     /// for the hackathon.
     uint256 public maxDepositUsd;
 

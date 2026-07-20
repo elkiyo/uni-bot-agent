@@ -11,10 +11,10 @@ import {RangeVault} from "../src/RangeVault.sol";
 import {INonfungiblePositionManager} from "../src/interfaces/INonfungiblePositionManager.sol";
 import {ISwapRouter02} from "../src/interfaces/ISwapRouter02.sol";
 
-/// Fork tests against real Celo mainnet contracts — see PLAN.md "Verificación":
+/// Fork tests against real Celo mainnet contracts — see autorange.md "Verificación":
 /// nothing here touches real capital, `deal()` mints test balances on the fork only.
 contract RangeVaultTest is Test {
-    // Addresses verified in PLAN.md / cross-checked against Celopedia + CoinGecko + DefiLlama.
+    // Addresses verified in autorange.md / cross-checked against Celopedia + CoinGecko + DefiLlama.
     address constant POOL = 0x6F42B9D2085a0dEb711C00A460a98B9863ae4897; // USDT/WETH 0.3%
     address constant USDT = 0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e;
     address constant WETH = 0xD221812de1BD094f35587EE8E174B07B6167D9Af;
@@ -132,7 +132,7 @@ contract RangeVaultTest is Test {
         assertEq(vault.investableUsdt(), 4_800_000_000);
 
         // Approximate 50/50 value split into WETH for the initial mint — the real keeper
-        // sizes this from uni-lab.xyz's /pool-setup-initial response (see PLAN.md); a
+        // sizes this from uni-lab.xyz's /pool-setup-initial response (see autorange.md); a
         // rough half-swap is enough to exercise the mechanism end-to-end here.
         RangeVault.SwapInstruction memory initSwap =
             RangeVault.SwapInstruction({token0ToToken1: true, amountIn: 2_400_000_000, amountOutMinimum: 0, fee: 3000});

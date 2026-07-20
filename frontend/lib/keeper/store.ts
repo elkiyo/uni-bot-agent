@@ -8,7 +8,7 @@ export interface VaultRecord {
   positionInitialized: boolean;
   createdAtBlock: string; // stored as text, bigint doesn't survive JSON/Postgres numeric round-trip cleanly
   // Keeper's own bookkeeping of whether it reinjected on the last rebalance —
-  // the contract no longer tracks this (see PLAN.md), the keeper decides E1
+  // the contract no longer tracks this (see autorange.md), the keeper decides E1
   // freely each cycle. Purely informational, not a guarantee.
   reinjectionActive: boolean;
 }
@@ -35,7 +35,7 @@ function fromRow(row: VaultRow): VaultRecord {
 
 /**
  * Supabase (Postgres)-backed state for the keeper: which vaults exist, their
- * uni-lab.xyz api_key (one per vault — see PLAN.md, agent_wallet = vault
+ * uni-lab.xyz api_key (one per vault — see autorange.md, agent_wallet = vault
  * address because the vault itself sends the USDT payment), and how far
  * event discovery has scanned. Schema: lib/keeper/schema.sql. Scoped to a
  * single chain per instance — keeper_vaults' primary key is (chain_id,

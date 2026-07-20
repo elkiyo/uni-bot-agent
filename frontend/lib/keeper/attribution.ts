@@ -8,7 +8,7 @@ const PROJECT_CODE = "range_vault";
 /**
  * Appends the hackathon attribution tag (ERC-8021) to a transaction's calldata.
  * ATTRIBUTION_TAG is unset until the project registers on celobuilders.xyz
- * (deliberately deferred to the end, see PLAN.md) — until then the calldata is
+ * (deliberately deferred to the end, see autorange.md) — until then the calldata is
  * returned unmodified.
  */
 export function withAttribution(data: Hex): Hex {

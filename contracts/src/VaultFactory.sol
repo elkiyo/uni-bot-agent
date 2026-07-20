@@ -8,7 +8,7 @@ import {RangeVault} from "./RangeVault.sol";
 /// @notice Deploys RangeVault instances as EIP-1167 minimal clones. This is what makes
 /// uni-bot-agent a platform rather than a single hand-run vault: anyone can call
 /// createVault() to get their own non-custodial vault pointed at the platform's
-/// operator. See PLAN.md ("Los 3 roles del sistema" / "Plataforma pública completa").
+/// operator. See autorange.md ("Los 3 roles del sistema" / "Plataforma pública completa").
 contract VaultFactory {
     address public immutable implementation;
     address public immutable platformConfig;

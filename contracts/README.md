@@ -9,7 +9,7 @@ Foundry project. Three contracts:
 - **`RangeVault.sol`** — one vault == one Uniswap V3 position. `owner` (the LP) deposits/
   withdraws; `operator` (the keeper) can only `initPosition()`/`rebalance()`, and never
   receives anything beyond the platform's `rebalanceFee`, capped by the owner's
-  `maxRebalances`. See `../PLAN.md` for the full non-custodial rationale and the
+  `maxRebalances`. See `../autorange.md` for the full non-custodial rationale and the
   alternating-reinjection rebalance cycle.
 
 ## Setup

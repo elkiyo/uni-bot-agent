@@ -8,7 +8,7 @@ import { getLogsChunkedMulti } from "../getLogsChunked";
 /**
  * Scans the factory for VaultCreated events since the last processed block, and
  * registers each new vault with uni-lab.xyz (agent_wallet = vault address, since
- * the vault itself sends the USDT payment — see PLAN.md). Safe to call repeatedly;
+ * the vault itself sends the USDT payment — see autorange.md). Safe to call repeatedly;
  * already-known vaults are skipped.
  */
 export async function discoverAndRegisterVaults(chain: ChainRuntime, factoryAddress: Address, store: Store): Promise<void> {

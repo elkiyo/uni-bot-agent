@@ -72,7 +72,7 @@ export interface ChainDef {
   supportsGasReserve: boolean;
 }
 
-// Verified in PLAN.md — cross-checked against Celopedia, CoinGecko, DefiLlama, and
+// Verified in autorange.md — cross-checked against Celopedia, CoinGecko, DefiLlama, and
 // direct RPC calls before being trusted here. Keep in sync with agent/src/addresses.ts
 // and contracts/script/Deploy.s.sol.
 const CELO_STABLE = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e" as const;
