@@ -68,11 +68,21 @@ const transports = {
 // listening, so the PWA just hangs on "connecting" forever. Hardcoding it to
 // the same canonical origin used in layout.tsx's metadataBase removes that
 // ambiguity regardless of which display mode the page was opened in.
+//
+// Must be the domain the browser actually ends up on, not just "the"
+// domain — Vercel 308-redirects the bare apex to www, so the real origin at
+// connect time is always https://www.autorange.xyz. Pointing appUrl at the
+// apex caused a host mismatch WalletConnect logs as "the configured
+// metadata.url differs from the actual page url" (confirmed live
+// 2026-07-20) and wallets treat that mismatch as a legitimate phishing
+// signal — approving the connection and then immediately tearing the
+// session down, which is exactly the "conecta y se desconecta al toque"
+// symptom reported on mobile.
 const walletConnectMetadata = {
   appName: "AutoRange",
   appDescription: "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper.",
-  appUrl: "https://autorange.xyz",
-  appIcon: "https://autorange.xyz/brand/logo-mark-256.png",
+  appUrl: "https://www.autorange.xyz",
+  appIcon: "https://www.autorange.xyz/brand/logo-mark-256.png",
   projectId: walletConnectProjectId,
 };
 
