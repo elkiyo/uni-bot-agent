@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, Inter_Tight } from "next/font/google";
-import "@rainbow-me/rainbowkit/styles.css";
 import "./globals.css";
 import { Providers } from "./providers";
 import { MobileBottomNav } from "./components/MobileBottomNav";

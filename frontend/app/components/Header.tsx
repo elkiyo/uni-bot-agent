@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 import { LOCALES } from "@/lib/i18n/locales";
 
@@ -62,7 +61,7 @@ export function Header() {
 
         <div className="flex items-center gap-3">
           <LanguageMenu />
-          <ConnectButton showBalance={false} chainStatus="icon" />
+          <appkit-button balance="hide" />
         </div>
       </div>
     </header>

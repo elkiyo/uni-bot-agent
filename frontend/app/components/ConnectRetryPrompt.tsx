@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useReconnect } from "wagmi";
-import { useConnectModal } from "@rainbow-me/rainbowkit";
+import { useAppKit } from "@reown/appkit/react";
 
 // On mobile, approving a WalletConnect pairing from the wallet app can lose
 // the session entirely if the browser tab gets backgrounded mid-handshake —
@@ -16,7 +16,7 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 export function ConnectRetryPrompt() {
   const { isConnected, isConnecting, isReconnecting } = useAccount();
   const { reconnect } = useReconnect();
-  const { openConnectModal } = useConnectModal();
+  const { open: openConnectModal } = useAppKit();
   const [showRetry, setShowRetry] = useState(false);
   const pendingRef = useRef(false);
   const isConnectedRef = useRef(isConnected);

@@ -1,16 +1,10 @@
-import { connectorsForWallets } from "@rainbow-me/rainbowkit";
-import {
-  metaMaskWallet,
-  rabbyWallet,
-  rainbowWallet,
-  walletConnectWallet,
-} from "@rainbow-me/rainbowkit/wallets";
-import { createConfig } from "wagmi";
+import { createAppKit } from "@reown/appkit/react";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { fallback, http } from "viem";
 import { celo, arbitrum } from "wagmi/chains";
 
-// RainbowKit's getDefaultConfig throws at instantiation (including at build time)
-// if projectId is empty — it's not optional the way the rest of the WalletConnect
+// AppKit throws at instantiation (including at build time) if projectId is
+// empty — it's not optional the way the rest of the WalletConnect
 // integration is. This placeholder lets the app build/run; injected wallets
 // (MetaMask, Rabby, etc.) work fine with it, but get a real free id at
 // https://cloud.walletconnect.com before relying on the WalletConnect QR/mobile flow.
@@ -79,48 +73,52 @@ const transports = {
 // session down, which is exactly the "conecta y se desconecta al toque"
 // symptom reported on mobile.
 const walletConnectMetadata = {
-  appName: "AutoRange",
-  appDescription: "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper.",
-  appUrl: "https://www.autorange.xyz",
-  appIcon: "https://www.autorange.xyz/brand/logo-mark-256.png",
-  projectId: walletConnectProjectId,
+  name: "AutoRange",
+  description: "Vaults no-custodiales de liquidez concentrada en Uniswap V3, gestionados por un agente keeper.",
+  url: "https://www.autorange.xyz",
+  icons: ["https://www.autorange.xyz/brand/logo-mark-256.png"],
 };
 
-// Explicit wallet list (replaces RainbowKit's getDefaultConfig/auto-detected
-// list) so Rabby shows up as its own named tile next to MetaMask instead of
-// only being reachable through the generic "WalletConnect" fallback tile —
-// confirmed 2026-07-20 that the generic WalletConnect tile itself fails to
-// load for at least one real user/device, while named-wallet tiles (which
-// deep-link directly instead of going through that generic flow) work fine.
+// Replaced RainbowKit + wagmi's raw connectorsForWallets/createConfig with
+// Reown's own AppKit SDK (2026-07-21) — RainbowKit's connect modal bundles
+// @walletconnect/core's ESM build, which is missing that package's own
+// return-to-foreground relay-reconnect logic (only present in its UMD
+// build, confirmed absent from ESM/CJS across every published version).
+// That gap is what caused WalletConnect sessions to silently die when the
+// mobile browser backgrounds during wallet approval. AppKit is WalletConnect/
+// Reown's own first-party client for the same protocol, actively maintained
+// by the team that owns the relay — the best available shot at this being
+// handled correctly, without the risk of hand-aliasing internal builds
+// (tried and reverted the same day: broke connections worse).
 //
-// RainbowKit's mobile connect sheet only shows 4 tiles inline — a 5th
-// (coinbaseWallet) got silently dropped even though it was in this array,
-// confirmed live 2026-07-20. Dropped coinbaseWallet rather than rabbyWallet
-// to keep Rabby visible, since that's the one actually being requested here.
-// walletConnectWallet is kept as the catch-all for any wallet not explicitly
-// listed — RainbowKit bumps it to the front labeled "Reciente" once a
-// visitor has used it before, which is expected/fine.
-const connectors = connectorsForWallets(
-  [
-    {
-      groupName: "Popular",
-      wallets: [metaMaskWallet, rabbyWallet, rainbowWallet, walletConnectWallet],
-    },
-  ],
-  walletConnectMetadata,
-);
-
 // Both chains listed here regardless of whether Arbitrum's contracts are
 // deployed yet — this only controls which networks the WALLET can connect
-// to/switch between (RainbowKit's own network UI, used by the
-// switch-network-before-write guard). Which chain's DATA is shown while
-// browsing is a separate, independent selection — see useSelectedChain.tsx —
-// and is further gated by chains.ts's deployedChains() so an undeployed
-// chain never appears as a viewing option even though the wallet could
-// still technically connect to it.
-export const wagmiConfig = createConfig({
-  connectors,
-  chains: [celo, arbitrum],
+// to/switch between. Which chain's DATA is shown while browsing is a
+// separate, independent selection — see useSelectedChain.tsx — and is
+// further gated by chains.ts's deployedChains() so an undeployed chain
+// never appears as a viewing option even though the wallet could still
+// technically connect to it.
+const wagmiAdapter = new WagmiAdapter({
+  networks: [celo, arbitrum],
   transports,
+  projectId: walletConnectProjectId,
   ssr: true,
 });
+
+// themeMode/themeVariables replace what darkTheme({...}) configured on
+// RainbowKitProvider — AppKit's modal isn't a JSX provider, it's controlled
+// entirely through this call, so the brand accent color moves here.
+createAppKit({
+  adapters: [wagmiAdapter],
+  networks: [celo, arbitrum],
+  projectId: walletConnectProjectId,
+  metadata: walletConnectMetadata,
+  features: { analytics: true, email: false, socials: false },
+  themeMode: "dark",
+  themeVariables: {
+    "--w3m-accent": "#FCFF52",
+    "--w3m-border-radius-master": "2px",
+  },
+});
+
+export const wagmiConfig = wagmiAdapter.wagmiConfig;
