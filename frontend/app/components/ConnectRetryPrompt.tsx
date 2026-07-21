@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useReconnect } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 
 // On mobile, approving a WalletConnect pairing from the wallet app can lose
@@ -15,6 +15,7 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 // that looks like nothing happened.
 export function ConnectRetryPrompt() {
   const { isConnected, isConnecting, isReconnecting } = useAccount();
+  const { reconnect } = useReconnect();
   const { openConnectModal } = useConnectModal();
   const [showRetry, setShowRetry] = useState(false);
   const pendingRef = useRef(false);
@@ -36,15 +37,19 @@ export function ConnectRetryPrompt() {
     function onVisibilityChange() {
       if (document.visibilityState !== "visible" || !pendingRef.current) return;
       pendingRef.current = false;
-      // Grace period for a pairing that lands right as the tab regains
-      // focus, so we don't flash the prompt on a connection that was about
-      // to succeed anyway.
+      // The approval can land on the relay right as (or just after) the tab
+      // regains focus, but the connector doesn't always surface that on its
+      // own — actively re-check for a completed session instead of only
+      // waiting on it, then fall back to the retry prompt if that comes up
+      // empty too.
+      reconnect();
       setTimeout(() => {
         if (!isConnectedRef.current) setShowRetry(true);
       }, 4000);
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!showRetry) return null;
