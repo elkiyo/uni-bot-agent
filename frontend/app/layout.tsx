@@ -5,6 +5,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { ReferralCapture } from "./components/ReferralCapture";
+import { ConnectRetryPrompt } from "./components/ConnectRetryPrompt";
 
 // Same type pairing as the reference design (hackathon.celocolombia.org):
 // Inter for body, Inter Tight for display headings.
@@ -46,6 +47,7 @@ export default function RootLayout({
           <ReferralCapture />
           {children}
           <MobileBottomNav />
+          <ConnectRetryPrompt />
         </Providers>
       </body>
     </html>
