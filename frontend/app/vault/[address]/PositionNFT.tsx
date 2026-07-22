@@ -158,6 +158,17 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
   const feesWethPct = feesTotal > 0 ? (feesWethValue / feesTotal) * 100 : 50;
   const feesUsdtPct = feesTotal > 0 ? 100 - feesWethPct : 50;
 
+  // How wide the position's range is relative to its own ceiling — a tight
+  // range (small %) earns more fee density but goes out of range sooner; a
+  // wide range (large %) is more forgiving but dilutes fee revenue.
+  const rangeWidthPct = rangeHigh > 0 ? ((rangeHigh - rangeLow) / rangeHigh) * 100 : 0;
+  // Fees already earned but not yet collected (feesTotal, computed live
+  // above from feeGrowthGlobal — not the position's own possibly-stale
+  // tokensOwed), sized against the position's current value: what the
+  // uncollected fees alone are worth as a return, before any rebalance or
+  // withdrawal actually realizes them.
+  const floatingYieldPct = totalValue > 0 ? (feesTotal / totalValue) * 100 : 0;
+
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center gap-3">
@@ -248,7 +259,10 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
               className="mt-1 text-2xl font-semibold tabular-nums text-accent"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              ${feesTotal.toFixed(4)}
+              ${feesTotal.toFixed(4)}{" "}
+              <span className="text-sm font-normal text-faint">
+                · {floatingYieldPct.toFixed(2)}% {t("positionNft.floatingYield")}
+              </span>
             </p>
             <CompositionBar leftPct={feesWethPct} />
             <div className="mt-3 flex flex-col gap-2 text-sm">
@@ -282,6 +296,10 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
               <span className="text-white/90">
                 {t("positionNft.max")} <span className="font-semibold">${rangeHigh.toFixed(2)}</span>
               </span>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between text-sm">
+              <span className="text-muted">{t("positionNft.rangeWidth")}</span>
+              <span className="font-semibold text-white/90">{rangeWidthPct.toFixed(2)}%</span>
             </div>
             {ethPrice !== undefined && (
               <p className="mt-2 text-xs text-faint">

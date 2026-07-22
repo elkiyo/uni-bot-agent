@@ -253,6 +253,8 @@ const pt: Dictionary = {
     min: "Mín.",
     max: "Máx.",
     currentPrice: "Preço atual: ${{price}} · {{pair}}",
+    rangeWidth: "Amplitude da faixa",
+    floatingYield: "rentabilidade flutuante",
   },
   activity: {
     feedTitle: "Atividade on-chain",

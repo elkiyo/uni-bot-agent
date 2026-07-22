@@ -251,6 +251,8 @@ const es = {
     min: "Mín.",
     max: "Máx.",
     currentPrice: "Precio actual: ${{price}} · {{pair}}",
+    rangeWidth: "Amplitud del rango",
+    floatingYield: "rentabilidad flotante",
   },
   activity: {
     feedTitle: "Actividad on-chain",
