@@ -522,6 +522,10 @@ const pt: Dictionary = {
     colRebalances: "Rebalanceamentos",
     colStatus: "Status",
     colHash: "Hash",
+    colVault: "Vault",
+    copyVaultAddress: "Copiar endereço do vault",
+    copiedAddress: "Copiado ✓",
+    viewVaultExplorer: "Ver vault no explorer",
     colPoolRange: "Status do pool",
 
     historyTitle: "Histórico de vaults",

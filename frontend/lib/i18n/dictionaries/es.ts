@@ -520,6 +520,10 @@ const es = {
     colRebalances: "Rebalanceos",
     colStatus: "Estado",
     colHash: "Hash",
+    colVault: "Vault",
+    copyVaultAddress: "Copiar dirección del vault",
+    copiedAddress: "Copiado ✓",
+    viewVaultExplorer: "Ver vault en el explorer",
     colPoolRange: "Estado del pool",
 
     historyTitle: "Historial de vaults",

@@ -481,6 +481,47 @@ function shortHash(hash: string): string {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`;
 }
 
+// Same click-to-copy + explorer-link pattern as create/page.tsx's pool
+// address row — kept local (not shared) since the two live in unrelated
+// pages and the id/wording differ (pool vs vault).
+function VaultAddressCell({
+  address,
+  explorerBaseUrl,
+  t,
+}: {
+  address: string;
+  explorerBaseUrl: string;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="flex items-center gap-2 font-mono text-[11px] text-muted">
+      <button
+        type="button"
+        onClick={async () => {
+          await navigator.clipboard.writeText(address);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+        className="transition-colors hover:text-accent"
+        title={t("dashboard.copyVaultAddress")}
+      >
+        {copied ? t("dashboard.copiedAddress") : shortHash(address)}
+      </button>
+      <a
+        href={`${explorerBaseUrl}/address/${address}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="transition-colors hover:text-accent"
+        title={t("dashboard.viewVaultExplorer")}
+      >
+        ↗
+      </a>
+    </div>
+  );
+}
+
 /**
  * A <th> that IS its own filter: the visible header text is the select's
  * currently chosen option, so picking a value replaces the column name with
@@ -641,6 +682,7 @@ function VaultHistoryTable({
                   onChange={setPoolFilter}
                   options={[{ value: "all", label: t("dashboard.colPool") }, ...poolOptions.map((p) => ({ value: p, label: p }))]}
                 />
+                <th className="px-4 py-3 font-normal">{t("dashboard.colVault")}</th>
                 <FilterHeader
                   value={versionFilter}
                   onChange={setVersionFilter}
@@ -685,6 +727,9 @@ function VaultHistoryTable({
                     >
                       {row.poolLabel}
                     </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <VaultAddressCell address={row.address} explorerBaseUrl={row.chain.explorerBaseUrl} t={t} />
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-faint">Uniswap V3</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">

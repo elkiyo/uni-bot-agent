@@ -522,6 +522,10 @@ const zh: Dictionary = {
     colRebalances: "再平衡次数",
     colStatus: "状态",
     colHash: "哈希",
+    colVault: "金库",
+    copyVaultAddress: "复制金库地址",
+    copiedAddress: "已复制 ✓",
+    viewVaultExplorer: "在浏览器中查看金库",
     colPoolRange: "资金池状态",
 
     historyTitle: "金库历史",
