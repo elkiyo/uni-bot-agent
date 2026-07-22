@@ -587,7 +587,7 @@ function SortableHeader({
  * hash. Everything vaultRows already carries from useProtocolMetrics — this
  * component is purely presentational.
  */
-type SortKey = "createdAt" | "valueUsd" | "feesUsd" | "yieldPct";
+type SortKey = "createdAt" | "valueUsd" | "feesUsd" | "yieldPct" | "rangeWidthPct";
 
 function sortableColumns(
   t: ReturnType<typeof useTranslation>["t"],
@@ -597,7 +597,19 @@ function sortableColumns(
     { key: "valueUsd", label: t("dashboard.colValue"), align: "right" },
     { key: "feesUsd", label: t("dashboard.colFees"), align: "right" },
     { key: "yieldPct", label: t("dashboard.colYield"), align: "right" },
+    { key: "rangeWidthPct", label: t("dashboard.colRangeWidth"), align: "right" },
   ];
+}
+
+// rangeWidthPct isn't a real field on VaultRow (it's derived from
+// priceRange for display), so sorting needs a getter instead of the
+// direct row[sortKey] index the other columns use.
+function sortValue(row: VaultRow, key: SortKey): number {
+  if (key === "rangeWidthPct") {
+    if (!row.priceRange || row.priceRange[1] <= 0) return -1;
+    return ((row.priceRange[1] - row.priceRange[0]) / row.priceRange[1]) * 100;
+  }
+  return row[key];
 }
 
 function VaultHistoryTable({
@@ -640,7 +652,9 @@ function VaultHistoryTable({
     .filter((r) => chainFilter === "all" || String(r.chain.id) === chainFilter)
     .filter((r) => poolFilter === "all" || r.poolLabel === poolFilter)
     .filter(() => versionFilter === "all" || versionFilter === "Uniswap V3")
-    .sort((a, b) => (sortDir === "desc" ? b[sortKey] - a[sortKey] : a[sortKey] - b[sortKey]));
+    .sort((a, b) =>
+      sortDir === "desc" ? sortValue(b, sortKey) - sortValue(a, sortKey) : sortValue(a, sortKey) - sortValue(b, sortKey),
+    );
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -689,7 +703,7 @@ function VaultHistoryTable({
                   options={[{ value: "all", label: t("dashboard.colVersion") }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
                 />
                 <th className="px-4 py-3 font-normal">{t("dashboard.colRange")}</th>
-                <th className="px-4 py-3 font-normal text-right">{t("dashboard.colRangeWidth")}</th>
+                <SortableHeader column={SORTABLE_COLUMNS[4]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <FilterHeader
                   value={poolRangeFilter}
                   onChange={(v) => setPoolRangeFilter(v as "all" | "in" | "out" | "none")}
@@ -744,7 +758,7 @@ function VaultHistoryTable({
                     {snapshotLoading
                       ? "…"
                       : row.priceRange && row.priceRange[1] > 0
-                        ? `${(((row.priceRange[1] - row.priceRange[0]) / row.priceRange[1]) * 100).toFixed(2)}%`
+                        ? `${sortValue(row, "rangeWidthPct").toFixed(2)}%`
                         : "—"}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
