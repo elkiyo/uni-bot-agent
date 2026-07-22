@@ -251,8 +251,9 @@ function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocol
             <Tooltip
               contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
               formatter={(value: unknown) => [usd(Number(value)), t("dashboard.statTvl")]}
+              cursor={false}
             />
-            <Bar dataKey="tvl" radius={[6, 6, 0, 0]}>
+            <Bar dataKey="tvl" radius={[6, 6, 0, 0]} activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}>
               {data.map((_, i) => (
                 <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
@@ -321,8 +322,14 @@ function VolumeSeriesChart({
           <Tooltip
             contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
             formatter={(value: unknown) => [usd(Number(value)), t("dashboard.tooltipVolume")]}
+            cursor={false}
           />
-          <Bar dataKey="value" fill="#fcff52" radius={[6, 6, 0, 0]} />
+          <Bar
+            dataKey="value"
+            fill="#fcff52"
+            radius={[6, 6, 0, 0]}
+            activeBar={{ fill: "#fff7a8", stroke: "#ffffff", strokeWidth: 2 }}
+          />
         </BarChart>
       </ResponsiveContainer>
     </ChartShell>
@@ -363,10 +370,23 @@ function FeesSeriesChart({
               usd(Number(value)),
               name === "owner" ? t("dashboard.tooltipOwner") : t("dashboard.tooltipPlatform"),
             ]}
+            cursor={false}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="owner" stackId="fees" fill="#4ade80" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="platform" stackId="fees" fill="#60a5fa" radius={[6, 6, 0, 0]} />
+          <Bar
+            dataKey="owner"
+            stackId="fees"
+            fill="#4ade80"
+            radius={[0, 0, 0, 0]}
+            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+          />
+          <Bar
+            dataKey="platform"
+            stackId="fees"
+            fill="#60a5fa"
+            radius={[6, 6, 0, 0]}
+            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+          />
         </BarChart>
       </ResponsiveContainer>
     </ChartShell>
@@ -440,11 +460,33 @@ function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolM
           <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
           <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} allowDecimals={false} />
           <YAxis type="category" dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} width={70} />
-          <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }} />
+          <Tooltip
+            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            cursor={false}
+          />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="activos" stackId="status" fill="#4ade80" name={t("dashboard.statusWithPosition")} />
-          <Bar dataKey="sinPosicion" stackId="status" fill="#71717a" name={t("dashboard.statusNoPosition")} />
-          <Bar dataKey="cerrados" stackId="status" fill="#3f3f46" name={t("dashboard.statusClosed")} radius={[0, 6, 6, 0]} />
+          <Bar
+            dataKey="activos"
+            stackId="status"
+            fill="#4ade80"
+            name={t("dashboard.statusWithPosition")}
+            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+          />
+          <Bar
+            dataKey="sinPosicion"
+            stackId="status"
+            fill="#71717a"
+            name={t("dashboard.statusNoPosition")}
+            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+          />
+          <Bar
+            dataKey="cerrados"
+            stackId="status"
+            fill="#3f3f46"
+            name={t("dashboard.statusClosed")}
+            radius={[0, 6, 6, 0]}
+            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+          />
         </BarChart>
       </ResponsiveContainer>
     </ChartShell>
