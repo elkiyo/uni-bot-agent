@@ -521,6 +521,7 @@ const pt: Dictionary = {
     colPool: "Pool",
     colVersion: "Versão",
     colRange: "Faixa",
+    colRangeWidth: "Amplitude",
     colRebalances: "Rebalanceamentos",
     colStatus: "Status",
     colHash: "Hash",

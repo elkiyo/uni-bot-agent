@@ -521,6 +521,7 @@ const zh: Dictionary = {
     colPool: "资金池",
     colVersion: "版本",
     colRange: "区间",
+    colRangeWidth: "区间宽度",
     colRebalances: "再平衡次数",
     colStatus: "状态",
     colHash: "哈希",

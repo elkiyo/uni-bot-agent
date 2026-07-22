@@ -689,6 +689,7 @@ function VaultHistoryTable({
                   options={[{ value: "all", label: t("dashboard.colVersion") }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
                 />
                 <th className="px-4 py-3 font-normal">{t("dashboard.colRange")}</th>
+                <th className="px-4 py-3 font-normal text-right">{t("dashboard.colRangeWidth")}</th>
                 <FilterHeader
                   value={poolRangeFilter}
                   onChange={(v) => setPoolRangeFilter(v as "all" | "in" | "out" | "none")}
@@ -737,6 +738,13 @@ function VaultHistoryTable({
                       ? "…"
                       : row.priceRange
                         ? `$${formatPrice(row.priceRange[0])} – $${formatPrice(row.priceRange[1])}`
+                        : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-[11px] tabular-nums text-muted">
+                    {snapshotLoading
+                      ? "…"
+                      : row.priceRange && row.priceRange[1] > 0
+                        ? `${(((row.priceRange[1] - row.priceRange[0]) / row.priceRange[1]) * 100).toFixed(2)}%`
                         : "—"}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">

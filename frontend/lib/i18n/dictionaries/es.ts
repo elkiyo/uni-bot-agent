@@ -519,6 +519,7 @@ const es = {
     colPool: "Pool",
     colVersion: "Versión",
     colRange: "Rango",
+    colRangeWidth: "Amplitud",
     colRebalances: "Rebalanceos",
     colStatus: "Estado",
     colHash: "Hash",

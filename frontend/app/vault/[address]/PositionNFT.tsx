@@ -259,9 +259,15 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
               className="mt-1 text-2xl font-semibold tabular-nums text-accent"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              ${feesTotal.toFixed(4)}{" "}
-              <span className="text-sm font-normal text-faint">
-                · {floatingYieldPct.toFixed(2)}% {t("positionNft.floatingYield")}
+              ${feesTotal.toFixed(4)}
+            </p>
+            <p
+              className="mt-1 text-xl font-semibold tabular-nums text-accent"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {floatingYieldPct.toFixed(2)}%{" "}
+              <span className="font-mono text-xs font-normal uppercase tracking-[0.1em] text-faint">
+                {t("positionNft.floatingYield")}
               </span>
             </p>
             <CompositionBar leftPct={feesWethPct} />
@@ -289,17 +295,22 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
               </span>
               <span className="font-mono text-[11px] text-faint">ticks [{tickLower}, {tickUpper}]</span>
             </div>
-            <div className="mt-2 flex items-baseline justify-between text-sm">
+            <p
+              className="mt-1 text-xl font-semibold tabular-nums text-accent"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {rangeWidthPct.toFixed(2)}%{" "}
+              <span className="font-mono text-xs font-normal uppercase tracking-[0.1em] text-faint">
+                {t("positionNft.rangeWidth")}
+              </span>
+            </p>
+            <div className="mt-3 flex items-baseline justify-between text-sm">
               <span className="text-white/90">
                 {t("positionNft.min")} <span className="font-semibold">${rangeLow.toFixed(2)}</span>
               </span>
               <span className="text-white/90">
                 {t("positionNft.max")} <span className="font-semibold">${rangeHigh.toFixed(2)}</span>
               </span>
-            </div>
-            <div className="mt-2 flex items-baseline justify-between text-sm">
-              <span className="text-muted">{t("positionNft.rangeWidth")}</span>
-              <span className="font-semibold text-white/90">{rangeWidthPct.toFixed(2)}%</span>
             </div>
             {ethPrice !== undefined && (
               <p className="mt-2 text-xs text-faint">

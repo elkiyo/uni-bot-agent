@@ -521,6 +521,7 @@ const en: Dictionary = {
     colPool: "Pool",
     colVersion: "Version",
     colRange: "Range",
+    colRangeWidth: "Width",
     colRebalances: "Rebalances",
     colStatus: "Status",
     colHash: "Hash",
