@@ -59,9 +59,21 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
   const cooldownPassed = now >= lastRebalanceTimestamp + minInterval;
   if (!cooldownPassed) return { kind: "none" };
 
-  const periodicDue = periodicInterval > 0n && now >= lastRebalanceTimestamp + periodicInterval;
-  if (periodicDue) return { kind: "rebalance", reason: "periodic" };
-
+  // Out-of-range must be checked BEFORE periodic, not after — periodic used
+  // to short-circuit first, so a vault that fell out of range on the same
+  // cycle periodic also happened to be due got misclassified as "periodic"
+  // forever. rebalancer.ts's periodic path deliberately reuses the
+  // EXISTING position's floor as D1 (see runRebalanceViaUniLab's docstring:
+  // "D1 stays exactly what the EXISTING position's floor already is"), but
+  // once price has actually broken below that floor, D1 sits ABOVE the live
+  // price C1 — a degenerate combination uni-lab.xyz's docs list as a real
+  // cause of its 500 ("input combination doesn't produce a valid rebalance
+  // range"). With periodicInterval short enough to keep re-triggering
+  // before the next check, that 500 repeats forever instead of ever
+  // reaching the out-of-range-bottom path below, which sends a fresh D1.
+  // Confirmed live 2026-07-22 (vault 0xB7801f08...F30, Arbitrum): stuck
+  // retrying the same stale D1=1950.86 against C1≈1930 every 5 minutes for
+  // over an hour straight, all 500s, its range never moving.
   const [posManager, vaultPool] = (await Promise.all([
     vault.read.positionManager(),
     vault.read.pool(),
@@ -106,6 +118,11 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
   if (ethPriceNow < priceFloor) {
     return { kind: "rebalance", reason: "out-of-range-bottom" };
   }
+
+  // Still in range — only now is a periodic recenter (untouched floor, live
+  // ceiling) actually valid input for uni-lab.xyz.
+  const periodicDue = periodicInterval > 0n && now >= lastRebalanceTimestamp + periodicInterval;
+  if (periodicDue) return { kind: "rebalance", reason: "periodic" };
 
   // In range and nothing else to do this cycle — but check for stranded
   // dust before giving up. Ideally sweepIdleDust() runs right after the mint
