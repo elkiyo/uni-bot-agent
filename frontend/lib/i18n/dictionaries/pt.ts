@@ -235,6 +235,10 @@ const pt: Dictionary = {
     rebalances: "Rebalanceamentos",
     fees: "Comissões",
     returnLabel: "{{pct}}% de rent.",
+    range: "Faixa",
+    floatingReturn: "Rentabilidade flutuante",
+    floatingReturnLabel: "{{pct}}% flut.",
+    createdOn: "Criado em {{date}}",
   },
   positionNft: {
     title: "Posição NFT #{{id}}",

@@ -6,6 +6,7 @@ import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { useQueries } from "@tanstack/react-query";
 import { formatUnits, type PublicClient } from "viem";
 import { Header } from "../components/Header";
+import { ChainIcon } from "../components/ChainIcon";
 import { uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
@@ -164,9 +165,9 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
     <>
       {activeVaults.length > 0 && (
         <ul className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {activeVaults.map(({ chain, address }) => (
+          {activeVaults.map(({ chain, address, createdAt }) => (
             <li key={`${chain.id}-${address}`}>
-              <VaultCard vaultAddress={address} chain={chain} />
+              <VaultCard vaultAddress={address} chain={chain} createdAt={createdAt} />
             </li>
           ))}
         </ul>
@@ -182,9 +183,9 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
           </h2>
           <p className="mt-1 text-sm text-muted">{t("vaults.closedSubtitle")}</p>
           <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {closedVaults.map(({ chain, address }) => (
+            {closedVaults.map(({ chain, address, createdAt }) => (
               <li key={`${chain.id}-${address}`}>
-                <VaultCard vaultAddress={address} chain={chain} isClosed />
+                <VaultCard vaultAddress={address} chain={chain} createdAt={createdAt} isClosed />
               </li>
             ))}
           </ul>
@@ -209,10 +210,12 @@ const cardReads = (address: `0x${string}`, vaultAbi: ChainDef["vaultAbi"]) =>
 function VaultCard({
   vaultAddress,
   chain,
+  createdAt,
   isClosed,
 }: {
   vaultAddress: `0x${string}`;
   chain: ChainDef;
+  createdAt?: number;
   isClosed?: boolean;
 }) {
   // Clicking into a vault also switches the app's viewing chain to match it
@@ -326,6 +329,23 @@ function VaultCard({
       ? t("vaults.returnLabel", { pct: ((feesUsdEquivalent / initialInvestmentUsd) * 100).toFixed(2) })
       : "—";
 
+  // Rentabilidad flotante = valor actual de todo lo que el vault sostiene
+  // ahora mismo (posición mark-to-market + capital libre) contra la
+  // inversión inicial — a diferencia de "rentLabel" arriba, esto SÍ refleja
+  // impermanent loss / suba de precio, no solo comisiones cobradas.
+  const currentTotalValueUsd =
+    (hasPosition ? (positionValueUsd ?? 0) : 0) + Number(formatUnits(idleCapital, 6)) + (idleWethUsd ?? 0);
+  const floatingPct =
+    initialInvestmentUsd > 0 ? ((currentTotalValueUsd - initialInvestmentUsd) / initialInvestmentUsd) * 100 : undefined;
+  const floatingLabel = floatingPct !== undefined ? t("vaults.floatingReturnLabel", { pct: floatingPct.toFixed(2) }) : "—";
+
+  const createdOnLabel =
+    createdAt !== undefined && createdAt > 0
+      ? t("vaults.createdOn", {
+          date: new Date(createdAt * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }),
+        })
+      : undefined;
+
   return (
     <Link
       href={`/vault/${vaultAddress}`}
@@ -334,7 +354,10 @@ function VaultCard({
     >
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="eyebrow !border-accent/40 !px-3 !py-1 !text-accent">{chain.name}</span>
+          <span className="eyebrow flex items-center gap-1.5 !border-accent/40 !px-3 !py-1 !text-accent">
+            <ChainIcon chainId={chain.id} className="h-3.5 w-3.5 shrink-0" />
+            {chain.name}
+          </span>
           {isClosed ? (
             <span className="eyebrow !px-3 !py-1">{t("vaults.closed")}</span>
           ) : paused ? (
@@ -362,6 +385,7 @@ function VaultCard({
       <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
         {chain.stableSymbol} / {chain.volatileSymbol} · {feeTier / 10_000}%
       </p>
+      {createdOnLabel && <p className="mt-1 font-mono text-[11px] text-faint">{createdOnLabel}</p>}
 
       {/* Headline: what the position is actually worth right now, and where */}
       <div className="mt-4 rounded-xl border border-hairline bg-white/[0.02] p-4">
@@ -372,12 +396,17 @@ function VaultCard({
         >
           {hasPosition && positionValueUsd !== undefined ? `$${positionValueUsd.toFixed(2)}` : "—"}
         </p>
-        <p className="mt-1 font-mono text-xs text-sky-400">
-          {hasPosition && rangeLabel ? rangeLabel : t("vaults.noOpenPosition")}
-        </p>
+        {hasPosition && rangeLabel ? (
+          <>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.range")}</p>
+            <p className="mt-0.5 font-mono text-xs text-sky-400">{rangeLabel}</p>
+          </>
+        ) : (
+          <p className="mt-1 font-mono text-xs text-sky-400">{t("vaults.noOpenPosition")}</p>
+        )}
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-4 border-t border-hairline pt-4">
+      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-hairline pt-4">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.freeCapital")}</p>
           <p className="mt-1 text-sm font-medium text-white/90">
@@ -410,6 +439,12 @@ function VaultCard({
             </p>
           )}
           <p className="mt-0.5 font-mono text-xs text-accent">{rentLabel}</p>
+        </div>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.floatingReturn")}</p>
+          <p className={`mt-1 text-sm font-medium ${(floatingPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}>
+            {floatingLabel}
+          </p>
         </div>
       </div>
     </Link>

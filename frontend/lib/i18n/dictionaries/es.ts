@@ -233,6 +233,10 @@ const es = {
     rebalances: "Rebalanceos",
     fees: "Comisiones",
     returnLabel: "{{pct}}% rent.",
+    range: "Rango",
+    floatingReturn: "Rentabilidad flotante",
+    floatingReturnLabel: "{{pct}}% flot.",
+    createdOn: "Creado el {{date}}",
   },
   positionNft: {
     title: "Posición NFT #{{id}}",

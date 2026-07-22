@@ -235,6 +235,10 @@ const en: Dictionary = {
     rebalances: "Rebalances",
     fees: "Fees",
     returnLabel: "{{pct}}% return",
+    range: "Range",
+    floatingReturn: "Floating return",
+    floatingReturnLabel: "{{pct}}% floating",
+    createdOn: "Created on {{date}}",
   },
   positionNft: {
     title: "Position NFT #{{id}}",

@@ -235,6 +235,10 @@ const zh: Dictionary = {
     rebalances: "再平衡次数",
     fees: "手续费",
     returnLabel: "{{pct}}% 收益率",
+    range: "区间",
+    floatingReturn: "浮动收益率",
+    floatingReturnLabel: "{{pct}}% 浮动",
+    createdOn: "创建于 {{date}}",
   },
   positionNft: {
     title: "仓位 NFT #{{id}}",
