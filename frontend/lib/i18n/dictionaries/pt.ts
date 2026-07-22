@@ -984,6 +984,8 @@ const pt: Dictionary = {
     title: "Minhas indicações",
     subtitle: "Compartilhe seu link e ganhe uma comissão quando as pessoas que você convida depositam no vault delas.",
     connectPrompt: "Conecte sua wallet para ver seu link de indicação.",
+    restricted: "Esta seção não está disponível.",
+    restrictedConnect: "Conecte sua wallet para continuar.",
     signInPrompt: "Assine uma mensagem (sem gas, grátis) para verificar sua wallet e ver suas indicações.",
     signInButton: "Assinar e entrar",
     signingIn: "Aguardando assinatura…",

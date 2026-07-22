@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContracts } from "wagmi";
 import { Header } from "../components/Header";
 import { useAuthSession } from "@/lib/auth/AuthSessionProvider";
 import { useTranslation } from "@/lib/i18n/useTranslation";
+import { useAvailableChains } from "@/lib/useSelectedChain";
+import { platformConfigAbi } from "@/lib/contracts";
 
 interface VolumeByChain {
   chainId: number;
@@ -44,8 +46,57 @@ interface StatsResponse {
 
 export default function ReferralsPage() {
   const { address, isConnected } = useAccount();
-  const { session, signingIn, signIn } = useAuthSession();
   const { t } = useTranslation();
+
+  // Not a public feature yet — deliberately not linked from the nav (see
+  // Header.tsx) and gated here too, so navigating straight to the URL
+  // doesn't work either. Owner is checked across every deployed chain (not
+  // just whichever one happens to be selected) since the same wallet owns
+  // PlatformConfig everywhere the platform is deployed.
+  const chains = useAvailableChains();
+  const { data: ownerData, isLoading: ownerLoading } = useReadContracts({
+    contracts: chains.map(
+      (chain) =>
+        ({
+          address: chain.platformConfigAddress || undefined,
+          abi: platformConfigAbi,
+          functionName: "owner",
+          chainId: chain.id,
+        }) as const,
+    ),
+    query: { enabled: isConnected && chains.some((c) => c.platformConfigAddress) },
+  });
+  const isPlatformOwner = Boolean(
+    address &&
+      ownerData?.some((d) => typeof d.result === "string" && d.result.toLowerCase() === address.toLowerCase()),
+  );
+
+  if (!isConnected || !address || ownerLoading || !isPlatformOwner) {
+    return (
+      <>
+        <Header />
+        <main className="section flex-1 pb-24 pt-32">
+          <div className="glass mt-10 rounded-2xl p-10 text-center">
+            <p className="text-sm text-muted">
+              {!isConnected ? t("referrals.restrictedConnect") : ownerLoading ? t("admin.loading") : t("referrals.restricted")}
+            </p>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  return <ReferralsDashboard address={address} t={t} />;
+}
+
+function ReferralsDashboard({
+  address,
+  t,
+}: {
+  address: `0x${string}`;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const { session, signingIn, signIn } = useAuthSession();
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -99,13 +150,7 @@ export default function ReferralsPage() {
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">{t("referrals.subtitle")}</p>
 
-        {!isConnected && (
-          <div className="glass mt-10 rounded-2xl p-8 text-center">
-            <p className="text-sm text-muted">{t("referrals.connectPrompt")}</p>
-          </div>
-        )}
-
-        {isConnected && !session && (
+        {!session && (
           <div className="glass mt-10 rounded-2xl p-8 text-center">
             <p className="text-sm text-muted">{t("referrals.signInPrompt")}</p>
             <button onClick={() => signIn()} disabled={signingIn} className="btn-primary mt-4 !px-5 !py-2.5">
@@ -114,7 +159,7 @@ export default function ReferralsPage() {
           </div>
         )}
 
-        {isConnected && session && address && (
+        {session && (
           <>
             <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
               <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">

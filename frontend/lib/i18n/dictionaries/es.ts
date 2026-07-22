@@ -991,6 +991,8 @@ const es = {
     title: "Mis referidos",
     subtitle: "Compartí tu link y ganá una comisión cuando la gente que invitás deposita en su vault.",
     connectPrompt: "Conectá tu wallet para ver tu link de referidos.",
+    restricted: "Esta sección no está disponible.",
+    restrictedConnect: "Conectá tu wallet para continuar.",
     signInPrompt: "Firmá un mensaje (sin gas, gratis) para verificar tu wallet y ver tus referidos.",
     signInButton: "Firmar e iniciar sesión",
     signingIn: "Esperando firma…",

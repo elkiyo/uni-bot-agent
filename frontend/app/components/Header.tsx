@@ -10,11 +10,13 @@ export function Header() {
   const pathname = usePathname();
   const { t } = useTranslation();
 
+  // /referrals is intentionally left out of the public nav — owner-only
+  // feature, not yet meant for LPs to discover. See app/referrals/page.tsx's
+  // own owner gate for the actual access control; this is just visibility.
   const links = [
     { href: "/vaults", label: t("header.navVaults") },
     { href: "/create", label: t("header.navCreate") },
     { href: "/dashboard", label: t("header.navDashboard") },
-    { href: "/referrals", label: t("header.navReferrals") },
   ];
 
   const resourceLinks = [

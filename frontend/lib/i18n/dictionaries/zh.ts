@@ -984,6 +984,8 @@ const zh: Dictionary = {
     title: "我的推荐",
     subtitle: "分享你的链接——当你邀请的人向自己的金库存款时，你将获得佣金。",
     connectPrompt: "连接钱包以查看你的推荐链接。",
+    restricted: "此板块暂不可用。",
+    restrictedConnect: "请先连接钱包。",
     signInPrompt: "签署一条消息（无需 gas，免费）以验证钱包并查看你的推荐记录。",
     signInButton: "签名登录",
     signingIn: "等待签名…",

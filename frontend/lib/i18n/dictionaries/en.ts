@@ -984,6 +984,8 @@ const en: Dictionary = {
     title: "My referrals",
     subtitle: "Share your link and earn a commission when the people you invite deposit into their vault.",
     connectPrompt: "Connect your wallet to see your referral link.",
+    restricted: "This section isn't available.",
+    restrictedConnect: "Connect your wallet to continue.",
     signInPrompt: "Sign a message (no gas, free) to verify your wallet and see your referrals.",
     signInButton: "Sign in",
     signingIn: "Waiting for signature…",
