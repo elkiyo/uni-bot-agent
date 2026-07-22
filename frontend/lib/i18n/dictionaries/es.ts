@@ -251,6 +251,7 @@ const es = {
     min: "Mín.",
     max: "Máx.",
     currentPrice: "Precio actual: ${{price}} · {{pair}}",
+    currentPriceLabel: "Precio actual",
     rangeWidth: "Amplitud del rango",
     floatingYield: "rentabilidad flotante",
   },

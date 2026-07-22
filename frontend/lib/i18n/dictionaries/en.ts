@@ -253,6 +253,7 @@ const en: Dictionary = {
     min: "Min",
     max: "Max",
     currentPrice: "Current price: ${{price}} · {{pair}}",
+    currentPriceLabel: "Current price",
     rangeWidth: "Range width",
     floatingYield: "floating yield",
   },

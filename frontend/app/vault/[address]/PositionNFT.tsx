@@ -289,12 +289,9 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
           </div>
 
           <div className="glass rounded-2xl p-5">
-            <div className="flex items-baseline justify-between">
-              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                {t("positionNft.priceRange")}
-              </span>
-              <span className="font-mono text-[11px] text-faint">ticks [{tickLower}, {tickUpper}]</span>
-            </div>
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+              {t("positionNft.priceRange")}
+            </span>
             <p
               className="mt-1 text-xl font-semibold tabular-nums text-accent"
               style={{ fontFamily: "var(--font-display)" }}
@@ -304,7 +301,7 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
                 {t("positionNft.rangeWidth")}
               </span>
             </p>
-            <div className="mt-3 flex items-baseline justify-between text-sm">
+            <div className="mt-3 flex items-baseline justify-between text-lg">
               <span className="text-white/90">
                 {t("positionNft.min")} <span className="font-semibold">${rangeLow.toFixed(2)}</span>
               </span>
@@ -313,12 +310,20 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
               </span>
             </div>
             {ethPrice !== undefined && (
-              <p className="mt-2 text-xs text-faint">
-                {t("positionNft.currentPrice", {
-                  price: ethPrice.toFixed(2),
-                  pair: `${chain.stableSymbol}/${chain.volatileSymbol}`,
-                })}
-              </p>
+              <div className="mt-3 border-t border-hairline/50 pt-3">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                  {t("positionNft.currentPriceLabel")}
+                </span>
+                <p
+                  className="mt-1 text-xl font-semibold tabular-nums text-accent"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  ${ethPrice.toFixed(2)}{" "}
+                  <span className="font-mono text-xs font-normal text-faint">
+                    {chain.stableSymbol}/{chain.volatileSymbol}
+                  </span>
+                </p>
+              </div>
             )}
           </div>
         </div>

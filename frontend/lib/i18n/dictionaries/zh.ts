@@ -253,6 +253,7 @@ const zh: Dictionary = {
     min: "最低",
     max: "最高",
     currentPrice: "当前价格：${{price}} · {{pair}}",
+    currentPriceLabel: "当前价格",
     rangeWidth: "区间宽度",
     floatingYield: "浮动收益率",
   },
