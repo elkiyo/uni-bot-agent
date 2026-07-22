@@ -493,6 +493,13 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     const vaultFeesByAddress = new Map<string, number>();
     const addFee = (address: string, usd: number) =>
       vaultFeesByAddress.set(address.toLowerCase(), (vaultFeesByAddress.get(address.toLowerCase()) ?? 0) + usd);
+    // Per-vault initial investment (investable + reserve from the FIRST
+    // Deposited event only, no gas reserve) — the same denominator
+    // VaultDetail.tsx and /vaults use for "rentabilidad" (fees / initial
+    // investment), so this dashboard's yieldPct actually matches what each
+    // vault's own page shows instead of diluting/inflating it against
+    // current value, which drifts with price and top-up deposits.
+    const initialInvestmentByAddress = new Map<string, number>();
 
     chains.forEach((chain, i) => {
       const { logs = [], blockTimestamps } = eventQueries[i].data ?? {};
@@ -523,6 +530,11 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         } else if (log.eventName === "Deposited") {
           const total = Number((args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n) + (args.gasReserveAmount ?? 0n));
           depositedTotalUsd += total * 1e-6;
+          const addrKey = log.address.toLowerCase();
+          if (!initialInvestmentByAddress.has(addrKey)) {
+            const investOnly = Number((args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n));
+            initialInvestmentByAddress.set(addrKey, investOnly * 1e-6);
+          }
         } else if (log.eventName === "Rebalanced" && ts !== undefined) {
           rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: 0 });
         }
@@ -537,6 +549,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         const ledgerValue = v.closed ? 0 : Number(v.investableUsdt + v.reserveBalance + v.gasReserveBalance) * 1e-6;
         const valueUsd = ledgerValue + positionValue;
         const feesUsd = vaultFeesByAddress.get(v.record.address.toLowerCase()) ?? 0;
+        const initialInvestmentUsd = initialInvestmentByAddress.get(v.record.address.toLowerCase()) ?? 0;
         const status: VaultStatus = v.closed ? "closed" : v.positionTokenId > 0n ? "active" : "no_position";
         return {
           address: v.record.address,
@@ -550,7 +563,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           priceRange: priceRangeByVault.get(v.record.address) ?? null,
           inRange: inRangeByVault.get(v.record.address) ?? null,
           feesUsd,
-          yieldPct: valueUsd > 0 ? (feesUsd / valueUsd) * 100 : 0,
+          yieldPct: initialInvestmentUsd > 0 ? (feesUsd / initialInvestmentUsd) * 100 : 0,
           rebalanceCount: Number(v.rebalanceCount),
           status,
         };
