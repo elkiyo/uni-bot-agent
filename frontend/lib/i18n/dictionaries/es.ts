@@ -254,6 +254,8 @@ const es = {
     currentPriceLabel: "Precio actual",
     rangeWidth: "Amplitud del rango",
     floatingYield: "rentabilidad flotante",
+    belowRange: "Precio por debajo del rango — sin comisiones",
+    aboveRange: "Precio por encima del rango — sin comisiones",
   },
   activity: {
     feedTitle: "Actividad on-chain",

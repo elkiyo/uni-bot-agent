@@ -256,6 +256,8 @@ const en: Dictionary = {
     currentPriceLabel: "Current price",
     rangeWidth: "Range width",
     floatingYield: "floating yield",
+    belowRange: "Price is below range — not earning fees",
+    aboveRange: "Price is above range — not earning fees",
   },
   activity: {
     feedTitle: "On-chain activity",

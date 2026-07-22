@@ -301,32 +301,88 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
                 {t("positionNft.rangeWidth")}
               </span>
             </p>
-            <div className="mt-3 flex items-baseline justify-between text-lg">
-              <span className="text-white/90">
-                {t("positionNft.min")} <span className="font-semibold">${rangeLow.toFixed(2)}</span>
-              </span>
-              <span className="text-white/90">
-                {t("positionNft.max")} <span className="font-semibold">${rangeHigh.toFixed(2)}</span>
-              </span>
-            </div>
+            <RangeMeter low={rangeLow} high={rangeHigh} current={ethPrice} inRange={inRange} t={t} />
             {ethPrice !== undefined && (
-              <div className="mt-3 border-t border-hairline/50 pt-3">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                  {t("positionNft.currentPriceLabel")}
+              <p className="mt-3 text-center text-sm text-white/60">
+                {t("positionNft.currentPriceLabel")}{" "}
+                <span className="font-semibold tabular-nums text-white/90">${ethPrice.toFixed(2)}</span>{" "}
+                <span className="font-mono text-xs text-faint">
+                  {chain.stableSymbol}/{chain.volatileSymbol}
                 </span>
-                <p
-                  className="mt-1 text-xl font-semibold tabular-nums text-accent"
-                  style={{ fontFamily: "var(--font-display)" }}
-                >
-                  ${ethPrice.toFixed(2)}{" "}
-                  <span className="font-mono text-xs font-normal text-faint">
-                    {chain.stableSymbol}/{chain.volatileSymbol}
-                  </span>
-                </p>
-              </div>
+              </p>
+            )}
+            {ethPrice !== undefined && !inRange && (
+              <p className="mt-1 text-center font-mono text-[11px] uppercase tracking-[0.08em] text-negative">
+                {ethPrice < rangeLow ? t("positionNft.belowRange") : t("positionNft.aboveRange")}
+              </p>
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Horizontal position indicator: the track is the vault's active price
+// range [low, high], and the pin shows where the pool's live price sits
+// inside it right now — the thing a non-technical user actually wants to
+// know at a glance ("are we earning fees or not"), without reading raw
+// numbers. Color is the same in/out-of-range status already used for the
+// badge at the top of this card (positive/negative), not the brand accent,
+// so it reads as state rather than as a generic highlight. Clamped a couple
+// points in from 0/100 so an out-of-range pin never sits flush against the
+// rounded track ends, then the caption below spells out which side it's on.
+function RangeMeter({
+  low,
+  high,
+  current,
+  inRange,
+  t,
+}: {
+  low: number;
+  high: number;
+  current: number | undefined;
+  inRange: boolean;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const span = high - low;
+  const rawPct = current !== undefined && span > 0 ? ((current - low) / span) * 100 : undefined;
+  const pct = rawPct === undefined ? undefined : Math.min(98.5, Math.max(1.5, rawPct));
+  const statusColor = inRange ? "var(--positive)" : "var(--negative)";
+
+  return (
+    <div className="mt-4">
+      <div className="relative pt-6">
+        {pct !== undefined && (
+          <div
+            className="absolute top-0 flex -translate-x-1/2 flex-col items-center transition-[left] duration-700 ease-out"
+            style={{ left: `${pct}%` }}
+          >
+            <span
+              className="whitespace-nowrap rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums text-background"
+              style={{ backgroundColor: statusColor }}
+            >
+              ${current!.toFixed(2)}
+            </span>
+            <span className="h-2 w-px" style={{ backgroundColor: statusColor }} />
+          </div>
+        )}
+        <div className="relative h-2 w-full rounded-full" style={{ backgroundColor: `color-mix(in srgb, ${statusColor} 20%, transparent)` }}>
+          {pct !== undefined && (
+            <div
+              className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-700 ease-out"
+              style={{ left: `${pct}%`, backgroundColor: statusColor, border: "3px solid #050505" }}
+            />
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex items-baseline justify-between text-lg">
+        <span className="text-white/90">
+          {t("positionNft.min")} <span className="font-semibold">${low.toFixed(2)}</span>
+        </span>
+        <span className="text-white/90">
+          {t("positionNft.max")} <span className="font-semibold">${high.toFixed(2)}</span>
+        </span>
       </div>
     </div>
   );

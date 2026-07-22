@@ -256,6 +256,8 @@ const zh: Dictionary = {
     currentPriceLabel: "当前价格",
     rangeWidth: "区间宽度",
     floatingYield: "浮动收益率",
+    belowRange: "价格低于区间——未产生手续费",
+    aboveRange: "价格高于区间——未产生手续费",
   },
   activity: {
     feedTitle: "链上活动",

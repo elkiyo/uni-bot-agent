@@ -256,6 +256,8 @@ const pt: Dictionary = {
     currentPriceLabel: "Preço atual",
     rangeWidth: "Amplitude da faixa",
     floatingYield: "rentabilidade flutuante",
+    belowRange: "Preço abaixo da faixa — sem gerar comissões",
+    aboveRange: "Preço acima da faixa — sem gerar comissões",
   },
   activity: {
     feedTitle: "Atividade on-chain",
