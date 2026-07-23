@@ -639,7 +639,7 @@ function SortableHeader({
  * hash. Everything vaultRows already carries from useProtocolMetrics — this
  * component is purely presentational.
  */
-type SortKey = "createdAt" | "valueUsd" | "feesUsd" | "yieldPct" | "rangeWidthPct";
+type SortKey = "createdAt" | "valueUsd" | "feesUsd" | "yieldPct" | "rangeWidthPct" | "rebalanceCount";
 
 function sortableColumns(
   t: ReturnType<typeof useTranslation>["t"],
@@ -650,6 +650,7 @@ function sortableColumns(
     { key: "feesUsd", label: t("dashboard.colFees"), align: "right" },
     { key: "yieldPct", label: t("dashboard.colYield"), align: "right" },
     { key: "rangeWidthPct", label: t("dashboard.colRangeWidth"), align: "right" },
+    { key: "rebalanceCount", label: t("dashboard.colRebalances"), align: "right" },
   ];
 }
 
@@ -779,7 +780,7 @@ function VaultHistoryTable({
                 <SortableHeader column={SORTABLE_COLUMNS[1]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[2]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                <th className="px-4 py-3 font-normal text-right">{t("dashboard.colRebalances")}</th>
+                <SortableHeader column={SORTABLE_COLUMNS[5]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <FilterHeader
                   value={statusFilter}
                   onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
