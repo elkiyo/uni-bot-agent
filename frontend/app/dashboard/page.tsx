@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ResponsiveContainer,
@@ -523,6 +523,16 @@ function shortHash(hash: string): string {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`;
 }
 
+// Same "Xd Yh Zm" shape as VaultDetail.tsx's VaultAgeStat.
+function formatAge(totalSeconds: number): string {
+  const d = Math.floor(totalSeconds / 86400);
+  const h = Math.floor((totalSeconds % 86400) / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 // Same click-to-copy + explorer-link pattern as create/page.tsx's pool
 // address row — kept local (not shared) since the two live in unrelated
 // pages and the id/wording differ (pool vs vault).
@@ -669,6 +679,15 @@ function VaultHistoryTable({
   const { t, locale } = useTranslation();
   const SORTABLE_COLUMNS = sortableColumns(t);
   const STATUS_LABEL = statusLabels(t);
+  // One shared ticking clock for the whole table's Antigüedad column,
+  // instead of a per-row interval — same "Xd Yh Zm" live counter as
+  // VaultDetail.tsx's VaultAgeStat, just driven off createdAt rows already
+  // carry (no extra per-vault fetch needed here).
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
   const [statusFilter, setStatusFilter] = useState<VaultStatus | "all">("all");
   const [poolRangeFilter, setPoolRangeFilter] = useState<"all" | "in" | "out" | "none">("all");
   const [chainFilter, setChainFilter] = useState<string>("all");
@@ -728,6 +747,7 @@ function VaultHistoryTable({
             <thead className="sticky top-0 z-10" style={{ backgroundColor: "#0a0a0a" }}>
               <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
                 <SortableHeader column={SORTABLE_COLUMNS[0]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <th className="px-4 py-3 font-normal">{t("dashboard.colAge")}</th>
                 <FilterHeader
                   value={chainFilter}
                   onChange={setChainFilter}
@@ -775,6 +795,9 @@ function VaultHistoryTable({
               {filteredRows.map((row) => (
                 <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-white/[0.02]">
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt, locale)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] tabular-nums text-muted">
+                    {formatAge(Math.max(0, now - row.createdAt))}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-3">{row.chain.name}</td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <Link

@@ -522,6 +522,7 @@ const pt: Dictionary = {
     statusClosedShort: "Fechado",
 
     colDate: "Data",
+    colAge: "Idade",
     colValue: "Valor",
     colFees: "Comissões",
     colYield: "Rendimento",

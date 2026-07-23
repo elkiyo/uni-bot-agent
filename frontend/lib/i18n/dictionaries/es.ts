@@ -520,6 +520,7 @@ const es = {
     statusClosedShort: "Cerrado",
 
     colDate: "Fecha",
+    colAge: "Antigüedad",
     colValue: "Valor",
     colFees: "Comisiones",
     colYield: "Rendimiento",

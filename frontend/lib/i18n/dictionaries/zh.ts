@@ -522,6 +522,7 @@ const zh: Dictionary = {
     statusClosedShort: "已关闭",
 
     colDate: "日期",
+    colAge: "存续时间",
     colValue: "价值",
     colFees: "手续费",
     colYield: "收益率",

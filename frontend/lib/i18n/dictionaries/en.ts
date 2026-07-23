@@ -522,6 +522,7 @@ const en: Dictionary = {
     statusClosedShort: "Closed",
 
     colDate: "Date",
+    colAge: "Age",
     colValue: "Value",
     colFees: "Fees",
     colYield: "Yield",
