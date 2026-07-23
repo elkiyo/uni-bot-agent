@@ -1,0 +1,5 @@
+{
+  "name": "AutoRange",
+  "description": "Non-custodial Uniswap V3 concentrated-liquidity vaults, managed by a keeper agent.",
+  "iconPath": "logo.svg"
+}
