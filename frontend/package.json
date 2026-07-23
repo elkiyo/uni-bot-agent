@@ -12,6 +12,7 @@
     "@celo/attribution-tags": "^0.3.0",
     "@reown/appkit": "^1.8.22",
     "@reown/appkit-adapter-wagmi": "^1.8.22",
+    "@safe-global/safe-apps-sdk": "^9.1.0",
     "@supabase/supabase-js": "^2.45.4",
     "@tanstack/react-query": "^5.101.2",
     "@x402/evm": "^2.18.0",

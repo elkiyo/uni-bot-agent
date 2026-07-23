@@ -119,6 +119,7 @@ const en: Dictionary = {
     stepConfiguring: "3/5 · Configuring target…",
     stepRisk: "4/5 · Setting risk limits…",
     stepDepositing: "5/5 · Depositing…",
+    stepBatching: "2/2 · Batching and proposing to Safe…",
     stepDone: "Done ✓",
     stepError: "Retry",
 
@@ -132,6 +133,17 @@ const en: Dictionary = {
     sig4Desc: "Maximum slippage and how far the range proposed by the agent can deviate from the market price.",
     sig5Title: "Deposit",
     sig5Desc: "Transfers the real {{symbol}} to the vault, split across the reserves you configured above.",
+    sigSafeBatchTitle: "Configure, set risk limits and deposit (batched)",
+    sigSafeBatchDesc:
+      "Approving {{symbol}}, configuring the target, setting risk limits, and depositing — all in a single Safe transaction.",
+
+    safeTxCancelled: "The transaction was rejected or replaced in Safe.",
+    safeTxFailed: "The transaction failed to execute in Safe.",
+    safeWaitingMsg:
+      "Proposed to your Safe — signatures: {{submitted}}/{{required}}. Go to your Safe's Queue tab so the other owners can sign; this screen continues on its own once it executes.",
+    resumeBannerText:
+      "You have an unconfigured vault created with this Safe ({{address}}). You can continue configuring it instead of creating a new one, avoiding the creation fee again.",
+    resumeBannerButton: "Continue configuring that vault",
 
     errMissingFields: "Fill in every field — there are no default values.",
     capAlertTitle: "Exceeds the deposit cap",

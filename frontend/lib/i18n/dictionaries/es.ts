@@ -117,6 +117,7 @@ const es = {
     stepConfiguring: "3/5 · Configurando objetivo…",
     stepRisk: "4/5 · Fijando límites de riesgo…",
     stepDepositing: "5/5 · Depositando…",
+    stepBatching: "2/2 · Agrupando y proponiendo a Safe…",
     stepDone: "Listo ✓",
     stepError: "Reintentar",
 
@@ -130,6 +131,17 @@ const es = {
     sig4Desc: "Slippage máximo y cuánto puede desviarse el rango que proponga el agente del precio de mercado.",
     sig5Title: "Depositar",
     sig5Desc: "Transfiere el {{symbol}} real al vault, repartido entre las reservas que configuraste arriba.",
+    sigSafeBatchTitle: "Configurar, fijar riesgos y depositar (agrupado)",
+    sigSafeBatchDesc:
+      "Aprobar {{symbol}}, configurar el objetivo, fijar límites de riesgo y depositar, todo en una sola transacción de Safe.",
+
+    safeTxCancelled: "La transacción fue rechazada o reemplazada en Safe.",
+    safeTxFailed: "La transacción falló al ejecutarse en Safe.",
+    safeWaitingMsg:
+      "Propuesta a tu Safe — firmas: {{submitted}}/{{required}}. Andá a la pestaña Queue de tu Safe para que el resto de los dueños firme; esta pantalla continúa sola cuando se ejecute.",
+    resumeBannerText:
+      "Tenés un vault sin configurar creado con este Safe ({{address}}). Podés continuar su configuración en vez de crear uno nuevo, así evitás pagar el fee de creación otra vez.",
+    resumeBannerButton: "Continuar configurando ese vault",
 
     errMissingFields: "Completá todos los campos — no hay valores por defecto.",
     capAlertTitle: "Supera el tope de depósito",

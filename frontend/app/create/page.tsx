@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount, usePublicClient, useReadContract, useWriteContract, useSwitchChain } from "wagmi";
-import { decodeEventLog, formatUnits, parseUnits } from "viem";
+import {
+  useAccount,
+  usePublicClient,
+  useReadContract,
+  useReadContracts,
+  useWriteContract,
+  useSwitchChain,
+} from "wagmi";
+import { decodeEventLog, encodeFunctionData, formatUnits, parseUnits } from "viem";
+import SafeAppsSDK, { type GatewayTransactionDetails } from "@safe-global/safe-apps-sdk";
 import { Header } from "../components/Header";
 import { AlertModal } from "../components/AlertModal";
 import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
@@ -13,8 +21,44 @@ import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
 import { formatUsdCompact } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
-type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "done" | "error";
+// "batching" only ever happens on the Safe App path (see isSafeApp below) —
+// approve/configureTarget/setRiskParams/deposit collapsed into one Safe
+// transaction instead of 4 separate signature rounds.
+type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "batching" | "done" | "error";
 type T = ReturnType<typeof useTranslation>["t"];
+
+/**
+ * Polls Safe's transaction gateway for a proposed Safe transaction until it
+ * actually executes on-chain. `safeTxHash` (what `txs.send()`/the wagmi
+ * `safe` connector's `eth_sendTransaction` return) is an EIP-712 struct hash
+ * of the PROPOSAL, not a real transaction — it's never going to show up via
+ * `publicClient.waitForTransactionReceipt(safeTxHash)` against a plain RPC
+ * node, no matter how long that's given to time out. A Safe with threshold >
+ * 1 only actually executes once enough of the OTHER owners confirm it from
+ * their own Safe UI (Transactions > Queue) — that can take anywhere from
+ * seconds to days, entirely outside this browser tab.
+ */
+async function waitForSafeExecution(
+  safeSdk: SafeAppsSDK,
+  safeTxHash: `0x${string}`,
+  onProgress: (details: GatewayTransactionDetails) => void,
+  messages: { cancelled: string; failed: string },
+): Promise<`0x${string}`> {
+  for (;;) {
+    const details = await safeSdk.txs.getBySafeTxHash(safeTxHash);
+    onProgress(details);
+    if (details.txStatus === "SUCCESS" && details.txHash) return details.txHash as `0x${string}`;
+    if (details.txStatus === "CANCELLED") throw new Error(messages.cancelled);
+    if (details.txStatus === "FAILED") throw new Error(messages.failed);
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+}
+
+function confirmationsFrom(details: GatewayTransactionDetails): { submitted: number; required: number } | null {
+  const info = details.detailedExecutionInfo;
+  if (!info || info.type !== "MULTISIG") return null;
+  return { submitted: info.confirmations.length, required: info.confirmationsRequired };
+}
 
 function stepLabelFor(t: T, stableSymbol: string): Record<Step, string> {
   return {
@@ -24,6 +68,7 @@ function stepLabelFor(t: T, stableSymbol: string): Record<Step, string> {
     configuring: t("create.stepConfiguring"),
     risk: t("create.stepRisk"),
     depositing: t("create.stepDepositing"),
+    batching: t("create.stepBatching"),
     done: t("create.stepDone"),
     error: t("create.stepError"),
   };
@@ -65,18 +110,78 @@ function signatureStepsFor(
   ];
 }
 
+// Same createVault first step, but approve/configureTarget/setRiskParams/
+// deposit collapse into a single Safe transaction — see waitForSafeExecution.
+function safeSignatureStepsFor(
+  t: T,
+  stableSymbol: string,
+): { key: Exclude<Step, "idle" | "done" | "error">; title: string; desc: string }[] {
+  return [
+    {
+      key: "creating",
+      title: t("create.sig1Title"),
+      desc: t("create.sig1Desc"),
+    },
+    {
+      key: "batching",
+      title: t("create.sigSafeBatchTitle"),
+      desc: t("create.sigSafeBatchDesc", { symbol: stableSymbol }),
+    },
+  ];
+}
+
 export default function CreateVault() {
   const router = useRouter();
-  const { address, isConnected, chainId: walletChainId } = useAccount();
+  const { address, isConnected, chainId: walletChainId, connector } = useAccount();
   const { selectedChain: chain, setSelectedChainId } = useSelectedChain();
   const availableChains = useAvailableChains();
   const publicClient = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { switchChainAsync } = useSwitchChain();
   const { t } = useTranslation();
+
+  // @reown/appkit-adapter-wagmi auto-adds wagmi's `safe` connector whenever
+  // it detects it's running inside a Safe{Wallet} iframe (app.safe.global) —
+  // see manifest.json's own comment in next.config.ts. That's what makes
+  // this connector id available to check here at all.
+  const isSafeApp = connector?.id === "safe";
+  const safeSdk = useMemo(() => (isSafeApp ? new SafeAppsSDK() : null), [isSafeApp]);
+  const [safeConfirmations, setSafeConfirmations] = useState<{ submitted: number; required: number } | null>(null);
+
   const stepLabel = stepLabelFor(t, chain.stableSymbol);
-  const SIGNATURE_STEPS = signatureStepsFor(t, chain.stableSymbol);
+  const SIGNATURE_STEPS = isSafeApp
+    ? safeSignatureStepsFor(t, chain.stableSymbol)
+    : signatureStepsFor(t, chain.stableSymbol);
   const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
+
+  // Resumability: under a Safe with threshold > 1, createVault() only ever
+  // gets PROPOSED the moment you sign it — it doesn't execute until the
+  // Safe's other owners confirm it too, which can happen long after this tab
+  // closes. Without this check, coming back and clicking "Crear vault" again
+  // would create a SECOND vault (and pay the creation fee again), orphaning
+  // the first one mid-setup. Only the most recent vault matters here — an
+  // older abandoned one, if any, is harmless empty dust.
+  const { data: myVaultsData } = useReadContract({
+    address: chain.factoryAddress || undefined,
+    abi: chain.factoryAbi,
+    functionName: "getVaultsByOwner",
+    args: address ? [address] : undefined,
+    chainId: chain.id,
+    query: { enabled: Boolean(isSafeApp && address && chain.factoryAddress) },
+  });
+  const lastOwnedVault = ((myVaultsData as `0x${string}`[] | undefined) ?? []).at(-1);
+  const { data: lastVaultStatusData } = useReadContracts({
+    contracts: lastOwnedVault
+      ? [
+          { address: lastOwnedVault, abi: chain.vaultAbi, functionName: "targetConfigured", chainId: chain.id },
+          { address: lastOwnedVault, abi: chain.vaultAbi, functionName: "closed", chainId: chain.id },
+        ]
+      : [],
+    query: { enabled: Boolean(lastOwnedVault) },
+  });
+  const [lastVaultConfigured, lastVaultClosed] = lastVaultStatusData?.map((d) => d.result) ?? [];
+  const resumableVaultAddress =
+    lastOwnedVault && lastVaultConfigured === false && lastVaultClosed === false ? lastOwnedVault : undefined;
 
   // Which fee-tier pool the NEW position itself will live in — independent
   // of pickDeepestSwapFee (server-side, keeper-only: picks where SWAPS
@@ -200,10 +305,11 @@ export default function CreateVault() {
   const insufficientBalance =
     Boolean(investAmount) && stableBalanceUsd !== undefined && totalUsdt > stableBalanceUsd;
 
-  async function handleCreate() {
+  async function handleCreate(resumeVaultAddress?: `0x${string}`) {
     if (!address || !publicClient || currentPrice === undefined || tickSpacing === undefined) return;
     setError(null);
     setFailedAt(null);
+    setSafeConfirmations(null);
     let currentPhase: Step = "creating"; // tracked outside React state — setStep() batches, so `step` itself isn't reliable to read back mid-function
 
     if (!investAmount || !minPrice || !maxPrice || !maxRebalances || !reinjectionAmount || !periodicHours) {
@@ -267,30 +373,45 @@ export default function CreateVault() {
     }
 
     try {
-      currentPhase = "creating";
-      setStep(currentPhase);
-      const createHash = await writeContractAsync({
-        address: chain.factoryAddress || "0x0000000000000000000000000000000000000000",
-        abi: chain.factoryAbi,
-        functionName: "createVault",
-        args: [selectedPool, chain.stableToken, chain.volatileToken, selectedFee],
-        chainId: chain.id,
-      });
-      const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createHash });
+      let vaultAddress: `0x${string}` | undefined = resumeVaultAddress;
 
-      let vaultAddress: `0x${string}` | undefined;
-      for (const log of createReceipt.logs) {
-        try {
-          const decoded = decodeEventLog({ abi: chain.factoryAbi, data: log.data, topics: log.topics });
-          if (decoded.eventName === "VaultCreated") {
-            vaultAddress = (decoded.args as unknown as { vault: `0x${string}` }).vault;
-            break;
+      if (!vaultAddress) {
+        currentPhase = "creating";
+        setStep(currentPhase);
+        const createHash = await writeContractAsync({
+          address: chain.factoryAddress || "0x0000000000000000000000000000000000000000",
+          abi: chain.factoryAbi,
+          functionName: "createVault",
+          args: [selectedPool, chain.stableToken, chain.volatileToken, selectedFee],
+          chainId: chain.id,
+        });
+
+        // Under a Safe App, `createHash` is really a safeTxHash (a proposal,
+        // not a mined tx yet) — see waitForSafeExecution's docstring.
+        const createTxHash =
+          isSafeApp && safeSdk
+            ? await waitForSafeExecution(safeSdk, createHash, (d) => setSafeConfirmations(confirmationsFrom(d)), {
+                cancelled: t("create.safeTxCancelled"),
+                failed: t("create.safeTxFailed"),
+              })
+            : createHash;
+        setSafeConfirmations(null);
+
+        const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createTxHash });
+
+        for (const log of createReceipt.logs) {
+          try {
+            const decoded = decodeEventLog({ abi: chain.factoryAbi, data: log.data, topics: log.topics });
+            if (decoded.eventName === "VaultCreated") {
+              vaultAddress = (decoded.args as unknown as { vault: `0x${string}` }).vault;
+              break;
+            }
+          } catch {
+            // not the event we're looking for, ignore
           }
-        } catch {
-          // not the event we're looking for, ignore
         }
+        if (!vaultAddress) throw new Error("VaultCreated event not found in receipt");
       }
-      if (!vaultAddress) throw new Error("VaultCreated event not found in receipt");
 
       const lowerPrice = Number(minPrice);
       const upperPrice = Number(maxPrice);
@@ -311,94 +432,161 @@ export default function CreateVault() {
       const gasReserve = chain.supportsGasReserve ? parseUnits(gasReserveAmount || "0", 6) : 0n;
       const total = investable + reserve + gasReserve;
 
-      currentPhase = "approving";
-      setStep(currentPhase);
-      // Approve total + creationFeeUsdt — deposit() pulls the one-time creation
-      // fee on top of investable+reserve on a vault's first deposit (see
-      // RangeVault.sol), so the approval has to cover it too or that call reverts.
-      const approveHash = await writeContractAsync({
-        address: chain.stableToken,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [vaultAddress, total + creationFeeUsdt],
-        chainId: chain.id,
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
-
       // Blank = platform default, same values this form used to hardcode —
       // see the field hints for what each one does.
       const recenterMarginBps = recenterMarginPct ? BigInt(Math.round(Number(recenterMarginPct) * 100)) : 500n;
       const exitTopCeilingMarginBps = exitTopCeilingMarginPct
         ? BigInt(Math.round(Number(exitTopCeilingMarginPct) * 100))
         : 300n;
-
-      currentPhase = "configuring";
-      setStep(currentPhase);
-      const configureHash = await writeContractAsync({
-        address: vaultAddress,
-        abi: chain.vaultAbi,
-        functionName: "configureTarget",
-        args: [
-          parseUnits(investAmount, 6),
-          targetTickLower,
-          targetTickUpper,
-          BigInt(maxRebalances),
-          reserve,
-          BigInt(Number(periodicHours) * 3600),
-          recenterMarginBps,
-          exitTopCeilingMarginBps,
-        ],
-        chainId: chain.id,
-      });
-      await publicClient.waitForTransactionReceipt({ hash: configureHash });
-
-      // setRiskParams is mandatory, not optional: the vault initializes with
-      // maxRangeDeviationBps = 0, and RangeVault._checkRangeNearMarket rejects
-      // any range whose center isn't exactly the current tick under that value
-      // — so without this call the agent's initPosition() would revert with
-      // RangeTooFarFromMarket almost every time.
-      //
-      // A half-width-of-initial-range heuristic used to live here, but real
-      // production data (2026-07-15) showed it's not a reliable estimate: the
-      // periodic-rebalance path pins the old floor and lets uni-lab's real RC
-      // calculation pick the ceiling, and that real (paid, on-chain-confirmed)
-      // answer landed the range's center ~260-290 ticks from market on 3
-      // vaults whose half-width was only 135-150 — genuinely blocked, not a
-      // keeper-side estimation bug (see rebalancer.ts's own fix the same day,
-      // which stopped trusting a local guess and started using uni-lab's real
-      // range — the real range still didn't fit). The three values below now
-      // come from the form (blank = the same generous defaults this used to
-      // hardcode) instead of being fixed for every vault — see field hints.
-      currentPhase = "risk";
-      setStep(currentPhase);
       const maxSlippageBps = maxSlippagePct ? BigInt(Math.round(Number(maxSlippagePct) * 100)) : 30n;
       const minRebalanceIntervalSec = minRebalanceCooldownHours
         ? BigInt(Math.round(Number(minRebalanceCooldownHours) * 3600))
         : 0n;
       const maxRangeDeviationBps = maxRangeDeviationTicks ? BigInt(maxRangeDeviationTicks) : 5_000n;
-      const riskHash = await writeContractAsync({
-        address: vaultAddress,
-        abi: chain.vaultAbi,
-        functionName: "setRiskParams",
-        args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
-        chainId: chain.id,
-      });
-      await publicClient.waitForTransactionReceipt({ hash: riskHash });
+      const depositArgs: readonly bigint[] = chain.supportsGasReserve
+        ? [reserve, investable, gasReserve]
+        : [reserve, investable];
 
-      currentPhase = "depositing";
-      setStep(currentPhase);
-      const depositHash = await writeContractAsync({
-        address: vaultAddress,
-        abi: chain.vaultAbi,
-        functionName: "deposit",
-        // RangeVaultArb's deposit() takes a 3rd gasReserveAmount arg that the
-        // original RangeVault.sol doesn't have — chain.vaultAbi already
-        // reflects whichever contract this chain actually runs (see
-        // chains.ts), so the arg count has to match it exactly.
-        args: chain.supportsGasReserve ? [reserve, investable, gasReserve] : [reserve, investable],
-        chainId: chain.id,
-      });
-      await publicClient.waitForTransactionReceipt({ hash: depositHash });
+      if (isSafeApp && safeSdk) {
+        // Safe path: approve + configureTarget + setRiskParams + deposit
+        // collapse into ONE Safe transaction instead of 4 separate signature
+        // rounds — createVault can't join this batch too since its calldata
+        // is precomputed off-chain and can't reference the vault address a
+        // PRIOR call in the same batch would return (see waitForSafeExecution).
+        currentPhase = "batching";
+        setStep(currentPhase);
+
+        const txs = [
+          {
+            to: chain.stableToken,
+            value: "0",
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [vaultAddress, total + creationFeeUsdt],
+            }),
+          },
+          {
+            to: vaultAddress,
+            value: "0",
+            data: encodeFunctionData({
+              abi: chain.vaultAbi,
+              functionName: "configureTarget",
+              args: [
+                parseUnits(investAmount, 6),
+                targetTickLower,
+                targetTickUpper,
+                BigInt(maxRebalances),
+                reserve,
+                BigInt(Number(periodicHours) * 3600),
+                recenterMarginBps,
+                exitTopCeilingMarginBps,
+              ],
+            }),
+          },
+          {
+            to: vaultAddress,
+            value: "0",
+            data: encodeFunctionData({
+              abi: chain.vaultAbi,
+              functionName: "setRiskParams",
+              args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
+            }),
+          },
+          {
+            to: vaultAddress,
+            value: "0",
+            data: encodeFunctionData({ abi: chain.vaultAbi, functionName: "deposit", args: depositArgs }),
+          },
+        ];
+
+        const { safeTxHash } = await safeSdk.txs.send({ txs });
+        const realHash = await waitForSafeExecution(
+          safeSdk,
+          safeTxHash as `0x${string}`,
+          (d) => setSafeConfirmations(confirmationsFrom(d)),
+          { cancelled: t("create.safeTxCancelled"), failed: t("create.safeTxFailed") },
+        );
+        setSafeConfirmations(null);
+        await publicClient.waitForTransactionReceipt({ hash: realHash });
+      } else {
+        currentPhase = "approving";
+        setStep(currentPhase);
+        // Approve total + creationFeeUsdt — deposit() pulls the one-time creation
+        // fee on top of investable+reserve on a vault's first deposit (see
+        // RangeVault.sol), so the approval has to cover it too or that call reverts.
+        const approveHash = await writeContractAsync({
+          address: chain.stableToken,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [vaultAddress, total + creationFeeUsdt],
+          chainId: chain.id,
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+
+        currentPhase = "configuring";
+        setStep(currentPhase);
+        const configureHash = await writeContractAsync({
+          address: vaultAddress,
+          abi: chain.vaultAbi,
+          functionName: "configureTarget",
+          args: [
+            parseUnits(investAmount, 6),
+            targetTickLower,
+            targetTickUpper,
+            BigInt(maxRebalances),
+            reserve,
+            BigInt(Number(periodicHours) * 3600),
+            recenterMarginBps,
+            exitTopCeilingMarginBps,
+          ],
+          chainId: chain.id,
+        });
+        await publicClient.waitForTransactionReceipt({ hash: configureHash });
+
+        // setRiskParams is mandatory, not optional: the vault initializes with
+        // maxRangeDeviationBps = 0, and RangeVault._checkRangeNearMarket rejects
+        // any range whose center isn't exactly the current tick under that value
+        // — so without this call the agent's initPosition() would revert with
+        // RangeTooFarFromMarket almost every time.
+        //
+        // A half-width-of-initial-range heuristic used to live here, but real
+        // production data (2026-07-15) showed it's not a reliable estimate: the
+        // periodic-rebalance path pins the old floor and lets uni-lab's real RC
+        // calculation pick the ceiling, and that real (paid, on-chain-confirmed)
+        // answer landed the range's center ~260-290 ticks from market on 3
+        // vaults whose half-width was only 135-150 — genuinely blocked, not a
+        // keeper-side estimation bug (see rebalancer.ts's own fix the same day,
+        // which stopped trusting a local guess and started using uni-lab's real
+        // range — the real range still didn't fit). The three values below now
+        // come from the form (blank = the same generous defaults this used to
+        // hardcode) instead of being fixed for every vault — see field hints.
+        currentPhase = "risk";
+        setStep(currentPhase);
+        const riskHash = await writeContractAsync({
+          address: vaultAddress,
+          abi: chain.vaultAbi,
+          functionName: "setRiskParams",
+          args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
+          chainId: chain.id,
+        });
+        await publicClient.waitForTransactionReceipt({ hash: riskHash });
+
+        currentPhase = "depositing";
+        setStep(currentPhase);
+        const depositHash = await writeContractAsync({
+          address: vaultAddress,
+          abi: chain.vaultAbi,
+          functionName: "deposit",
+          // RangeVaultArb's deposit() takes a 3rd gasReserveAmount arg that the
+          // original RangeVault.sol doesn't have — chain.vaultAbi already
+          // reflects whichever contract this chain actually runs (see
+          // chains.ts), so the arg count has to match it exactly.
+          args: depositArgs,
+          chainId: chain.id,
+        });
+        await publicClient.waitForTransactionReceipt({ hash: depositHash });
+      }
 
       setStep("done");
       router.push(`/vault/${vaultAddress}`);
@@ -407,6 +595,7 @@ export default function CreateVault() {
       setError(err instanceof Error ? err.message : String(err));
       setFailedAt(currentPhase);
       setStep("error");
+      setSafeConfirmations(null);
     }
   }
 
@@ -563,6 +752,22 @@ export default function CreateVault() {
           </div>
         )}
 
+        {resumableVaultAddress && (
+          <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5">
+            <p className="text-sm text-white/90">
+              {t("create.resumeBannerText", { address: resumableVaultAddress })}
+            </p>
+            <button
+              type="button"
+              onClick={() => handleCreate(resumableVaultAddress)}
+              disabled={busy}
+              className="btn-secondary mt-3 !px-4 !py-2"
+            >
+              {t("create.resumeBannerButton")}
+            </button>
+          </div>
+        )}
+
         {isConnected ? (
           <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_360px]">
             {/* Form */}
@@ -694,7 +899,7 @@ export default function CreateVault() {
               </div>
 
               <button
-                onClick={handleCreate}
+                onClick={() => handleCreate()}
                 disabled={busy || !chain.factoryAddress || insufficientBalance}
                 className="btn-primary mt-8 w-full"
               >
@@ -712,7 +917,15 @@ export default function CreateVault() {
                   })}
                 </p>
               )}
-              {busy && (
+              {busy && isSafeApp && safeConfirmations && (
+                <p className="mt-3 text-center text-sm text-accent">
+                  {t("create.safeWaitingMsg", {
+                    submitted: String(safeConfirmations.submitted),
+                    required: String(safeConfirmations.required),
+                  })}
+                </p>
+              )}
+              {busy && !(isSafeApp && safeConfirmations) && (
                 <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
                   {t("create.signEach")}
                 </p>

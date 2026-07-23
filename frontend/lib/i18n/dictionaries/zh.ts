@@ -119,6 +119,7 @@ const zh: Dictionary = {
     stepConfiguring: "3/5 · 正在配置目标…",
     stepRisk: "4/5 · 正在设置风险限制…",
     stepDepositing: "5/5 · 正在存款…",
+    stepBatching: "2/2 · 正在打包并提交给 Safe…",
     stepDone: "完成 ✓",
     stepError: "重试",
 
@@ -132,6 +133,14 @@ const zh: Dictionary = {
     sig4Desc: "设置最大滑点，以及智能体提议的区间可偏离市场价格的幅度。",
     sig5Title: "存款",
     sig5Desc: "将实际的 {{symbol}} 转入金库，并按你上面设置的比例分配至各储备。",
+    sigSafeBatchTitle: "配置、设置风险限制并存款（打包）",
+    sigSafeBatchDesc: "将授权 {{symbol}}、配置目标、设置风险限制和存款合并为一笔 Safe 交易。",
+
+    safeTxCancelled: "该交易在 Safe 中被拒绝或替换。",
+    safeTxFailed: "该交易在 Safe 中执行失败。",
+    safeWaitingMsg: "已提交给你的 Safe——签名进度：{{submitted}}/{{required}}。请前往 Safe 的 Queue 标签页让其他所有者签名；执行后本页会自动继续。",
+    resumeBannerText: "你用这个 Safe 创建了一个尚未配置的金库（{{address}}）。可以继续配置它，而不是新建一个，这样能避免再次支付创建费。",
+    resumeBannerButton: "继续配置该金库",
 
     errMissingFields: "请填写所有字段——没有默认值。",
     capAlertTitle: "超出存款上限",
