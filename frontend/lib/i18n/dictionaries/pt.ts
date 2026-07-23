@@ -369,6 +369,7 @@ const pt: Dictionary = {
       "O último rebalanceamento não pôde ser concluído — não foi possível consultar a API de preços (uni-lab).",
     loading: "Carregando…",
 
+    statAge: "Idade do vault",
     statInvestable: "Capital investível",
     idleWethHint: "+ {{amount}} {{symbol}} solto{{usdSuffix}}",
     statReserve: "Reserva de reinjeção",

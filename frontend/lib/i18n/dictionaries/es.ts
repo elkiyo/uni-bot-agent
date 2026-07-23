@@ -367,6 +367,7 @@ const es = {
       "El último rebalanceo no se pudo completar — no se pudo consultar la API de precios (uni-lab).",
     loading: "Cargando…",
 
+    statAge: "Antigüedad del vault",
     statInvestable: "Capital invertible",
     idleWethHint: "+ {{amount}} {{symbol}} suelto{{usdSuffix}}",
     statReserve: "Reserva reinyección",

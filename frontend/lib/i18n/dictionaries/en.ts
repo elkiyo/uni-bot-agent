@@ -369,6 +369,7 @@ const en: Dictionary = {
       "The last rebalance couldn't be completed — the price API (uni-lab) couldn't be reached.",
     loading: "Loading…",
 
+    statAge: "Vault age",
     statInvestable: "Investable capital",
     idleWethHint: "+ {{amount}} {{symbol}} idle{{usdSuffix}}",
     statReserve: "Reinjection reserve",

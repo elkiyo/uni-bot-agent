@@ -369,6 +369,7 @@ const zh: Dictionary = {
       "上一次再平衡未能完成——无法访问价格 API（uni-lab）。",
     loading: "加载中…",
 
+    statAge: "金库存续时间",
     statInvestable: "可投资本金",
     idleWethHint: "+ 闲置 {{amount}} {{symbol}}{{usdSuffix}}",
     statReserve: "再注入储备金",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   useAccount,
@@ -23,6 +23,7 @@ import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/pr
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
+import { useVaultCreatedAt } from "@/lib/useVaultCreatedAt";
 import { useSelectedChain } from "@/lib/useSelectedChain";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
@@ -157,6 +158,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
   const { data: feesSummary } = useVaultFeesSummary(address, chain);
   const { data: depositSummary } = useVaultDepositSummary(address, chain);
+  const { data: createdAt } = useVaultCreatedAt(address, chain);
   const { data: tickSpacing } = useReadContract({
     address: poolAddress,
     abi: uniswapV3PoolAbi,
@@ -546,6 +548,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           <>
             {/* Stats */}
             <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <VaultAgeStat createdAt={createdAt} />
               <Stat
                 label={t("vaultDetail.statInvestable")}
                 value={`${formatUnits((investableUsdt as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
@@ -1015,6 +1018,33 @@ function MiniField({
       />
     </label>
   );
+}
+
+// Live-ticking "time since creation" — same setInterval-driven pattern as
+// RebalanceCountdown.tsx, just counting up from a fixed point instead of
+// down to one. createdAt is undefined while useVaultCreatedAt's scan is
+// still in flight, null if the VaultCreated event genuinely wasn't found.
+function VaultAgeStat({ createdAt }: { createdAt: number | null | undefined }) {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const value = createdAt ? formatAge(Math.max(0, now - createdAt)) : createdAt === null ? "—" : "…";
+
+  return <Stat label={t("vaultDetail.statAge")} value={value} />;
+}
+
+function formatAge(totalSeconds: number): string {
+  const d = Math.floor(totalSeconds / 86400);
+  const h = Math.floor((totalSeconds % 86400) / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 function Stat({
