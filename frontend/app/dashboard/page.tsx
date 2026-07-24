@@ -794,7 +794,12 @@ function VaultHistoryTable({
             </thead>
             <tbody>
               {filteredRows.map((row) => (
-                <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-white/[0.02]">
+                <tr
+                  key={`${row.chain.id}-${row.address}`}
+                  className={`border-b border-hairline/60 last:border-0 hover:bg-white/[0.02] ${
+                    row.status === "no_position" ? "opacity-45" : ""
+                  }`}
+                >
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt, locale)}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] tabular-nums text-muted">
                     {formatAge(Math.max(0, now - row.createdAt))}
