@@ -119,10 +119,20 @@ export default function DashboardPage() {
         </div>
 
         <VaultHistoryTable
-          rows={metrics.vaultRows}
+          rows={metrics.vaultRows.filter((r) => r.status === "active")}
           isLoading={metrics.vaultRowsLoading}
           snapshotLoading={metrics.snapshotLoading}
           eventsLoading={metrics.eventsLoading}
+        />
+
+        <VaultHistoryTable
+          rows={metrics.vaultRows.filter((r) => r.status === "closed")}
+          isLoading={metrics.vaultRowsLoading}
+          snapshotLoading={metrics.snapshotLoading}
+          eventsLoading={metrics.eventsLoading}
+          title={t("dashboard.closedHistoryTitle")}
+          subtitle={t("dashboard.closedHistorySubtitle")}
+          emptyMessage={t("dashboard.noClosedVaultsYet")}
         />
 
         <p className="mt-10 max-w-2xl font-mono text-[11px] leading-relaxed text-faint">{t("dashboard.footnote")}</p>
@@ -670,11 +680,17 @@ function VaultHistoryTable({
   isLoading,
   snapshotLoading,
   eventsLoading,
+  title,
+  subtitle,
+  emptyMessage,
 }: {
   rows: VaultRow[];
   isLoading: boolean;
   snapshotLoading: boolean;
   eventsLoading: boolean;
+  title?: string;
+  subtitle?: string;
+  emptyMessage?: string;
 }) {
   const { setSelectedChainId } = useSelectedChain();
   const { t, locale } = useTranslation();
@@ -731,14 +747,16 @@ function VaultHistoryTable({
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-        {t("dashboard.historyTitle")}
+        {title ?? t("dashboard.historyTitle")}
       </h2>
-      <p className="mt-1 text-sm text-muted">{t("dashboard.historySubtitle")}</p>
+      <p className="mt-1 text-sm text-muted">{subtitle ?? t("dashboard.historySubtitle")}</p>
 
       {isLoading && rows.length === 0 && (
         <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("dashboard.scanning")}</p>
       )}
-      {!isLoading && rows.length === 0 && <p className="mt-8 text-sm text-muted">{t("dashboard.noVaultsYet")}</p>}
+      {!isLoading && rows.length === 0 && (
+        <p className="mt-8 text-sm text-muted">{emptyMessage ?? t("dashboard.noVaultsYet")}</p>
+      )}
       {rows.length > 0 && filteredRows.length === 0 && (
         <p className="mt-8 text-sm text-muted">{t("dashboard.noneMatchFilters")}</p>
       )}

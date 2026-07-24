@@ -556,6 +556,9 @@ const pt: Dictionary = {
     historySubtitle:
       "Cada vault criado no protocolo, do mais recente ao mais antigo — lido direto do VaultCreated. Filtre direto pelo cabeçalho de Chain, Pool, Versão ou Status.",
     noVaultsYet: "Ainda não foi criado nenhum vault.",
+    closedHistoryTitle: "Vaults fechados",
+    closedHistorySubtitle: "Vaults que já foram fechados — separados do histórico ativo para não misturar as informações.",
+    noClosedVaultsYet: "Ainda não há vaults fechados.",
     noneMatchFilters: "Nenhum vault corresponde a esses filtros.",
 
     footnote:
