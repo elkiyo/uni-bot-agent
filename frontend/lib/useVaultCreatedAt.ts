@@ -1,38 +1,29 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { usePublicClient } from "wagmi";
-import { parseEventLogs } from "viem";
-import { getLogsChunked } from "./getLogsChunked";
 import type { ChainDef } from "./chains";
+import type { VaultCreationRecord } from "./dashboard/vaultDirectory";
 
 /**
- * The vault's own creation timestamp, read off the factory's VaultCreated
- * event for this specific address — same chunked-scan-then-filter shape as
- * useVaultCreationTimes.ts's per-owner version (used on /vaults), just
- * filtered to one vault instead of every vault a given owner has created.
+ * The vault's own creation timestamp — read off the factory's VaultCreated
+ * event for this specific address. Used to run its own full-history
+ * eth_getLogs scan straight from the browser; now reads the indexer-cached
+ * directory (see lib/dashboard/indexer.ts) the rest of the Vault/Dashboard
+ * pages already use, and just looks up this one address in it.
  */
 export function useVaultCreatedAt(address: `0x${string}` | undefined, chain: ChainDef) {
-  const publicClient = usePublicClient({ chainId: chain.id });
-
   return useQuery({
     queryKey: ["vault-created-at", chain.id, address],
-    enabled: Boolean(publicClient && address && chain.factoryAddress),
+    enabled: Boolean(address && chain.factoryAddress),
     staleTime: Infinity, // a vault's creation time never changes
     queryFn: async () => {
-      if (!publicClient || !address || !chain.factoryAddress) return null;
-      const rawLogs = await getLogsChunked(publicClient, {
-        address: chain.factoryAddress,
-        fromBlock: chain.factoryDeployBlock,
-        toBlock: "latest",
-      });
+      if (!address) return null;
+      const res = await fetch(`/api/dashboard/vaults?chain=${chain.id}`);
+      if (!res.ok) throw new Error(`dashboard vaults fetch failed: ${res.status}`);
+      const rows = (await res.json()) as VaultCreationRecord[];
       const addressLower = address.toLowerCase();
-      const [log] = parseEventLogs({ abi: chain.factoryAbi, logs: rawLogs, eventName: "VaultCreated" }).filter(
-        (l) => (l.args as { vault?: string }).vault?.toLowerCase() === addressLower,
-      );
-      if (!log || log.blockNumber === null) return null;
-      const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
-      return Number(block.timestamp);
+      const record = rows.find((r) => r.address.toLowerCase() === addressLower);
+      return record?.createdAt ?? null;
     },
   });
 }

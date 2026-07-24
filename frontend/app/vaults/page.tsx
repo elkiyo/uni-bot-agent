@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { useQueries } from "@tanstack/react-query";
-import { formatUnits, type PublicClient } from "viem";
+import { formatUnits } from "viem";
 import { Header } from "../components/Header";
 import { ChainIcon } from "../components/ChainIcon";
 import { uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
@@ -12,9 +12,7 @@ import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
-import { fetchVaultCreationTimes, type ConfiguredChainId } from "@/lib/useVaultCreationTimes";
-import { getPublicClient } from "wagmi/actions";
-import { wagmiConfig } from "@/lib/wagmi";
+import { fetchVaultCreationTimes } from "@/lib/useVaultCreationTimes";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
 import type { ChainDef } from "@/lib/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
@@ -103,20 +101,15 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
     query: { enabled: vaultRefs.length > 0, refetchInterval: 15_000 },
   });
 
-  // Stage 3: creation timestamps — one chunked event scan per chain (dynamic
-  // list of queries, so useQueries rather than one useQuery per chain).
+  // Stage 3: creation timestamps — one indexer-cached directory fetch per
+  // chain (dynamic list of queries, so useQueries rather than one useQuery
+  // per chain).
   const creationTimesResults = useQueries({
     queries: chains.map((chain) => ({
       queryKey: ["vault-creation-times", chain.id, owner],
       enabled: Boolean(chain.factoryAddress),
       staleTime: 5 * 60_000,
-      queryFn: async () => {
-        const publicClient = getPublicClient(wagmiConfig, { chainId: chain.id as ConfiguredChainId }) as
-          | PublicClient
-          | undefined;
-        if (!publicClient) return {};
-        return fetchVaultCreationTimes(publicClient, chain, owner);
-      },
+      queryFn: () => fetchVaultCreationTimes(chain, owner),
     })),
   });
   const creationTimesLoading = creationTimesResults.some((r) => r.isLoading);
