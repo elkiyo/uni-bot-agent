@@ -352,14 +352,14 @@ function RangeMeter({
 
   return (
     <div className="mt-4">
-      <div className="relative pt-6">
+      <div className="relative pt-10">
         {pct !== undefined && (
           <div
             className="absolute top-0 flex -translate-x-1/2 flex-col items-center transition-[left] duration-700 ease-out"
             style={{ left: `${pct}%` }}
           >
             <span
-              className="whitespace-nowrap rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums text-background"
+              className="whitespace-nowrap rounded-md px-2.5 py-1 font-mono text-base font-bold tabular-nums text-background"
               style={{ backgroundColor: statusColor }}
             >
               ${current!.toFixed(2)}
