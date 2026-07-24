@@ -518,6 +518,7 @@ const zh: Dictionary = {
     rebalancesTitle: "再平衡次数",
     rebalancesSubtitlePre: "再平衡次数，由",
     rebalancesSubtitleHighlight: "智能体执行",
+    rebalancesTotal: "全局总数",
     tooltipRebalances: "再平衡次数",
 
     vaultsByStatusTitle: "按状态划分的金库",

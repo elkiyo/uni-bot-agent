@@ -521,6 +521,7 @@ const pt: Dictionary = {
     rebalancesTitle: "Rebalanceamentos",
     rebalancesSubtitlePre: "Quantidade de rebalanceamentos executados pelo ",
     rebalancesSubtitleHighlight: "agente",
+    rebalancesTotal: "Total global",
     tooltipRebalances: "Rebalanceamentos",
 
     vaultsByStatusTitle: "Vaults por status",

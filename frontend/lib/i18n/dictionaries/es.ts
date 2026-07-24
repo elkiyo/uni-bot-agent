@@ -519,6 +519,7 @@ const es = {
     rebalancesTitle: "Rebalanceos",
     rebalancesSubtitlePre: "Cantidad de rebalanceos ejecutados por el ",
     rebalancesSubtitleHighlight: "agente",
+    rebalancesTotal: "Total global",
     tooltipRebalances: "Rebalanceos",
 
     vaultsByStatusTitle: "Vaults por estado",

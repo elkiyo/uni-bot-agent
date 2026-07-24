@@ -11,8 +11,6 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  AreaChart,
-  Area,
   Cell,
 } from "recharts";
 import { Header } from "../components/Header";
@@ -275,19 +273,23 @@ function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocol
   );
 }
 
-function ChartShell({ title, subtitle, isLoading, empty, children }: {
+function ChartShell({ title, subtitle, isLoading, empty, headerExtra, children }: {
   title: string;
   subtitle: React.ReactNode;
   isLoading: boolean;
   empty: boolean;
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
   return (
     <div className="glass rounded-2xl p-6 sm:p-8">
-      <h3 className="text-base font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-        {title}
-      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-base font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          {title}
+        </h3>
+        {headerExtra}
+      </div>
       <p className="mt-1 text-sm text-muted">{subtitle}</p>
       {isLoading && (
         <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("dashboard.scanning")}</p>
@@ -428,18 +430,29 @@ function RebalanceSeriesChart({
       }
       isLoading={isLoading}
       empty={data.length === 0}
+      headerExtra={
+        <span className="rounded-full bg-accent/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-accent">
+          {t("dashboard.rebalancesTotal")}: {events.length}
+        </span>
+      }
     >
       <ResponsiveContainer minWidth={200} minHeight={200}>
-        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
           <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
           <YAxis stroke="#71717a" fontSize={11} tickLine={false} allowDecimals={false} />
           <Tooltip
             contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
             formatter={(value: unknown) => [Number(value), t("dashboard.tooltipRebalances")]}
+            cursor={false}
           />
-          <Area type="monotone" dataKey="count" stroke="#fcff52" fill="#fcff52" fillOpacity={0.25} />
-        </AreaChart>
+          <Bar
+            dataKey="count"
+            fill="#fcff52"
+            radius={[6, 6, 0, 0]}
+            activeBar={{ fill: "#fff7a8", stroke: "#ffffff", strokeWidth: 2 }}
+          />
+        </BarChart>
       </ResponsiveContainer>
     </ChartShell>
   );
