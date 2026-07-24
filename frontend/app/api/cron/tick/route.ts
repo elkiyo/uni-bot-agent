@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runTick } from "../../../../lib/keeper/tick";
+import { runIndexer } from "../../../../lib/dashboard/indexer";
 
 export const runtime = "nodejs";
 // Hobby plan default+max is 300s with Fluid compute. A tick now processes
@@ -26,6 +27,20 @@ export async function POST(request: Request) {
 
   try {
     const summary = await runTick();
+
+    // Refreshes the dashboard read-cache (see lib/dashboard/indexer.ts) —
+    // piggybacks on this same 5-minute trigger instead of needing its own
+    // cron/ops setup. Awaited (not fire-and-forget) because Vercel freezes
+    // a serverless function's execution once its response is sent, so
+    // anything after `return` here would not reliably run. Its own
+    // try/catch means an indexer bug can never fail the actual trading
+    // tick above.
+    try {
+      await runIndexer();
+    } catch (err) {
+      console.error("indexer failed", err);
+    }
+
     return NextResponse.json(summary);
   } catch (err) {
     console.error("tick failed", err);

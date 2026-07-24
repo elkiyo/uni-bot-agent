@@ -1,6 +1,6 @@
 import "server-only";
 import { formatUnits, parseEventLogs, type Log, type PublicClient } from "viem";
-import { fetchAllVaultCreations } from "../dashboard/vaultDirectory";
+import { getIndexedVaults } from "../dashboard/indexedVaultsRepo";
 import { fetchNewLogs } from "../incrementalLogScan";
 import type { ChainDef } from "../chains";
 
@@ -39,7 +39,7 @@ export async function fetchReferredVolume(
   chain: ChainDef,
   referred: `0x${string}`,
 ): Promise<ReferredVolume> {
-  const directory = await fetchAllVaultCreations(publicClient, chain);
+  const directory = await getIndexedVaults(chain.id);
   const ownVaults = directory.filter((v) => v.owner.toLowerCase() === referred.toLowerCase());
 
   if (ownVaults.length === 0) {

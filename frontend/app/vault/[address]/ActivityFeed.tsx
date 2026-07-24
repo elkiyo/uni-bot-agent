@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
 import { useVaultEventLogs } from "@/lib/useVaultEventLogs";
 import type { ChainDef } from "@/lib/chains";
@@ -25,41 +24,30 @@ interface FeedItem {
  * keeper acting in real time (10s polling) during a demo.
  */
 export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
-  const publicClient = usePublicClient({ chainId: chain.id });
   const { t, locale } = useTranslation();
   const { data: eventLogs } = useVaultEventLogs(address, chain);
 
   const { data: items } = useQuery({
     queryKey: ["vault-activity", chain.id, address, locale, eventLogs?.length],
-    enabled: Boolean(publicClient && eventLogs),
-    queryFn: async (): Promise<FeedItem[]> => {
-      if (!publicClient || !eventLogs) return [];
-      const parsed = eventLogs;
+    enabled: Boolean(eventLogs),
+    queryFn: (): FeedItem[] => {
+      if (!eventLogs) return [];
 
       const feed: FeedItem[] = [];
-      for (const log of parsed) {
-        const item = describe(t, log.eventName, log.args as Record<string, unknown>, chain);
+      for (const log of eventLogs) {
+        const item = describe(t, log.eventName, log.args, chain);
         if (!item) continue;
         feed.push({
-          txHash: log.transactionHash ?? "",
-          blockNumber: log.blockNumber ?? 0n,
+          txHash: log.transactionHash,
+          blockNumber: log.blockNumber,
+          timestamp: log.blockTimestamp,
           ...item,
         });
       }
 
-      // Timestamps: one getBlock per distinct block, newest 25 events only.
+      // Newest first, capped — the feed only ever shows a recent slice.
       feed.sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1));
-      const recent = feed.slice(0, 25);
-      const blocks = [...new Set(recent.map((f) => f.blockNumber))];
-      const stamps = new Map<bigint, number>();
-      await Promise.all(
-        blocks.map(async (bn) => {
-          const block = await publicClient.getBlock({ blockNumber: bn });
-          stamps.set(bn, Number(block.timestamp));
-        }),
-      );
-      for (const f of recent) f.timestamp = stamps.get(f.blockNumber);
-      return recent;
+      return feed.slice(0, 25);
     },
   });
 

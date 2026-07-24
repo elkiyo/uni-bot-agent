@@ -3,26 +3,13 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useReadContracts } from "wagmi";
-import { getPublicClient } from "wagmi/actions";
-import { parseEventLogs, type Log, type PublicClient } from "viem";
-import { wagmiConfig } from "../wagmi";
-import { deployedChains, type ChainDef } from "../chains";
 import { positionManagerAbi, uniswapV3PoolAbi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
 import { estimatePositionAmounts } from "../keeper/swapMath";
-import { fetchNewLogs } from "../incrementalLogScan";
+import { deployedChains, type ChainDef } from "../chains";
+import { deserializeArgs } from "../eventArgsCodec";
 import { fetchAllVaultCreations, type VaultCreationRecord } from "./vaultDirectory";
-import { fetchMintVolumeEvents, type MintVolumeEvent } from "./mintVolume";
-import type { ConfiguredChainId } from "../useVaultCreationTimes";
-
-function publicClientFor(chainId: number): PublicClient | undefined {
-  return getPublicClient(wagmiConfig, { chainId: chainId as ConfiguredChainId }) as PublicClient | undefined;
-}
-
-// Accumulated fee/rebalance event logs + their block timestamps, per chain —
-// module scope so it survives navigating away from and back to the
-// dashboard, same reasoning as vaultDirectory.ts/mintVolume.ts's caches.
-const eventScanCache = new Map<number, { logs: Log[]; blockTimestamps: Map<bigint, number> }>();
+import type { MintVolumeEvent } from "./mintVolume";
 
 interface VaultRef {
   chain: ChainDef;
@@ -97,8 +84,8 @@ export interface ProtocolMetrics {
    * (ledger reads, position/pool reads), not event-log scans. */
   snapshotLoading: boolean;
   /** Covers ownerFeesUsd/platformFeesUsd/gasReimbursedUsd/depositedTotalUsd/
-   * feeEvents/rebalanceEvents — these need a full historical event-log scan
-   * per chain, slower than the snapshot reads above. */
+   * feeEvents/rebalanceEvents/mintVolumeEvents — all derived from a single
+   * indexer-cached events fetch per chain (see lib/dashboard/indexer.ts). */
   eventsLoading: boolean;
   chains: ChainDef[];
   tvlUsd: number;
@@ -115,9 +102,11 @@ export interface ProtocolMetrics {
   feeEvents: FeeEvent[];
   rebalanceEvents: RebalanceEvent[];
   mintVolumeEvents: MintVolumeEvent[];
-  /** Reconstructing historical mint values (mintVolume.ts) is the single
-   * most expensive part of this hook — one historical position+pool read
-   * per past mint. Gate the Volumen card/chart on this specifically. */
+  /** Kept for callers that gate the Volumen card/chart on this specifically
+   * — now just mirrors eventsLoading, since mint volume comes from the same
+   * indexer-cached fetch as everything else in that group (the expensive
+   * historical position+pool read that used to make this the slowest part
+   * of the hook now happens once, server-side, at index time). */
   mintVolumeLoading: boolean;
   /** One row per vault ever created, newest first — feesUsd/yieldPct need
    * eventsLoading, valueUsd/priceRange need snapshotLoading, so this is only
@@ -132,26 +121,37 @@ export interface ProtocolMetrics {
 
 const EMPTY_COUNTS: VaultCounts = { total: 0, withPosition: 0, closed: 0 };
 
+interface DashboardEventRow {
+  address: string;
+  event_name: string;
+  args: Record<string, unknown>;
+  block_timestamp: string;
+  usd_value: string | number | null;
+}
+
 /**
  * Protocol-wide dashboard aggregator — every vault on every deployed chain,
  * no owner filter (unlike useVaultCreationTimes.ts/vaults/page.tsx's "my
- * vaults" scope). Same no-backend philosophy as ActivityFeed/VolumeChart:
- * everything is reconstructed from on-chain reads and event logs, batched
- * via multicall (useReadContracts) and multi-address getLogsChunkedMulti so
- * the cost stays roughly constant per CHAIN rather than growing per VAULT.
+ * vaults" scope). Vault directory and event history are read from the
+ * indexer's Postgres cache (lib/dashboard/indexer.ts, via
+ * app/api/dashboard/*) instead of scanning chain history directly from the
+ * browser — that RPC scan used to be the dominant cost on this page and
+ * only grew as the chain's own history grew. Live state (ledgers, open
+ * position value, current pool tick) is still read directly via multicall
+ * (useReadContracts) since it has to be fresh, not historical, and was
+ * already cheap.
  *
  * TVL is a live snapshot (ledgers + current position value at the pool's
  * current tick) — NOT a historical series, since that would need a position
- * valuation at every past block, multiplying RPC cost by however many
- * points are on the chart. Volumen/Comisiones/Rebalanceos ARE historical
- * series because they're event-driven (one block each), which is cheap.
+ * valuation at every past block. Volumen/Comisiones/Rebalanceos ARE
+ * historical series because they're event-driven (one row each, already
+ * resolved by the indexer).
  *
  * Fee/commission USD amounts (LpFeesPaidToOwner/FeesCollected/
  * PerformanceFeeCollected) are converted using each chain's CURRENT ETH
- * price, not the price at the time of that specific event — an accepted
- * approximation (avoids one historical pool read per fee event, which could
- * be a lot over a long history) that KeeperGasReimbursed/Volumen don't need
- * since those already report/derive their own point-in-time USD value.
+ * price (from the same live pool read TVL uses), not the price at the time
+ * of that specific event — an accepted approximation, unchanged from before
+ * this hook moved off client-side RPC scanning.
  */
 export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics {
   const allChains = deployedChains();
@@ -163,28 +163,27 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       staleTime: 60_000,
       refetchInterval: 60_000,
       retry: 3,
-      queryFn: async (): Promise<VaultCreationRecord[]> => {
-        const publicClient = publicClientFor(chain.id);
-        if (!publicClient) return [];
-        return fetchAllVaultCreations(publicClient, chain);
-      },
+      queryFn: (): Promise<VaultCreationRecord[]> => fetchAllVaultCreations(chain),
     })),
   });
   const directoryLoading = directoryQueries.some((q) => q.isLoading);
-  // A chain whose directory scan ultimately failed (all retries exhausted,
-  // in getLogsChunkedMulti AND react-query's own outer retry) must NOT be
-  // silently treated as "this chain has 0 vaults" — that's indistinguishable
-  // from real empty data otherwise, which is exactly the bug reported
-  // 2026-07-18 (Celo's dashboard numbers came back as confirmed-looking
-  // zeros while real vaults/fees/rebalances existed). Surfaced instead of
-  // swallowed so the UI can tell "empty" from "failed to load" apart.
+  // A chain whose directory fetch ultimately failed (all retries exhausted)
+  // must NOT be silently treated as "this chain has 0 vaults" — that's
+  // indistinguishable from real empty data otherwise, which is exactly the
+  // bug reported 2026-07-18 (Celo's dashboard numbers came back as
+  // confirmed-looking zeros while real vaults/fees/rebalances existed).
+  // Surfaced instead of swallowed so the UI can tell "empty" from "failed to
+  // load" apart.
   const directoryErrorChains = chains.filter((_, i) => directoryQueries[i].isError);
 
+  // directoryQueries is a fresh array every render — this join gives the
+  // memo below a stable, comparable primitive to key off instead of the
+  // array reference itself.
+  const directoryDataKey = directoryQueries.map((q) => q.data).join("|");
   const vaultRefs: VaultRef[] = useMemo(
-    () =>
-      chains.flatMap((chain, i) => (directoryQueries[i].data ?? []).map((record) => ({ chain, record }))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- directoryQueries is a fresh array every render; its .data is what actually matters
-    [chains, directoryQueries.map((q) => q.data).join("|")],
+    () => chains.flatMap((chain, i) => (directoryQueries[i].data ?? []).map((record) => ({ chain, record }))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- directoryQueries itself is a fresh array every render; directoryDataKey (derived from its .data) is what actually matters
+    [chains, directoryDataKey],
   );
 
   // Ledger state, 6 fields per vault, one multicall across every chain at once.
@@ -285,6 +284,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       if (tick !== undefined) map.set(chain.id, ethPriceFromTick(tick, chain.stableIsToken0));
     }
     return map;
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- currentTickByPool is itself a useMemo'd Map (stable per [uniquePools, poolData]), only ever read via .get() here, never mutated
   }, [chains, currentTickByPool]);
 
   const positionValueByVault = useMemo(() => {
@@ -348,46 +348,20 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     return map;
   }, [openPositions, positionData, currentTickByPool]);
 
-  // Event aggregation: one multi-address chunked scan per chain covers every
-  // vault on that chain at once. Only logs/blocks NEW since this chain's own
-  // last scan get fetched (see fetchNewLogs/eventScanCache) — the accumulated
-  // result (not just the delta) is what's returned and cached, so a 30s
-  // refetch on a page that's been open a while costs roughly nothing instead
-  // of re-scanning the chain's entire history from factoryDeployBlock again.
+  // Event aggregation: one indexer-cached fetch per chain covers every
+  // vault's whole history (deposits, fees, rebalances, mints) at once —
+  // replaces the old per-chain multi-address eth_getLogs scan.
   const eventQueries = useQueries({
     queries: chains.map((chain) => ({
-      queryKey: ["dashboard-vault-events", chain.id, vaultRefs.filter((r) => r.chain.id === chain.id).length],
+      queryKey: ["dashboard-vault-events", chain.id],
       enabled: vaultRefs.some((r) => r.chain.id === chain.id),
       staleTime: 30_000,
       refetchInterval: 30_000,
       retry: 3,
-      queryFn: async () => {
-        const publicClient = publicClientFor(chain.id);
-        const addresses = vaultRefs.filter((r) => r.chain.id === chain.id).map((r) => r.record.address);
-        if (!publicClient || addresses.length === 0) return { logs: [] as Log[], blockTimestamps: new Map<bigint, number>() };
-
-        const freshLogs = await fetchNewLogs(`events:${chain.id}`, publicClient, {
-          address: addresses,
-          fromBlock: chain.factoryDeployBlock,
-        });
-
-        let cache = eventScanCache.get(chain.id);
-        if (!cache) {
-          cache = { logs: [], blockTimestamps: new Map() };
-          eventScanCache.set(chain.id, cache);
-        }
-        if (freshLogs.length > 0) {
-          const uniqueBlocks = [...new Set(freshLogs.map((l) => l.blockNumber))].filter(
-            (bn): bn is bigint => bn !== null,
-          );
-          const newBlocks = uniqueBlocks.filter((bn) => !cache!.blockTimestamps.has(bn));
-          if (newBlocks.length > 0) {
-            const blocks = await Promise.all(newBlocks.map((bn) => publicClient.getBlock({ blockNumber: bn })));
-            newBlocks.forEach((bn, i) => cache!.blockTimestamps.set(bn, Number(blocks[i].timestamp)));
-          }
-          cache.logs = [...cache.logs, ...freshLogs];
-        }
-        return { logs: cache.logs, blockTimestamps: cache.blockTimestamps };
+      queryFn: async (): Promise<DashboardEventRow[]> => {
+        const res = await fetch(`/api/dashboard/events?chain=${chain.id}`);
+        if (!res.ok) throw new Error(`dashboard events fetch failed: ${res.status}`);
+        return (await res.json()) as DashboardEventRow[];
       },
     })),
   });
@@ -399,42 +373,18 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
   // started), showing confirmed-looking $0.00 before that chain was scanned.
   const eventsLoading = directoryLoading || eventQueries.some((q) => q.isLoading);
   const eventsErrorChains = chains.filter((_, i) => eventQueries[i].isError);
-
-  const mintVolumeQueries = useQueries({
-    queries: chains.map((chain) => ({
-      queryKey: ["dashboard-mint-volume", chain.id, vaultRefs.filter((r) => r.chain.id === chain.id).length],
-      enabled: vaultRefs.some((r) => r.chain.id === chain.id),
-      staleTime: 60_000,
-      retry: 3,
-      queryFn: async () => {
-        const publicClient = publicClientFor(chain.id);
-        const addresses = vaultRefs.filter((r) => r.chain.id === chain.id).map((r) => r.record.address);
-        if (!publicClient || addresses.length === 0) return [] as MintVolumeEvent[];
-        return fetchMintVolumeEvents(publicClient, chain, addresses);
-      },
-    })),
-  });
-  // Same reasoning as eventsLoading above.
-  const mintVolumeLoading = directoryLoading || mintVolumeQueries.some((q) => q.isLoading);
-  const mintVolumeErrorChains = chains.filter((_, i) => mintVolumeQueries[i].isError);
-
-  const erroredChainIds = [
-    ...new Set(
-      [...directoryErrorChains, ...eventsErrorChains, ...mintVolumeErrorChains].map((c) => c.id),
-    ),
-  ];
-  const chainErrors: ChainFetchError[] = erroredChainIds.map((id) => ({
-    chainId: id,
-    chainName: chains.find((c) => c.id === id)?.name ?? String(id),
-  }));
+  const chainErrors: ChainFetchError[] = [...new Set([...directoryErrorChains, ...eventsErrorChains].map((c) => c.id))].map(
+    (id) => ({ chainId: id, chainName: chains.find((c) => c.id === id)?.name ?? String(id) }),
+  );
+  // eventQueries/directoryQueries are fresh arrays every render — these joins
+  // give the memo below stable, comparable primitives to key off instead of
+  // the array references themselves.
+  const eventDataKey = eventQueries.map((q) => q.data).join("|");
+  const directoryErrorKey = directoryQueries.map((q) => q.isError).join("|");
+  const eventErrorKey = eventQueries.map((q) => q.isError).join("|");
 
   return useMemo(() => {
     const snapshotLoading = directoryLoading || ledgerLoading || positionLoading || poolLoading;
-    // mintVolumeLoading is deliberately excluded from isLoading: reconstructing
-    // historical mint values (see mintVolume.ts) is the single most expensive
-    // part of this hook (one historical position+pool read per past mint) and
-    // shouldn't hold back TVL/vault counts/rebalance counts/fees. The page
-    // gates the Volumen card/chart on mintVolumeLoading specifically instead.
     const isLoading = snapshotLoading || eventsLoading;
 
     const vaultCountsByChain: Record<number, VaultCounts> = {};
@@ -490,6 +440,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     let depositedTotalUsd = 0;
     const feeEvents: FeeEvent[] = [];
     const rebalanceEvents: RebalanceEvent[] = [];
+    const mintVolumeEvents: MintVolumeEvent[] = [];
     const vaultFeesByAddress = new Map<string, number>();
     const addFee = (address: string, usd: number) =>
       vaultFeesByAddress.set(address.toLowerCase(), (vaultFeesByAddress.get(address.toLowerCase()) ?? 0) + usd);
@@ -502,46 +453,46 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     const initialInvestmentByAddress = new Map<string, number>();
 
     chains.forEach((chain, i) => {
-      const { logs = [], blockTimestamps } = eventQueries[i].data ?? {};
-      if (!logs || logs.length === 0) return;
+      const rows = eventQueries[i].data ?? [];
       const ethPrice = ethPriceByChain.get(chain.id) ?? 0;
-      const parsed = parseEventLogs({ abi: chain.vaultAbi, logs });
-      for (const log of parsed) {
-        const args = log.args as Record<string, bigint | undefined>;
-        const ts = log.blockNumber !== null ? blockTimestamps?.get(log.blockNumber) : undefined;
-        if (log.eventName === "LpFeesPaidToOwner" || log.eventName === "FeesCollected") {
+      for (const row of rows) {
+        const ts = Math.floor(new Date(row.block_timestamp).getTime() / 1000);
+        const args = deserializeArgs(chain.vaultAbi, row.event_name, row.args) as Record<string, bigint | undefined>;
+
+        if (row.event_name === "LpFeesPaidToOwner" || row.event_name === "FeesCollected") {
           const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
           const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
           const usd = Number(stableRaw ?? 0n) * 1e-6 + Number(volatileRaw ?? 0n) * 1e-18 * ethPrice;
           ownerFeesUsd += usd;
-          addFee(log.address, usd);
-          if (ts !== undefined) feeEvents.push({ timestamp: ts, ownerUsd: usd, platformUsd: 0 });
-        } else if (log.eventName === "PerformanceFeeCollected") {
+          addFee(row.address, usd);
+          feeEvents.push({ timestamp: ts, ownerUsd: usd, platformUsd: 0 });
+        } else if (row.event_name === "PerformanceFeeCollected") {
           const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
           const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
           const usd = Number(stableRaw ?? 0n) * 1e-6 + Number(volatileRaw ?? 0n) * 1e-18 * ethPrice;
           platformFeesUsd += usd;
-          addFee(log.address, usd);
-          if (ts !== undefined) feeEvents.push({ timestamp: ts, ownerUsd: 0, platformUsd: usd });
-        } else if (log.eventName === "KeeperGasReimbursed") {
+          addFee(row.address, usd);
+          feeEvents.push({ timestamp: ts, ownerUsd: 0, platformUsd: usd });
+        } else if (row.event_name === "KeeperGasReimbursed") {
           const usd = Number(args.amountUsd ?? 0n) * 1e-6;
           gasReimbursedUsd += usd;
-          if (ts !== undefined) rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: usd });
-        } else if (log.eventName === "Deposited") {
+          rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: usd });
+        } else if (row.event_name === "Deposited") {
           const total = Number((args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n) + (args.gasReserveAmount ?? 0n));
           depositedTotalUsd += total * 1e-6;
-          const addrKey = log.address.toLowerCase();
+          const addrKey = row.address.toLowerCase();
           if (!initialInvestmentByAddress.has(addrKey)) {
             const investOnly = Number((args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n));
             initialInvestmentByAddress.set(addrKey, investOnly * 1e-6);
           }
-        } else if (log.eventName === "Rebalanced" && ts !== undefined) {
+        } else if (row.event_name === "Rebalanced") {
           rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: 0 });
+          if (row.usd_value !== null) mintVolumeEvents.push({ timestamp: ts, usd: Number(row.usd_value) });
+        } else if (row.event_name === "PositionInitialized") {
+          if (row.usd_value !== null) mintVolumeEvents.push({ timestamp: ts, usd: Number(row.usd_value) });
         }
       }
     });
-
-    const mintVolumeEvents = mintVolumeQueries.flatMap((q) => q.data ?? []);
 
     const vaultRows: VaultRow[] = ledgers
       .map((v): VaultRow => {
@@ -590,29 +541,27 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       feeEvents,
       rebalanceEvents,
       mintVolumeEvents,
-      mintVolumeLoading,
+      mintVolumeLoading: eventsLoading,
       vaultRows,
       vaultRowsLoading,
       chainErrors,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- eventQueries/mintVolumeQueries are fresh arrays every render; their .data is what actually matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- eventQueries/directoryQueries themselves are fresh arrays every render; the *Key variables (derived from their .data/.isError) are what actually matter
   }, [
     directoryLoading,
     ledgerLoading,
     positionLoading,
     poolLoading,
     eventsLoading,
-    mintVolumeLoading,
     chains,
     ledgers,
     positionValueByVault,
     priceRangeByVault,
     inRangeByVault,
     ethPriceByChain,
-    eventQueries.map((q) => q.data).join("|"),
-    mintVolumeQueries.map((q) => q.data?.length).join("|"),
-    directoryQueries.map((q) => q.isError).join("|"),
-    eventQueries.map((q) => q.isError).join("|"),
-    mintVolumeQueries.map((q) => q.isError).join("|"),
+    eventDataKey,
+    directoryErrorKey,
+    eventErrorKey,
+    chainErrors,
   ]);
 }

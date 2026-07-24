@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { Address } from "viem";
-import { usePublicClient } from "wagmi";
 import { fetchMintVolumeEvents, type MintVolumeEvent } from "@/lib/dashboard/mintVolume";
 import type { ChainDef } from "@/lib/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
@@ -19,16 +18,15 @@ type T = ReturnType<typeof useTranslation>["t"];
  * reconstructed as of its own block.
  */
 export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address[]; chain: ChainDef }) {
-  const publicClient = usePublicClient({ chainId: chain.id });
   const [events, setEvents] = useState<VolumeEvent[] | null>(null);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const { t } = useTranslation();
 
   useEffect(() => {
-    if (!publicClient || vaultAddresses.length === 0) return;
+    if (vaultAddresses.length === 0) return;
     let cancelled = false;
 
-    fetchMintVolumeEvents(publicClient, chain, vaultAddresses)
+    fetchMintVolumeEvents(chain, vaultAddresses)
       .then((results) => {
         if (!cancelled) setEvents(results);
       })
@@ -38,7 +36,7 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- vaultAddresses is a derived array, re-created every render; length is enough here
-  }, [publicClient, vaultAddresses.length, chain.factoryDeployBlock]);
+  }, [vaultAddresses.length, chain.factoryDeployBlock]);
 
   const granularityLabels: Record<Granularity, string> = {
     day: t("volumeChart.granularityDay"),

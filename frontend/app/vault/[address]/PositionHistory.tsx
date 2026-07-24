@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { useVaultEventLogs } from "@/lib/useVaultEventLogs";
@@ -44,26 +43,27 @@ interface PositionRecord {
  * (its close) and whatever LpFeesPaidToOwner fired in that same closing tx.
  */
 export function PositionHistory({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
-  const publicClient = usePublicClient({ chainId: chain.id });
   const { t, locale } = useTranslation();
   const { data: eventLogs } = useVaultEventLogs(address, chain);
 
   const { data: positions } = useQuery({
     queryKey: ["vault-position-history", chain.id, address, eventLogs?.length],
-    enabled: Boolean(publicClient && eventLogs),
-    queryFn: async (): Promise<PositionRecord[]> => {
-      if (!publicClient || !eventLogs) return [];
+    enabled: Boolean(eventLogs),
+    queryFn: (): PositionRecord[] => {
+      if (!eventLogs) return [];
       const parsed = eventLogs;
 
       const targetConfigs: Array<{ tickLower: number; tickUpper: number; blockNumber: bigint }> = [];
       const rebalances: OpenEvent[] = [];
       const feesByTx = new Map<string, { amount0: bigint; amount1: bigint }>();
       let initEvent: { tokenId: bigint; blockNumber: bigint; txHash: string } | undefined;
+      const timestampByBlock = new Map<bigint, number>();
 
       for (const log of parsed) {
-        const args = log.args as Record<string, unknown>;
-        const blockNumber = log.blockNumber ?? 0n;
-        const txHash = log.transactionHash ?? "";
+        const args = log.args;
+        const blockNumber = log.blockNumber;
+        const txHash = log.transactionHash;
+        timestampByBlock.set(blockNumber, log.blockTimestamp);
         if (log.eventName === "TargetConfigured") {
           targetConfigs.push({
             tickLower: Number(args.targetTickLower),
@@ -133,20 +133,11 @@ export function PositionHistory({ address, chain }: { address: `0x${string}`; ch
         };
       });
 
-      const blocks = [...new Set(records.flatMap((r) => [r.createdBlock, r.closedBlock].filter(Boolean) as bigint[]))];
-      const stamps = new Map<bigint, number>();
-      await Promise.all(
-        blocks.map(async (bn) => {
-          const block = await publicClient.getBlock({ blockNumber: bn });
-          stamps.set(bn, Number(block.timestamp));
-        }),
-      );
-
       return records
         .map((r) => ({
           ...r,
-          createdAt: stamps.get(r.createdBlock),
-          closedAt: r.closedBlock ? stamps.get(r.closedBlock) : undefined,
+          createdAt: timestampByBlock.get(r.createdBlock),
+          closedAt: r.closedBlock ? timestampByBlock.get(r.closedBlock) : undefined,
         }))
         .reverse(); // newest first
     },
