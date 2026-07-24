@@ -98,7 +98,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
     contracts: vaultRefs.map(
       ({ chain, address }) => ({ address, abi: chain.vaultAbi, functionName: "closed", chainId: chain.id }) as const,
     ),
-    query: { enabled: vaultRefs.length > 0, refetchInterval: 15_000 },
+    query: { enabled: vaultRefs.length > 0, refetchInterval: 60_000 },
   });
 
   // Stage 3: creation timestamps — one indexer-cached directory fetch per
@@ -221,7 +221,7 @@ function VaultCard({
 
   const { data } = useReadContracts({
     contracts: cardReads(vaultAddress, chain.vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
   const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance, poolRaw, feeTierRaw] =
     data?.map((d) => d.result) ?? [];
@@ -237,7 +237,7 @@ function VaultCard({
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
     chainId: chain.id,
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const { data: feesSummary } = useVaultFeesSummary(vaultAddress, chain);
@@ -250,7 +250,7 @@ function VaultCard({
     functionName: "positions",
     args: hasPosition ? [positionTokenId as bigint] : undefined,
     chainId: chain.id,
-    query: { enabled: hasPosition, refetchInterval: 15_000 },
+    query: { enabled: hasPosition, refetchInterval: 60_000 },
   });
 
   const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
@@ -303,7 +303,7 @@ function VaultCard({
     functionName: "balanceOf",
     args: [vaultAddress],
     chainId: chain.id,
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
   const idleWethRaw = (idleWeth as bigint) ?? 0n;
   const idleWethUsd = ethPrice !== undefined ? Number(idleWethRaw) * 1e-18 * ethPrice : undefined;

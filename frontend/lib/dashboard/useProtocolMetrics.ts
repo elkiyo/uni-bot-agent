@@ -201,7 +201,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
   );
   const { data: ledgerData, isLoading: ledgerLoading } = useReadContracts({
     contracts: ledgerContracts,
-    query: { enabled: ledgerContracts.length > 0, refetchInterval: 30_000 },
+    query: { enabled: ledgerContracts.length > 0, refetchInterval: 60_000 },
   });
 
   const FIELDS_PER_VAULT = 6;
@@ -259,11 +259,11 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
 
   const { data: positionData, isLoading: positionLoading } = useReadContracts({
     contracts: positionContracts,
-    query: { enabled: positionContracts.length > 0, refetchInterval: 30_000 },
+    query: { enabled: positionContracts.length > 0, refetchInterval: 60_000 },
   });
   const { data: poolData, isLoading: poolLoading } = useReadContracts({
     contracts: poolContracts,
-    query: { enabled: poolContracts.length > 0, refetchInterval: 30_000 },
+    query: { enabled: poolContracts.length > 0, refetchInterval: 60_000 },
   });
 
   const currentTickByPool = useMemo(() => {
@@ -356,7 +356,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       queryKey: ["dashboard-vault-events", chain.id],
       enabled: vaultRefs.some((r) => r.chain.id === chain.id),
       staleTime: 30_000,
-      refetchInterval: 30_000,
+      refetchInterval: 60_000,
       retry: 3,
       queryFn: async (): Promise<DashboardEventRow[]> => {
         const res = await fetch(`/api/dashboard/events?chain=${chain.id}`);

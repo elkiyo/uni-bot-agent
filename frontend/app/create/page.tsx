@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useAccount,
@@ -195,9 +195,14 @@ export default function CreateVault() {
   // selectedFee stuck on the PREVIOUS chain's default fee tier, so the
   // wrong pool card can show up pre-selected (e.g. Celo's 0.3% "sticking"
   // after switching to Arbitrum, whose real default is the 0.05% pool).
-  useEffect(() => {
+  // Reset during render (React's documented pattern for this) rather than
+  // in an effect — an effect-based setState here would commit the stale
+  // value for one extra render first, then cascade into a second one.
+  const [prevChainId, setPrevChainId] = useState(chain.id);
+  if (chain.id !== prevChainId) {
+    setPrevChainId(chain.id);
     setSelectedFee(chain.feeTier);
-  }, [chain.id]);
+  }
   const selectedPoolMeta = poolMetrics?.find((p) => p.fee === selectedFee);
   const selectedPool = (selectedPoolMeta?.pool ?? chain.pool) as `0x${string}`;
 
@@ -243,7 +248,7 @@ export default function CreateVault() {
     functionName: "balanceOf",
     args: address ? [address] : undefined,
     chainId: chain.id,
-    query: { enabled: Boolean(address), refetchInterval: 15_000 },
+    query: { enabled: Boolean(address), refetchInterval: 60_000 },
   });
   const stableBalanceUsd =
     stableBalanceRaw !== undefined ? Number(formatUnits(stableBalanceRaw as bigint, 6)) : undefined;

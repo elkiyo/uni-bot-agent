@@ -36,7 +36,7 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
       },
       { address: pool, abi: uniswapV3PoolAbi, functionName: "slot0", chainId: chain.id },
     ],
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
 
   const position = reads?.[0]?.result as
@@ -68,7 +68,7 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
         chainId: chain.id,
       },
     ],
-    query: { enabled: Boolean(position), refetchInterval: 15_000 },
+    query: { enabled: Boolean(position), refetchInterval: 60_000 },
   });
 
   const image = useMemo(() => {

@@ -189,7 +189,7 @@ export default function Admin() {
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
     chainId: chain.id,
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
@@ -204,7 +204,7 @@ export default function Admin() {
           { address: v, abi: chain.vaultAbi, functionName: "reserveBalance", chainId: chain.id },
         ] as const,
     ),
-    query: { enabled: vaultAddresses.length > 0, refetchInterval: 30_000 },
+    query: { enabled: vaultAddresses.length > 0, refetchInterval: 60_000 },
   });
 
   const { data: vaultWethBalances } = useReadContracts({
@@ -212,7 +212,7 @@ export default function Admin() {
       (v) =>
         ({ address: chain.volatileToken, abi: erc20Abi, functionName: "balanceOf", args: [v], chainId: chain.id }) as const,
     ),
-    query: { enabled: vaultAddresses.length > 0, refetchInterval: 30_000 },
+    query: { enabled: vaultAddresses.length > 0, refetchInterval: 60_000 },
   });
 
   const perVault = vaultAddresses.map((address, i) => ({
@@ -239,7 +239,7 @@ export default function Admin() {
           chainId: chain.id,
         }) as const,
     ),
-    query: { enabled: vaultsWithPosition.length > 0, refetchInterval: 30_000 },
+    query: { enabled: vaultsWithPosition.length > 0, refetchInterval: 60_000 },
   });
 
   let totalPositionValueUsd = 0;
@@ -274,14 +274,14 @@ export default function Admin() {
   const { data: operatorGas } = useBalance({
     address: defaultOperator as Address | undefined,
     chainId: chain.id,
-    query: { enabled: Boolean(defaultOperator), refetchInterval: 30_000 },
+    query: { enabled: Boolean(defaultOperator), refetchInterval: 60_000 },
   });
   const { data: operatorUsdc } = useReadContract({
     address: USDC,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: defaultOperator ? [defaultOperator as Address] : undefined,
-    query: { enabled: Boolean(defaultOperator), refetchInterval: 30_000 },
+    query: { enabled: Boolean(defaultOperator), refetchInterval: 60_000 },
   });
   const operatorGasLow = operatorGas !== undefined && Number(operatorGas.formatted) < chain.lowGasThreshold;
 

@@ -62,11 +62,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const { switchChainAsync } = useSwitchChain();
   const { t } = useTranslation();
 
-  // 15s polling keeps the stats live while the keeper acts — the page is a demo
-  // surface as much as a control panel.
+  // 60s polling keeps the stats live while the keeper acts — the page is a demo
+  // surface as much as a control panel. The keeper's own cycle is 5 min and a
+  // vault's on-chain state only changes on a rebalance/deposit, so polling
+  // much faster than this just re-fetches the same numbers (see
+  // useVaultEventLogs.ts's own docstring for the same reasoning).
   const { data, refetch } = useReadContracts({
     contracts: reads(address, chain.id, chain.vaultAbi),
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
 
   // Surfaces the keeper's own uni-lab call failures (x402 down, or a 200 with
@@ -81,7 +84,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       const body = (await res.json()) as { alert: { message: string; endpoint: string; createdAt: string } | null };
       return body.alert;
     },
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
   const [
     owner,
@@ -152,7 +155,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     abi: chain.vaultAbi,
     functionName: "gasReserveBalance",
     chainId: chain.id,
-    query: { enabled: chain.supportsGasReserve, refetchInterval: 15_000 },
+    query: { enabled: chain.supportsGasReserve, refetchInterval: 60_000 },
   });
   const gasReserveBalance = (gasReserveBalanceRaw as bigint) ?? 0n;
 
@@ -170,7 +173,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
     chainId: chain.id,
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
 
@@ -203,7 +206,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     functionName: "positions",
     args: hasPosition ? [positionTokenId as bigint] : undefined,
     chainId: chain.id,
-    query: { enabled: hasPosition, refetchInterval: 15_000 },
+    query: { enabled: hasPosition, refetchInterval: 60_000 },
   });
   const positionTicks = positionData
     ? {
@@ -226,7 +229,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     functionName: "balanceOf",
     args: [address],
     chainId: chain.id,
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
 
   const [depInvestable, setDepInvestable] = useState("0");

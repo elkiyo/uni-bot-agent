@@ -18,7 +18,7 @@ export default function Home() {
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
     chainId: chain.id,
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 60_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
   const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
@@ -28,7 +28,7 @@ export default function Home() {
     abi: chain.factoryAbi,
     functionName: "vaultCount",
     chainId: chain.id,
-    query: { enabled: Boolean(chain.factoryAddress), refetchInterval: 30_000 },
+    query: { enabled: Boolean(chain.factoryAddress), refetchInterval: 60_000 },
   });
 
   return (

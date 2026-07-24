@@ -41,13 +41,13 @@ interface ApiEventRow {
  * API call instead — see lib/dashboard/indexer.ts and
  * app/api/dashboard/events. That cache only refreshes once per keeper tick
  * (~5 min), so polling faster than that would just re-fetch identical rows;
- * 30s keeps the page feeling live without doing that.
+ * 60s keeps the page feeling live without doing that.
  */
 export function useVaultEventLogs(address: `0x${string}` | undefined, chain: ChainDef) {
   return useQuery({
     queryKey: ["vault-event-logs", chain.id, address],
     enabled: Boolean(address),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async (): Promise<VaultEventLog[]> => {
       if (!address) return [];
       const res = await fetch(`/api/dashboard/events?chain=${chain.id}&address=${address}`);

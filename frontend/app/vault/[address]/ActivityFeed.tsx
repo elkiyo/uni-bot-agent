@@ -19,9 +19,10 @@ interface FeedItem {
 
 /**
  * Live on-chain activity feed for a vault. Everything the agent does emits an
- * event (PositionInitialized, Rebalanced, LpFeesPaidToOwner, ...), so the
- * feed is reconstructed straight from the RPC — no backend, and it shows the
- * keeper acting in real time (10s polling) during a demo.
+ * event (PositionInitialized, Rebalanced, LpFeesPaidToOwner, ...), reconstructed
+ * from the indexer's cache (see useVaultEventLogs.ts) rather than a raw RPC
+ * scan. 60s polling — the keeper's own cycle is 5 min, so this still shows
+ * it acting close to real time without re-fetching identical data in between.
  */
 export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
   const { t, locale } = useTranslation();
