@@ -755,6 +755,19 @@ function VaultHistoryTable({
       </h2>
       <p className="mt-1 text-sm text-muted">{subtitle ?? t("dashboard.historySubtitle")}</p>
 
+      {statusOptions.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {statusOptions.map((s) => (
+            <span
+              key={s}
+              className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] ${STATUS_CLASS[s]}`}
+            >
+              {STATUS_LABEL[s]}: {rows.filter((r) => r.status === s).length}
+            </span>
+          ))}
+        </div>
+      )}
+
       {isLoading && rows.length === 0 && (
         <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("dashboard.scanning")}</p>
       )}
