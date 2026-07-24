@@ -30,13 +30,15 @@ const MINT_BACKFILL_BATCH = 80;
 // (indexer_state) advances by exactly this much each run regardless of how
 // many logs were actually found, so a large backlog just takes several
 // ticks to fully catch up — each individual tick stays fast and safe, and
-// once caught up to near-realtime this cap is never actually hit. Sized
-// against the real backlog measured 2026-07-24 (Celo ~755k blocks,
-// Arbitrum ~2.33M) to catch up in single-digit hours rather than days,
-// while leaving wide headroom under the 200s ceiling — 30 chunks of 5000 at
-// concurrency 6 is 5 sequential batches, comfortably fast even accounting
-// for getLogsChunked's empty-chunk retries.
-const MAX_SCAN_BLOCKS = 150_000n;
+// once caught up to near-realtime this cap is never actually hit. Started
+// at 150k blocks/run, confirmed safe in production (2026-07-24, no
+// timeouts, ~490-450k blocks of real chunk activity resolved within a
+// couple ticks) — raised to 500k for a faster cold-start catch-up (Celo
+// ~755k blocks, Arbitrum ~2.33M backlog measured the same day): 100 chunks
+// of 5000 at concurrency 6 is 17 sequential batches, worst case (every
+// chunk empty, full 5x re-verify retries) still well under a minute,
+// leaving wide headroom under the 200s ceiling for the rest of the tick.
+const MAX_SCAN_BLOCKS = 500_000n;
 
 async function getIndexerState(key: string): Promise<bigint> {
   const { data, error } = await supabase().from("indexer_state").select("value").eq("key", key).maybeSingle();
