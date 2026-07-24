@@ -554,7 +554,7 @@ const zh: Dictionary = {
       "协议中创建的每一个金库，按从新到旧排列——直接读取自 VaultCreated 事件。可直接在“链”“资金池”“版本”或“状态”表头进行筛选。",
     noVaultsYet: "尚未创建任何金库。",
     closedHistoryTitle: "已关闭的金库",
-    closedHistorySubtitle: "已经关闭的金库——与活跃金库的历史记录分开展示，避免信息混淆。",
+    closedHistorySubtitle: "已关闭或尚未建仓的金库——与活跃金库的历史记录分开展示。可通过“状态”筛选只看其中一类。",
     noClosedVaultsYet: "目前还没有已关闭的金库。",
     noneMatchFilters: "没有金库符合当前筛选条件。",
 

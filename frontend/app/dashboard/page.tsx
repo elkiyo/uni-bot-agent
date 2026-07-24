@@ -126,7 +126,7 @@ export default function DashboardPage() {
         />
 
         <VaultHistoryTable
-          rows={metrics.vaultRows.filter((r) => r.status === "closed")}
+          rows={metrics.vaultRows.filter((r) => r.status === "closed" || r.status === "no_position")}
           isLoading={metrics.vaultRowsLoading}
           snapshotLoading={metrics.snapshotLoading}
           eventsLoading={metrics.eventsLoading}
@@ -718,9 +718,13 @@ function VaultHistoryTable({
   // Every vault runs Uniswap V3 today — kept as a real filter (not hardcoded
   // to one option) so a future protocol version shows up here automatically.
   const versionOptions = ["Uniswap V3"];
+  // Derived from the rows this instance actually got, same as chainOptions/
+  // poolOptions — the active table only ever has "active" rows, the closed
+  // table has "closed"/"no_position", so each instance's dropdown naturally
+  // only offers the statuses that can actually appear in it.
+  const statusOptions = [...new Set(rows.map((r) => r.status))];
 
   const filteredRows = rows
-    .filter((r) => r.status !== "no_position")
     .filter((r) => statusFilter === "all" || r.status === statusFilter)
     .filter((r) => {
       if (poolRangeFilter === "all") return true;
@@ -805,7 +809,7 @@ function VaultHistoryTable({
                   onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
                   options={[
                     { value: "all", label: t("dashboard.colStatus") },
-                    ...(["active", "closed"] as VaultStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+                    ...statusOptions.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
                   ]}
                 />
                 <th className="px-4 py-3 font-normal">{t("dashboard.colHash")}</th>

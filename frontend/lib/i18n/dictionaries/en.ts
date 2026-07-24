@@ -557,7 +557,7 @@ const en: Dictionary = {
       "Every vault created on the protocol, from most recent to oldest — read straight from VaultCreated. Filter directly from the Chain, Pool, Version, or Status header.",
     noVaultsYet: "No vault has been created yet.",
     closedHistoryTitle: "Closed vaults",
-    closedHistorySubtitle: "Vaults that have already closed — kept separate from the active history so the two don't mix.",
+    closedHistorySubtitle: "Vaults that are closed or don't have a position yet — kept separate from the active history. Filter by Status to see just one of the two.",
     noClosedVaultsYet: "No vault has closed yet.",
     noneMatchFilters: "No vault matches these filters.",
 

@@ -556,7 +556,7 @@ const es = {
     noVaultsYet: "Todavía no se creó ningún vault.",
     noneMatchFilters: "Ningún vault coincide con estos filtros.",
     closedHistoryTitle: "Vaults cerrados",
-    closedHistorySubtitle: "Vaults que ya se cerraron — separados del historial activo para no mezclar la información.",
+    closedHistorySubtitle: "Vaults cerrados o sin posición todavía — separados del historial activo para no mezclar la información. Filtrá por Estado para ver solo uno de los dos.",
     noClosedVaultsYet: "Todavía no hay vaults cerrados.",
 
     footnote:
