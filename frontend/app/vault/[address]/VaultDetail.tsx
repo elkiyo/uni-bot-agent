@@ -7,10 +7,10 @@ import {
   usePublicClient,
   useReadContract,
   useReadContracts,
-  useWriteContract,
   useSwitchChain,
 } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
+import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { Header } from "../../components/Header";
 import { AlertModal } from "../../components/AlertModal";
 import { PositionNFT } from "./PositionNFT";
@@ -58,7 +58,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const { address: connected, chainId: walletChainId } = useAccount();
   const { selectedChain: chain } = useSelectedChain();
   const publicClient = usePublicClient({ chainId: chain.id });
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useTaggedWriteContract();
   const { switchChainAsync } = useSwitchChain();
   const { t } = useTranslation();
 

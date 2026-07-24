@@ -8,10 +8,10 @@ import {
   usePublicClient,
   useReadContract,
   useReadContracts,
-  useWriteContract,
   useSwitchChain,
 } from "wagmi";
 import { formatUnits, parseUnits, type Address } from "viem";
+import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { Header } from "../components/Header";
 import { VolumeChart } from "./VolumeChart";
 import { platformConfigAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
@@ -39,7 +39,7 @@ export default function Admin() {
   const { selectedChain: chain, setSelectedChainId } = useSelectedChain();
   const availableChains = useAvailableChains();
   const publicClient = usePublicClient({ chainId: chain.id });
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useTaggedWriteContract();
   const { switchChainAsync } = useSwitchChain();
   const { t } = useTranslation();
 

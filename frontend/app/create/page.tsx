@@ -7,7 +7,6 @@ import {
   usePublicClient,
   useReadContract,
   useReadContracts,
-  useWriteContract,
   useSwitchChain,
 } from "wagmi";
 import { decodeEventLog, encodeFunctionData, formatUnits, parseUnits } from "viem";
@@ -15,6 +14,7 @@ import SafeAppsSDK, { type GatewayTransactionDetails } from "@safe-global/safe-a
 import { Header } from "../components/Header";
 import { AlertModal } from "../components/AlertModal";
 import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
+import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { usePoolMetrics } from "@/lib/usePoolMetrics";
 import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
@@ -136,7 +136,7 @@ export default function CreateVault() {
   const { selectedChain: chain, setSelectedChainId } = useSelectedChain();
   const availableChains = useAvailableChains();
   const publicClient = usePublicClient({ chainId: chain.id });
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useTaggedWriteContract();
   const { switchChainAsync } = useSwitchChain();
   const { t } = useTranslation();
 
