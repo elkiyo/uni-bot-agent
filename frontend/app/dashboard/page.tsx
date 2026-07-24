@@ -723,6 +723,8 @@ function VaultHistoryTable({
   // table has "closed"/"no_position", so each instance's dropdown naturally
   // only offers the statuses that can actually appear in it.
   const statusOptions = [...new Set(rows.map((r) => r.status))];
+  const inRangeCount = rows.filter((r) => r.inRange === true).length;
+  const outRangeCount = rows.filter((r) => r.inRange === false).length;
 
   const filteredRows = rows
     .filter((r) => statusFilter === "all" || r.status === statusFilter)
@@ -765,6 +767,16 @@ function VaultHistoryTable({
               {STATUS_LABEL[s]}: {rows.filter((r) => r.status === s).length}
             </span>
           ))}
+          {(inRangeCount > 0 || outRangeCount > 0) && (
+            <>
+              <span className="rounded-full bg-positive/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-positive">
+                {t("vaults.inRange")}: {inRangeCount}
+              </span>
+              <span className="rounded-full bg-negative/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-negative">
+                {t("vaults.outOfRange")}: {outRangeCount}
+              </span>
+            </>
+          )}
         </div>
       )}
 
