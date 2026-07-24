@@ -28,8 +28,12 @@ const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID 
 //
 // Now backed by Alchemy (2026-07-19), same server-side-proxy shape: the
 // browser talks to OUR OWN /api/rpc/arbitrum route (see that file), which
-// forwards to Alchemy server-side using ARBITRUM_RPC_URL — never directly,
-// so the key never ships in the client bundle. Note: Alchemy's Free tier
+// forwards to Alchemy server-side using ARBITRUM_CLIENT_RPC_URL — never
+// directly, so the key never ships in the client bundle. Deliberately a
+// DIFFERENT env var than ARBITRUM_RPC_URL (this file's own server-side
+// counterpart, used by the keeper/indexer's eth_getLogs scans) — the two
+// were briefly shared and that turned out to be a real cost bug (see the
+// proxy route's own docstring). Note: Alchemy's Free tier
 // caps eth_getLogs at a 10-block range on Arbitrum (Pay As You Go removes
 // that cap) — until the account is upgraded, large-range getLogs calls
 // (vault discovery, fee/rebalance event history, activity feed) will error
