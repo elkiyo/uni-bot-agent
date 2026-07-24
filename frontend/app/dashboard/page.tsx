@@ -704,6 +704,7 @@ function VaultHistoryTable({
   const versionOptions = ["Uniswap V3"];
 
   const filteredRows = rows
+    .filter((r) => r.status !== "no_position")
     .filter((r) => statusFilter === "all" || r.status === statusFilter)
     .filter((r) => {
       if (poolRangeFilter === "all") return true;
@@ -786,7 +787,7 @@ function VaultHistoryTable({
                   onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
                   options={[
                     { value: "all", label: t("dashboard.colStatus") },
-                    ...(["active", "no_position", "closed"] as VaultStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+                    ...(["active", "closed"] as VaultStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] })),
                   ]}
                 />
                 <th className="px-4 py-3 font-normal">{t("dashboard.colHash")}</th>
@@ -794,12 +795,7 @@ function VaultHistoryTable({
             </thead>
             <tbody>
               {filteredRows.map((row) => (
-                <tr
-                  key={`${row.chain.id}-${row.address}`}
-                  className={`border-b border-hairline/60 last:border-0 hover:bg-white/[0.02] ${
-                    row.status === "no_position" ? "opacity-45" : ""
-                  }`}
-                >
+                <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-white/[0.02]">
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt, locale)}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] tabular-nums text-muted">
                     {formatAge(Math.max(0, now - row.createdAt))}
