@@ -1227,6 +1227,10 @@ function PriceRangeSlider({
           ? `${composition.stablePct.toFixed(0)}% ${stableSymbol} · ${composition.volatilePct.toFixed(0)}% ${volatileSymbol} (${composition.volatileQty.toFixed(4)} ${volatileSymbol})`
           : "…"}
       </p>
+      <p className="mt-4 rounded-xl border border-accent/20 bg-accent/[0.05] px-3 py-2 text-center text-xs leading-relaxed text-white/70">
+        <span className="font-semibold text-accent">{t("create.compositionTipLabel")}</span>{" "}
+        {t("create.compositionTipBody", { stableSymbol, volatileSymbol })}
+      </p>
     </div>
   );
 }

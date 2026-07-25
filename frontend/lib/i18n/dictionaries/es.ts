@@ -220,6 +220,9 @@ const es = {
     poolTypeMedium: "Medio",
     poolTypeWide: "Amplio",
     poolTypeConservative: "Conservador",
+    compositionTipLabel: "Recomendación:",
+    compositionTipBody:
+      "en cualquier tipo de rango conviene mantener más del 70% en {{stableSymbol}}. Te da margen frente al piso antes de salir de rango y amortigua caídas de precio de {{volatileSymbol}} en el corto plazo.",
     summaryComposition: "Composición estimada",
     summaryInvestable: "Capital invertible",
     summaryReserve: "Reserva de reinyección",

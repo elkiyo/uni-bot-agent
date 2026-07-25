@@ -222,6 +222,9 @@ const pt: Dictionary = {
     poolTypeMedium: "Médio",
     poolTypeWide: "Amplo",
     poolTypeConservative: "Conservador",
+    compositionTipLabel: "Recomendação:",
+    compositionTipBody:
+      "para qualquer tipo de faixa, o ideal é manter mais de 70% em {{stableSymbol}}. Isso dá margem antes de tocar o piso (menor risco de sair da faixa) e amortece quedas de preço de {{volatileSymbol}} no curto prazo.",
     summaryComposition: "Composição estimada",
     summaryInvestable: "Capital investível",
     summaryReserve: "Reserva de reinjeção",

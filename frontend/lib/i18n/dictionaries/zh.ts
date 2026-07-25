@@ -219,6 +219,9 @@ const zh: Dictionary = {
     poolTypeMedium: "中等",
     poolTypeWide: "宽区间",
     poolTypeConservative: "保守",
+    compositionTipLabel: "建议：",
+    compositionTipBody:
+      "无论哪种区间类型，最好将超过70%配置为{{stableSymbol}}。这样能在触及区间下限前留出缓冲（降低脱离区间的风险），并缓解{{volatileSymbol}}短期价格下跌带来的影响。",
     summaryComposition: "预计构成",
     summaryInvestable: "可投资本金",
     summaryReserve: "再注入储备金",

@@ -222,6 +222,9 @@ const en: Dictionary = {
     poolTypeMedium: "Medium",
     poolTypeWide: "Wide",
     poolTypeConservative: "Conservative",
+    compositionTipLabel: "Tip:",
+    compositionTipBody:
+      "for any range type, it's best to keep more than 70% in {{stableSymbol}}. It gives you room before hitting the floor (less chance of falling out of range) and cushions short-term {{volatileSymbol}} price drops.",
     summaryComposition: "Estimated composition",
     summaryInvestable: "Investable capital",
     summaryReserve: "Reinjection reserve",
