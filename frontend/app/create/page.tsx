@@ -319,6 +319,20 @@ export default function CreateVault() {
       ? ((upperPreview - lowerPreview) / upperPreview) * 100
       : undefined;
 
+  // Where this range's width lands on the narrow-to-conservative spectrum —
+  // tighter ranges earn more fees per dollar but need more active
+  // rebalancing, wider ones are more hands-off but dilute fee density.
+  const poolType =
+    rangeWidthPct === undefined
+      ? undefined
+      : rangeWidthPct <= 10
+        ? { label: t("create.poolTypeNarrow"), color: "#EC4899" }
+        : rangeWidthPct <= 20
+          ? { label: t("create.poolTypeMedium"), color: "#F97316" }
+          : rangeWidthPct <= 30
+            ? { label: t("create.poolTypeWide"), color: "#3B82F6" }
+            : { label: t("create.poolTypeConservative"), color: "#22D3EE" };
+
   // Estimated token split within the chosen range, at the current price —
   // reuses the exact sizing math the keeper itself uses to balance a fresh
   // position (sizeInitialSwap), just fed with preview values instead of the
@@ -1011,6 +1025,22 @@ export default function CreateVault() {
                     v={rangeWidthPct !== undefined ? `${rangeWidthPct.toFixed(1)}%` : "…"}
                   />
                   <SummaryRow
+                    k={t("create.summaryPoolType")}
+                    v={
+                      poolType ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                          style={{ backgroundColor: `${poolType.color}26`, color: poolType.color }}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: poolType.color }} />
+                          {poolType.label}
+                        </span>
+                      ) : (
+                        "…"
+                      )
+                    }
+                  />
+                  <SummaryRow
                     k={t("create.summaryComposition")}
                     v={
                       rangeComposition
@@ -1238,7 +1268,7 @@ function Field({
   );
 }
 
-function SummaryRow({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
+function SummaryRow({ k, v, strong }: { k: string; v: React.ReactNode; strong?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="text-muted">{k}</dt>
