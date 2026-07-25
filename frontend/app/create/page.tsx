@@ -874,6 +874,7 @@ export default function CreateVault() {
                   lower={lowerPreview ?? currentPrice * 0.9}
                   upper={upperPreview ?? currentPrice * 1.1}
                   current={currentPrice}
+                  composition={rangeComposition}
                   stableSymbol={chain.stableSymbol}
                   volatileSymbol={chain.volatileSymbol}
                   onChangeLower={(v) => setMinPrice(v.toFixed(2))}
@@ -1061,6 +1062,7 @@ function PriceRangeSlider({
   lower,
   upper,
   current,
+  composition,
   stableSymbol,
   volatileSymbol,
   onChangeLower,
@@ -1072,6 +1074,7 @@ function PriceRangeSlider({
   lower: number | undefined;
   upper: number | undefined;
   current: number | undefined;
+  composition: { stablePct: number; volatilePct: number; volatileQty: number } | undefined;
   stableSymbol: string;
   volatileSymbol: string;
   onChangeLower: (v: number) => void;
@@ -1129,12 +1132,12 @@ function PriceRangeSlider({
 
   return (
     <div className="mt-8">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-col items-center text-center">
         <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-white">
           {t("positionNft.priceRange")}
         </span>
         {rangeWidthPct !== undefined && (
-          <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+          <span className="mt-1 font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
             {rangeWidthPct.toFixed(2)}% {t("positionNft.rangeWidth")}
           </span>
         )}
@@ -1181,6 +1184,12 @@ function PriceRangeSlider({
           {stableSymbol}/{volatileSymbol}
         </p>
       )}
+      <p className="mt-3 whitespace-nowrap text-center text-sm text-white/80">
+        <span className="text-faint">{t("create.summaryComposition")}: </span>
+        {composition
+          ? `${composition.stablePct.toFixed(0)}% ${stableSymbol} · ${composition.volatilePct.toFixed(0)}% ${volatileSymbol} (${composition.volatileQty.toFixed(4)} ${volatileSymbol})`
+          : "…"}
+      </p>
     </div>
   );
 }
