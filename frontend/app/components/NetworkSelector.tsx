@@ -1,33 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { celo, arbitrum } from "wagmi/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 import type { ChainDef } from "@/lib/chains";
-
-// Same "colored badge, not the pixel-accurate mark" approach as
-// TokenIcon.tsx — Celo's ring-in-a-ring gold mark and Arbitrum's navy
-// arrow are both simple enough to approximate cleanly.
-function ChainIcon({ chainId, size = 22 }: { chainId: number; size?: number }) {
-  if (chainId === celo.id) {
-    return (
-      <svg width={size} height={size} viewBox="0 0 32 32" className="shrink-0 rounded-full">
-        <circle cx="16" cy="16" r="16" fill="#FCFF52" />
-        <circle cx="16" cy="16" r="8.5" fill="none" stroke="#000000" strokeWidth="3.2" />
-      </svg>
-    );
-  }
-  if (chainId === arbitrum.id) {
-    return (
-      <svg width={size} height={size} viewBox="0 0 32 32" className="shrink-0 rounded-full">
-        <circle cx="16" cy="16" r="16" fill="#213147" />
-        <path d="M12.3 21.5 L15.1 13.6 L17.3 13.6 L14.5 21.5 Z" fill="#28A0F0" />
-        <path d="M17.9 10.5 L20.1 10.5 L20.1 12.4 L18.7 16.3 L21.8 21.5 L19.3 21.5 L17.2 17.8 L15.6 21.5 L13.1 21.5 Z" fill="#FFFFFF" />
-      </svg>
-    );
-  }
-  return <div className="shrink-0 rounded-full bg-white/10" style={{ width: size, height: size }} />;
-}
+import { ChainIcon } from "./ChainIcon";
 
 /**
  * Uniswap-style network dropdown: a trigger button showing the current

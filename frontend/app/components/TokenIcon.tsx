@@ -1,49 +1,84 @@
-// Small inline SVG badges for the handful of tokens this app ever deals
-// with (WETH on every chain, USDC on Arbitrum, USDT on Celo) — colored to
-// match each token's well-known brand color, not a pixel-accurate
-// reproduction of the official mark. Falls back to a plain monogram for
-// anything else so a future token never renders blank.
+// Real brand-color token marks (MIT-licensed vector data from
+// @web3icons/core — https://web3icons.io) inlined directly instead of
+// pulled in as a dependency, since this app only ever needs three of them
+// (WETH on every chain, USDC on Arbitrum, USDT on Celo). Falls back to a
+// plain monogram for anything else so a future token never renders blank.
+// clipPath ids are keyed by symbol, not per-instance — every instance of
+// the same symbol clips to the identical 24x24 rect, so duplicate ids
+// across multiple renders of the same token on one page are harmless.
 export function TokenIcon({ symbol, size = 28, className = "" }: { symbol: string; size?: number; className?: string }) {
   const s = symbol.toUpperCase();
+  const clipId = `token-clip-${s}`;
 
   if (s === "WETH" || s === "ETH") {
     return (
-      <svg width={size} height={size} viewBox="0 0 32 32" className={`shrink-0 rounded-full ${className}`}>
-        <circle cx="16" cy="16" r="16" fill="#627EEA" />
-        <path d="M16.3 4.5 L16.3 13.15 L23.65 16.45 Z" fill="#C0CBF6" />
-        <path d="M16.3 4.5 L8.95 16.45 L16.3 13.15 Z" fill="#FFFFFF" />
-        <path d="M16.3 21.7 L16.3 27.5 L23.65 17.85 Z" fill="#C0CBF6" />
-        <path d="M16.3 27.5 L16.3 21.7 L8.95 17.85 Z" fill="#FFFFFF" />
-        <path d="M16.3 20.35 L23.65 16.45 L16.3 13.16 Z" fill="#8198EE" />
-        <path d="M8.95 16.45 L16.3 20.35 L16.3 13.16 Z" fill="#C0CBF6" />
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`shrink-0 rounded-full ${className}`}>
+        <g clipPath={`url(#${clipId})`}>
+          <path fill="#000" d="M24 0H0v24h24z" />
+          <path fill="#8FFCF3" d="M12 4v5.912l5 2.236z" />
+          <path fill="#CABCF8" d="m12 4-5 8.148 5-2.236z" />
+          <path fill="#CBA7F5" d="M12 15.98V20l5-6.92z" />
+          <path fill="#74A0F3" d="M12 20v-4.02l-5-2.9z" />
+          <path fill="#CBA7F5" d="m12 15.048 5-2.9-5-2.236z" />
+          <path fill="#74A0F3" d="m7 12.148 5 2.9V9.912z" />
+          <path
+            fill="#202699"
+            fillRule="evenodd"
+            d="m12 15.048-5-2.9L12 4l5 8.148zm-4.668-3.136 4.588-7.476v5.436zm-.068.204 4.656-2.068v4.768zm4.816-2.068v4.768l4.652-2.7zm0-.176 4.588 2.04-4.588-7.476z"
+            clipRule="evenodd"
+          />
+          <path
+            fill="#202699"
+            fillRule="evenodd"
+            d="m12 15.916-5-2.84L12 20l5-6.924zm-4.44-2.34 4.36 2.48v3.56zm4.52 2.48v3.56l4.36-6.04z"
+            clipRule="evenodd"
+          />
+        </g>
+        <defs>
+          <clipPath id={clipId}>
+            <path fill="#fff" d="M0 0h24v24H0z" />
+          </clipPath>
+        </defs>
       </svg>
     );
   }
 
   if (s === "USDC") {
     return (
-      <svg width={size} height={size} viewBox="0 0 32 32" className={`shrink-0 rounded-full ${className}`}>
-        <circle cx="16" cy="16" r="16" fill="#2775CA" />
-        <path
-          d="M13.2 24.4c-4.3-1.2-7-4.8-7-8.4s2.7-7.2 7-8.4V5c-5.8 1.3-10 6-10 11s4.2 9.7 10 11v-2.6ZM18.8 7.6v2.6c4.3 1.2 7 4.8 7 8.4s-2.7 7.2-7 8.4v2.6c5.8-1.3 10-6 10-11S24.6 8.9 18.8 7.6Z"
-          fill="#FFFFFF"
-        />
-        <path
-          d="M16.9 21.6c-2.9 0-4.5-1.4-4.7-3.4h2.1c.2 1 .9 1.7 2.6 1.7 1.3 0 2.2-.6 2.2-1.6 0-1-.6-1.4-2.5-1.8-2.6-.5-4.1-1.3-4.1-3.4 0-1.9 1.5-3.1 3.7-3.3v-1.9h1.7v1.9c2.1.3 3.5 1.5 3.7 3.3h-2.1c-.2-.9-.9-1.5-2.2-1.5-1.3 0-2 .6-2 1.4 0 .9.6 1.3 2.4 1.7 2.8.6 4.2 1.4 4.2 3.5 0 2-1.5 3.2-3.9 3.5v1.9h-1.7v-1.9Z"
-          fill="#FFFFFF"
-        />
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`shrink-0 rounded-full ${className}`}>
+        <g clipPath={`url(#${clipId})`}>
+          <path fill="#0B53BF" d="M24 0H0v24h24z" />
+          <path
+            fill="#fff"
+            fillRule="evenodd"
+            d="M12 20c4.435 0 8-3.565 8-8s-3.565-8-8-8-8 3.565-8 8 3.565 8 8 8m2.2-6.735c0-1.165-.7-1.565-2.1-1.73-1-.135-1.2-.4-1.2-.87 0-.465.335-.765 1-.765.6 0 .935.2 1.1.7.035.1.135.165.235.165h.53c.135 0 .235-.1.235-.23v-.036c-.135-.734-.735-1.434-1.5-1.5v-.734c0-.135-.1-.235-.265-.265h-.44c-.135 0-.26.1-.295.265V9c-1 .135-1.665.9-1.665 1.735 0 1.1.665 1.53 2.065 1.7.935.165 1.235.365 1.235.9 0 .53-.47.9-1.1.9-.87 0-1.17-.37-1.27-.87-.03-.13-.13-.2-.23-.2h-.57c-.13 0-.23.1-.23.235v.035c.13.83.665 1.4 1.765 1.565v.74c0 .135.1.224.265.26h.48c.13 0 .22-.09.255-.26V15c1-.165 1.7-.835 1.7-1.735m-5.566 2.49c.483.443 1.05.786 1.666 1.01.1.07.2.2.2.3v.47c0 .064 0 .1-.035.13-.03.134-.165.2-.3.134a6 6 0 0 1 0-11.435c.035-.03.1-.03.135-.03.135.03.2.13.2.265v.465c0 .17-.065.27-.2.335a4.93 4.93 0 0 0-2.965 2.965 4.965 4.965 0 0 0 1.299 5.391M13.535 6.5c.03-.135.165-.2.3-.135a6.05 6.05 0 0 1 3.9 3.935c1 3.165-.735 6.535-3.9 7.535-.035.03-.1.03-.135.03-.135-.03-.2-.13-.2-.265v-.465c0-.17.065-.27.2-.335a4.93 4.93 0 0 0 2.965-2.965 4.967 4.967 0 0 0-2.965-6.4c-.1-.07-.2-.2-.2-.335v-.465c0-.07 0-.1.035-.135"
+            clipRule="evenodd"
+          />
+        </g>
+        <defs>
+          <clipPath id={clipId}>
+            <path fill="#fff" d="M0 0h24v24H0z" />
+          </clipPath>
+        </defs>
       </svg>
     );
   }
 
   if (s === "USDT") {
     return (
-      <svg width={size} height={size} viewBox="0 0 32 32" className={`shrink-0 rounded-full ${className}`}>
-        <circle cx="16" cy="16" r="16" fill="#26A17B" />
-        <path
-          d="M17.9 17.3v-.01c-.11.01-.68.04-1.94.04-1 0-1.71-.03-1.96-.04v.01c-3.24-.14-5.66-.71-5.66-1.39s2.42-1.25 5.66-1.4v2.23c.25.02.98.06 1.98.06 1.2 0 1.81-.05 1.92-.06v-2.22c3.23.14 5.64.71 5.64 1.39s-2.41 1.25-5.64 1.39Zm0-3.02v-1.99h4.51V9.3H9.63v3.01h4.51v1.99c-3.67.17-6.43.9-6.43 1.77s2.76 1.6 6.43 1.77v6.35h1.96v-6.35c3.66-.17 6.42-.9 6.42-1.77s-2.76-1.6-6.42-1.77Z"
-          fill="#FFFFFF"
-        />
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`shrink-0 rounded-full ${className}`}>
+        <g clipPath={`url(#${clipId})`}>
+          <path fill="#009393" d="M24 0H0v24h24z" />
+          <path
+            fill="#fff"
+            d="m12 18.4-8-7.892L7.052 5.6h9.896L20 10.508zm.8-7.2v-.976c1.44.072 2.784.352 3.2.716-.484.424-2.216.732-4 .732s-3.516-.308-4-.732c.412-.364 1.76-.64 3.2-.72v.98zM8 10.936v.588c.412.364 1.756.64 3.2.72V14.4h1.6v-2.16c1.44-.072 2.788-.352 3.2-.716v-1.172c-.412-.364-1.76-.644-3.2-.72V8.8h2.4V7.6H8.8v1.2h2.4v.832c-1.444.076-2.788.356-3.2.72z"
+          />
+        </g>
+        <defs>
+          <clipPath id={clipId}>
+            <path fill="#fff" d="M0 0h24v24H0z" />
+          </clipPath>
+        </defs>
       </svg>
     );
   }

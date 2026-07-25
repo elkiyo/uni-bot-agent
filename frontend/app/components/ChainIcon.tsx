@@ -1,31 +1,48 @@
 import { celo, arbitrum } from "viem/chains";
 
-// Small brand-colored badges so vault cards are tellable apart from each
-// other at a glance without reading the "CELO"/"ARBITRUM" text label —
-// Celo's signature yellow ring mark, Arbitrum's navy-and-cyan arrow mark.
-function CeloGlyph({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
-      <circle cx="8" cy="8" r="7" fill="#FCFF52" />
-      <circle cx="8" cy="8" r="7" fill="none" stroke="#000" strokeOpacity="0.15" strokeWidth="1" />
-      <circle cx="6.1" cy="8" r="3.1" fill="none" stroke="#000" strokeWidth="1.3" />
-      <circle cx="9.9" cy="8" r="3.1" fill="none" stroke="#000" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function ArbitrumGlyph({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
-      <circle cx="8" cy="8" r="7" fill="#213147" />
-      <path d="M5.6 10.6 8 4.9l2.4 5.7" fill="none" stroke="#12AAFF" strokeWidth="1.3" strokeLinejoin="round" />
-      <path d="M6.6 10.6h2.8" fill="none" stroke="#fff" strokeWidth="1.1" />
-    </svg>
-  );
-}
-
-export function ChainIcon({ chainId, className = "h-4 w-4" }: { chainId: number; className?: string }) {
-  if (chainId === celo.id) return <CeloGlyph className={className} />;
-  if (chainId === arbitrum.id) return <ArbitrumGlyph className={className} />;
-  return null;
+// Real brand-color network marks (MIT-licensed vector data from
+// @web3icons/core — https://web3icons.io) inlined directly, same approach
+// as TokenIcon.tsx. Single shared component — this used to be duplicated
+// (hand-drawn approximations) in both this file and NetworkSelector.tsx.
+export function ChainIcon({ chainId, size = 22, className = "" }: { chainId: number; size?: number; className?: string }) {
+  if (chainId === celo.id) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`shrink-0 rounded-full ${className}`}>
+        <g clipPath="url(#chain-clip-celo)">
+          <path fill="#FCFE52" d="M24 0H0v24h24z" />
+          <path fill="#fff" d="M4 4h16v5.715h-2.765a5.714 5.714 0 1 0 0 4.57H20V20H4z" />
+        </g>
+        <defs>
+          <clipPath id="chain-clip-celo">
+            <path fill="#fff" d="M0 0h24v24H0z" />
+          </clipPath>
+        </defs>
+      </svg>
+    );
+  }
+  if (chainId === arbitrum.id) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`shrink-0 rounded-full ${className}`}>
+        <g clipPath="url(#chain-clip-arbitrum)">
+          <path fill="#213147" d="M24 0H0v24h24z" />
+          <path
+            fill="#fff"
+            d="m13.203 13.216-.787 2.124a.27.27 0 0 0 0 .183l1.354 3.655 1.565-.89-1.879-5.072c-.042-.117-.21-.117-.253 0m1.577-3.573a.135.135 0 0 0-.253 0l-.787 2.124a.27.27 0 0 0 0 .183l2.217 5.985 1.565-.89z"
+          />
+          <path
+            fill="#fff"
+            d="M11.999 4.991a.24.24 0 0 1 .111.03l5.969 3.393a.22.22 0 0 1 .112.19v6.787a.22.22 0 0 1-.112.19l-5.969 3.395a.2.2 0 0 1-.111.029.24.24 0 0 1-.113-.03l-5.968-3.39a.22.22 0 0 1-.112-.19v-6.79a.22.22 0 0 1 .112-.19l5.969-3.393a.23.23 0 0 1 .111-.03m0-.991c-.213 0-.426.054-.616.163L5.416 7.556a1.21 1.21 0 0 0-.616 1.05v6.787c0 .433.234.834.616 1.05l5.968 3.394a1.25 1.25 0 0 0 1.232 0l5.968-3.394a1.21 1.21 0 0 0 .616-1.05V8.606a1.21 1.21 0 0 0-.616-1.05l-5.97-3.393A1.24 1.24 0 0 0 11.998 4"
+          />
+          <path fill="#fff" d="m8.052 17.943.55-1.482 1.105.905-1.034.93zm3.445-9.823H9.984a.27.27 0 0 0-.254.175l-3.243 8.757 1.565.89L11.623 8.3a.132.132 0 0 0-.127-.179" />
+          <path fill="#fff" d="M14.144 8.12h-1.513a.27.27 0 0 0-.253.175l-3.704 10 1.565.89 4.032-10.886a.133.133 0 0 0-.127-.179" />
+        </g>
+        <defs>
+          <clipPath id="chain-clip-arbitrum">
+            <path fill="#fff" d="M0 0h24v24H0z" />
+          </clipPath>
+        </defs>
+      </svg>
+    );
+  }
+  return <div className={`shrink-0 rounded-full bg-white/10 ${className}`} style={{ width: size, height: size }} />;
 }
