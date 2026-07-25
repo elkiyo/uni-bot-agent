@@ -734,7 +734,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     ? `${feesUsdtStr} ${stableSymbol} + ${feesWethStr} ${volatileSymbol}`
                     : `${feesUsdtStr} ${stableSymbol}`
                 }
+                hintClassName="mt-1 text-sm font-semibold text-positive"
                 hint2={rentLabel}
+                hint2ClassName="mt-1 font-mono text-base font-bold text-accent"
                 accent
               />
             </div>
@@ -1260,12 +1262,18 @@ function Stat({
   hint,
   hint2,
   accent,
+  hintClassName,
+  hint2ClassName,
 }: {
   label: string;
   value: string;
   hint?: string;
   hint2?: string;
   accent?: boolean;
+  /** Overrides the default hint styling — e.g. the fees card wants its
+   * USDT/WETH breakdown in green and larger than the other stats' hints. */
+  hintClassName?: string;
+  hint2ClassName?: string;
 }) {
   return (
     <div
@@ -1282,8 +1290,8 @@ function Stat({
       >
         {value}
       </p>
-      {hint && <p className="mt-1 text-xs text-faint">{hint}</p>}
-      {hint2 && <p className="mt-0.5 font-mono text-xs text-accent">{hint2}</p>}
+      {hint && <p className={hintClassName ?? "mt-1 text-xs text-faint"}>{hint}</p>}
+      {hint2 && <p className={hint2ClassName ?? "mt-0.5 font-mono text-xs text-accent"}>{hint2}</p>}
     </div>
   );
 }
