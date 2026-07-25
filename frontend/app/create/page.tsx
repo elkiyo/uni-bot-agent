@@ -13,6 +13,7 @@ import { decodeEventLog, encodeFunctionData, formatUnits, parseUnits } from "vie
 import SafeAppsSDK, { type GatewayTransactionDetails } from "@safe-global/safe-apps-sdk";
 import { Header } from "../components/Header";
 import { AlertModal } from "../components/AlertModal";
+import { PairIcon } from "../components/TokenIcon";
 import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
@@ -655,14 +656,14 @@ export default function CreateVault() {
               {t("create.choosePoolLabel")}
             </span>
             <p className="mt-1 text-xs text-faint">{t("create.choosePoolHint")}</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 flex flex-col gap-2">
               {(poolMetrics ?? []).map((p) => {
                 const isSelected = p.fee === selectedFee;
                 const disabled = !p.exists || p.liquidity === 0n;
                 return (
                   <div
                     key={p.fee}
-                    className={`rounded-xl border p-4 transition ${
+                    className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border p-4 transition sm:flex-nowrap ${
                       isSelected
                         ? "border-accent bg-accent/[0.08]"
                         : disabled
@@ -674,74 +675,66 @@ export default function CreateVault() {
                       type="button"
                       disabled={disabled}
                       onClick={() => setSelectedFee(p.fee)}
-                      className="w-full text-left"
+                      className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-left disabled:cursor-not-allowed"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-sm font-semibold">{p.fee / 10_000}%</span>
-                        {isSelected && <span className="font-mono text-[10px] uppercase text-accent">{t("create.chosen")}</span>}
+                      <PairIcon volatileSymbol={chain.volatileSymbol} stableSymbol={chain.stableSymbol} />
+                      <div className="w-[150px] shrink-0">
+                        <p className="text-sm font-semibold">
+                          {chain.stableSymbol}/{chain.volatileSymbol}
+                        </p>
+                        <p className="font-mono text-[11px] text-faint">V3 · {p.fee / 10_000}%</p>
                       </div>
+
                       {disabled ? (
-                        <p className="mt-2 text-xs text-faint">{t("create.noLiquidity")}</p>
+                        <p className="text-xs text-faint">{t("create.noLiquidity")}</p>
                       ) : (
-                        <dl className="mt-2 flex flex-col gap-1 text-xs text-muted">
-                          <div className="flex justify-between">
-                            <dt>{t("create.tvl")}</dt>
-                            <dd className="font-mono">{formatUsdCompact(p.tvlUsd)}</dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt>{t("create.liquidity")}</dt>
-                            <dd className="font-mono" title={p.liquidity.toString()}>
-                              {Number(p.liquidity).toExponential(2)}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt>{t("create.recentVolume")}</dt>
-                            <dd className="font-mono">{formatUsdCompact(p.volumeStable)}</dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt>{t("create.recentSwaps")}</dt>
-                            <dd className="font-mono">{p.swapCount}</dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt>{t("create.feePerLiquidity")}</dt>
-                            <dd className="font-mono">
-                              {p.feeRevenuePerLiquidity !== undefined
-                                ? p.feeRevenuePerLiquidity.toExponential(2)
-                                : "—"}
-                            </dd>
-                          </div>
-                        </dl>
+                        <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-1 font-mono text-xs text-muted">
+                          <span>
+                            {t("create.tvl")} <b className="text-white/80">{formatUsdCompact(p.tvlUsd)}</b>
+                          </span>
+                          <span>
+                            {t("create.recentVolume")} <b className="text-white/80">{formatUsdCompact(p.volumeStable)}</b>
+                          </span>
+                          <span>
+                            {t("create.recentSwaps")} <b className="text-white/80">{p.swapCount}</b>
+                          </span>
+                          <span>
+                            {t("create.feePerLiquidity")}{" "}
+                            <b className="text-white/80">
+                              {p.feeRevenuePerLiquidity !== undefined ? p.feeRevenuePerLiquidity.toExponential(2) : "—"}
+                            </b>
+                          </span>
+                        </div>
+                      )}
+
+                      {isSelected && (
+                        <span className="shrink-0 font-mono text-[10px] uppercase text-accent">{t("create.chosen")}</span>
                       )}
                     </button>
 
                     {p.exists && (
-                      <div className="mt-3 flex items-center justify-between border-t border-hairline/50 pt-3">
-                        <span className="eyebrow !px-2 !py-0.5 !text-[9px]">V3</span>
-                        <div className="flex items-center gap-2 font-mono text-[10px] text-faint">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await navigator.clipboard.writeText(p.pool);
-                              setCopiedPool(p.pool);
-                              setTimeout(() => setCopiedPool((cur) => (cur === p.pool ? null : cur)), 1500);
-                            }}
-                            className="transition-colors hover:text-accent"
-                            title={t("create.copyPoolAddress")}
-                          >
-                            {copiedPool === p.pool
-                              ? t("create.copied")
-                              : `${p.pool.slice(0, 6)}…${p.pool.slice(-4)}`}
-                          </button>
-                          <a
-                            href={`${chain.explorerBaseUrl}/address/${p.pool}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="transition-colors hover:text-accent"
-                            title={t("create.viewExplorer")}
-                          >
-                            ↗
-                          </a>
-                        </div>
+                      <div className="flex shrink-0 items-center gap-2 border-hairline/50 pl-0 font-mono text-[10px] text-faint sm:border-l sm:pl-4">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(p.pool);
+                            setCopiedPool(p.pool);
+                            setTimeout(() => setCopiedPool((cur) => (cur === p.pool ? null : cur)), 1500);
+                          }}
+                          className="transition-colors hover:text-accent"
+                          title={t("create.copyPoolAddress")}
+                        >
+                          {copiedPool === p.pool ? t("create.copied") : `${p.pool.slice(0, 6)}…${p.pool.slice(-4)}`}
+                        </button>
+                        <a
+                          href={`${chain.explorerBaseUrl}/address/${p.pool}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="transition-colors hover:text-accent"
+                          title={t("create.viewExplorer")}
+                        >
+                          ↗
+                        </a>
                       </div>
                     )}
                   </div>
