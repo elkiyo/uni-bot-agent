@@ -38,13 +38,17 @@ async function fetchAllRows<T>(
 // value is a historical, block-pinned read that never changes once
 // resolved, so there's no correctness cost to spreading the backfill
 // across several ticks, only a cosmetic delay before it shows up. Raised
-// from 80 to 400 (2026-07-24) once the raw event scan below started
-// surfacing real mint backlogs (700+ Rebalanced events on Arbitrum alone)
-// large enough that 80/tick would have taken 45+ minutes on its own, on
-// top of the raw scan itself — 400 real RPC round-trips (2 reads each) at
-// concurrency 6 is ~67 sequential batches, still comfortably under a
-// minute even with retries.
-const MINT_BACKFILL_BATCH = 400;
+// 80->400 (2026-07-24) once the raw event scan below started surfacing
+// real mint backlogs (700+ Rebalanced events on Arbitrum alone) — but 400
+// combined with MAX_SCAN_BLOCKS=1M turned out to be a real regression, not
+// just theoretically risky: confirmed in production the same day, 3
+// consecutive /api/cron/tick timeouts at the 200s ceiling, worse than the
+// dashboard just being slow, since a killed tick can also skip a trading
+// cycle. The per-request cost estimate this was sized against (~0.5s) was
+// too optimistic under real load. Pulled back to 150 — still ~2.5x the
+// original safe value, but with real margin this time instead of a
+// recomputed "should be fine."
+const MINT_BACKFILL_BATCH = 150;
 // Caps how much of a chain's history one indexer run advances through —
 // same reasoning as MINT_BACKFILL_BATCH, but for the raw eth_getLogs scans
 // themselves. Confirmed necessary in production (2026-07-24): a cold-start
@@ -64,12 +68,15 @@ const MINT_BACKFILL_BATCH = 400;
 // of 5000 at concurrency 6 is 17 sequential batches, worst case (every
 // chunk empty, full 5x re-verify retries) still well under a minute,
 // leaving wide headroom under the 200s ceiling for the rest of the tick.
-// Raised to 1M (2026-07-24) to finish the cold-start catch-up faster once
-// it became the visible bottleneck for the Dashboard/Vault history pages —
-// 200 chunks at concurrency 6 is 34 sequential batches, worst case still
-// under ~90s, leaving margin for MINT_BACKFILL_BATCH's own work and the
-// regular trading tick ahead of it in the same invocation.
-const MAX_SCAN_BLOCKS = 1_000_000n;
+// Raised to 1M (2026-07-24) to finish the cold-start catch-up faster, then
+// pulled back the same day after real production timeouts (see
+// MINT_BACKFILL_BATCH's own note — the two together, not either alone, is
+// what blew the budget). By the time this was reverted the raw scan itself
+// had already caught up to near-realtime on both chains (confirmed: within
+// ~730 blocks of Arbitrum's chain head), so the large cap isn't needed for
+// that part anymore anyway — back to 300k, comfortably proven safe at 500k
+// before, with headroom under it this time.
+const MAX_SCAN_BLOCKS = 300_000n;
 
 async function getIndexerState(key: string): Promise<bigint> {
   const { data, error } = await supabase().from("indexer_state").select("value").eq("key", key).maybeSingle();
