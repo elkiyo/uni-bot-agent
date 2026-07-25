@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   useAccount,
@@ -357,6 +357,18 @@ export default function CreateVault() {
           };
         })()
       : undefined;
+
+  // Fixed ±50% window around the current price, widened to always fit
+  // whatever the user has actually typed so a handle never gets stuck off
+  // the visible track.
+  const sliderDomain = useMemo(() => {
+    if (currentPrice === undefined || currentPrice <= 0) return undefined;
+    let lo = currentPrice * 0.5;
+    let hi = currentPrice * 1.5;
+    if (lowerPreview !== undefined) lo = Math.min(lo, lowerPreview * 0.9);
+    if (upperPreview !== undefined) hi = Math.max(hi, upperPreview * 1.1);
+    return { lo, hi };
+  }, [currentPrice, lowerPreview, upperPreview]);
 
   // Only a real "insufficient funds" once there's an actual balance reading
   // AND the user has typed a real amount — otherwise every fresh page load
@@ -855,6 +867,21 @@ export default function CreateVault() {
                 )}
               </div>
 
+              {sliderDomain && currentPrice !== undefined && (
+                <PriceRangeSlider
+                  domainLo={sliderDomain.lo}
+                  domainHi={sliderDomain.hi}
+                  lower={lowerPreview ?? currentPrice * 0.9}
+                  upper={upperPreview ?? currentPrice * 1.1}
+                  current={currentPrice}
+                  stableSymbol={chain.stableSymbol}
+                  volatileSymbol={chain.volatileSymbol}
+                  onChangeLower={(v) => setMinPrice(v.toFixed(2))}
+                  onChangeUpper={(v) => setMaxPrice(v.toFixed(2))}
+                  t={t}
+                />
+              )}
+
               <div className="mt-8">
                 <button
                   type="button"
@@ -1020,6 +1047,141 @@ export default function CreateVault() {
         )}
       </main>
     </>
+  );
+}
+
+// Two-handle drag slider over [domainLo, domainHi], bidirectionally wired to
+// the Precio mínimo/máximo text fields via onChangeLower/onChangeUpper —
+// dragging a handle writes straight into the same state those inputs read
+// from, and typing in the inputs moves the handle back (this component has
+// no state of its own, it's a pure view over lower/upper/current).
+function PriceRangeSlider({
+  domainLo,
+  domainHi,
+  lower,
+  upper,
+  current,
+  stableSymbol,
+  volatileSymbol,
+  onChangeLower,
+  onChangeUpper,
+  t,
+}: {
+  domainLo: number;
+  domainHi: number;
+  lower: number | undefined;
+  upper: number | undefined;
+  current: number | undefined;
+  stableSymbol: string;
+  volatileSymbol: string;
+  onChangeLower: (v: number) => void;
+  onChangeUpper: (v: number) => void;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const span = domainHi - domainLo;
+  const rangeWidthPct = upper !== undefined && lower !== undefined && upper > 0 ? ((upper - lower) / upper) * 100 : undefined;
+
+  const priceFromClientX = (clientX: number) => {
+    const track = trackRef.current;
+    if (!track || span <= 0) return domainLo;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return domainLo + pct * span;
+  };
+
+  const startDrag = (handle: "lower" | "upper") => (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const minGap = span * 0.01;
+    const move = (ev: PointerEvent) => {
+      const price = priceFromClientX(ev.clientX);
+      if (handle === "lower") {
+        const cap = upper !== undefined ? upper - minGap : domainHi;
+        onChangeLower(Math.max(domainLo, Math.min(price, cap)));
+      } else {
+        const floor = lower !== undefined ? lower + minGap : domainLo;
+        onChangeUpper(Math.min(domainHi, Math.max(price, floor)));
+      }
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  };
+
+  const toPct = (v: number) => (span > 0 ? Math.min(100, Math.max(0, ((v - domainLo) / span) * 100)) : 0);
+  const lowerPct = lower !== undefined ? toPct(lower) : undefined;
+  const upperPct = upper !== undefined ? toPct(upper) : undefined;
+  const currentPct = current !== undefined ? toPct(current) : undefined;
+
+  const Handle = ({ pct, label, onPointerDown }: { pct: number; label: string; onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void }) => (
+    <div
+      role="slider"
+      aria-label={label}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none rounded-full border-2 border-background bg-accent active:cursor-grabbing"
+      style={{ left: `${pct}%` }}
+    />
+  );
+
+  return (
+    <div className="mt-8">
+      <div className="flex items-baseline justify-between">
+        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-white">
+          {t("positionNft.priceRange")}
+        </span>
+        {rangeWidthPct !== undefined && (
+          <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+            {rangeWidthPct.toFixed(2)}% {t("positionNft.rangeWidth")}
+          </span>
+        )}
+      </div>
+      <div className="relative mt-9 pt-8" ref={trackRef}>
+        {currentPct !== undefined && (
+          <div
+            className="pointer-events-none absolute top-0 flex -translate-x-1/2 flex-col items-center"
+            style={{ left: `${currentPct}%` }}
+          >
+            <span className="whitespace-nowrap rounded-md bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white/70">
+              ${current!.toFixed(2)}
+            </span>
+            <span className="h-2 w-px bg-white/30" />
+          </div>
+        )}
+        <div className="relative h-1.5 w-full rounded-full bg-white/10">
+          {lowerPct !== undefined && upperPct !== undefined && (
+            <div
+              className="absolute top-0 h-full rounded-full bg-accent/60"
+              style={{ left: `${lowerPct}%`, width: `${Math.max(0, upperPct - lowerPct)}%` }}
+            />
+          )}
+          {lowerPct !== undefined && (
+            <Handle pct={lowerPct} label={t("create.fieldMinPrice")} onPointerDown={startDrag("lower")} />
+          )}
+          {upperPct !== undefined && (
+            <Handle pct={upperPct} label={t("create.fieldMaxPrice")} onPointerDown={startDrag("upper")} />
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex items-baseline justify-between text-sm">
+        <span className="text-white/90">
+          {t("positionNft.min")}{" "}
+          <span className="font-semibold">{lower !== undefined ? `$${lower.toFixed(2)}` : "…"}</span>
+        </span>
+        <span className="text-white/90">
+          {t("positionNft.max")}{" "}
+          <span className="font-semibold">{upper !== undefined ? `$${upper.toFixed(2)}` : "…"}</span>
+        </span>
+      </div>
+      {current !== undefined && (
+        <p className="mt-2 text-center text-xs text-faint">
+          {stableSymbol}/{volatileSymbol}
+        </p>
+      )}
+    </div>
   );
 }
 
