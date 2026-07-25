@@ -191,7 +191,15 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
   const ethPrice = await currentEthPrice(chain);
 
   const rows = parsed.map((l) => {
-    const args = l.args as Record<string, unknown>;
+    // viem's parseEventLogs returns `args: undefined` (not `{}`) for a
+    // zero-parameter event (e.g. a bare marker event) — confirmed in
+    // production 2026-07-24: JSON.stringify(undefined) returns the actual
+    // JS value `undefined`, not a string, so the JSON.parse round-trip in
+    // serializeArgs threw "\"undefined\" is not valid JSON" on the very
+    // first such event this multi-address scan encountered, crashing the
+    // whole indexer run (both chains, every tick) the moment the wider
+    // MAX_SCAN_BLOCKS range reached one.
+    const args = (l.args ?? {}) as Record<string, unknown>;
     const blockNumber = l.blockNumber as bigint;
     return {
       chain_id: chain.id,
