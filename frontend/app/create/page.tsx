@@ -322,16 +322,16 @@ export default function CreateVault() {
   // Where this range's width lands on the narrow-to-conservative spectrum —
   // tighter ranges earn more fees per dollar but need more active
   // rebalancing, wider ones are more hands-off but dilute fee density.
-  const poolType =
-    rangeWidthPct === undefined
-      ? undefined
-      : rangeWidthPct <= 10
-        ? { label: t("create.poolTypeNarrow"), color: "#EC4899" }
-        : rangeWidthPct <= 20
-          ? { label: t("create.poolTypeMedium"), color: "#F97316" }
-          : rangeWidthPct <= 30
-            ? { label: t("create.poolTypeWide"), color: "#3B82F6" }
-            : { label: t("create.poolTypeConservative"), color: "#22D3EE" };
+  // Shared with the legend rendered below the Tipo de pool badge so both
+  // read from the same thresholds/colors.
+  const POOL_TYPES = [
+    { maxPct: 10, range: "0-10%", labelKey: "create.poolTypeNarrow" as const, color: "#EC4899" },
+    { maxPct: 20, range: "10-20%", labelKey: "create.poolTypeMedium" as const, color: "#F97316" },
+    { maxPct: 30, range: "20-30%", labelKey: "create.poolTypeWide" as const, color: "#3B82F6" },
+    { maxPct: Infinity, range: "30%+", labelKey: "create.poolTypeConservative" as const, color: "#22D3EE" },
+  ];
+  const poolTypeDef = rangeWidthPct === undefined ? undefined : POOL_TYPES.find((pt) => rangeWidthPct <= pt.maxPct);
+  const poolType = poolTypeDef ? { label: t(poolTypeDef.labelKey), color: poolTypeDef.color } : undefined;
 
   // Estimated token split within the chosen range, at the current price —
   // reuses the exact sizing math the keeper itself uses to balance a fresh
@@ -1040,6 +1040,14 @@ export default function CreateVault() {
                       )
                     }
                   />
+                  <div className="-mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    {POOL_TYPES.map((pt) => (
+                      <span key={pt.labelKey} className="inline-flex items-center gap-1 text-[11px] text-faint">
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pt.color }} />
+                        {t(pt.labelKey)} {pt.range}
+                      </span>
+                    ))}
+                  </div>
                   <SummaryRow
                     k={t("create.summaryComposition")}
                     v={
