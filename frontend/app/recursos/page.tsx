@@ -138,7 +138,7 @@ export default function RecursosPage() {
 
         {/* §1 fields */}
         <section className="mt-16">
-          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section1Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section1Subtitle")}</p>
@@ -164,7 +164,7 @@ export default function RecursosPage() {
 
         {/* §2 decision order */}
         <section className="mt-16">
-          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section2Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section2Subtitle")}</p>
@@ -192,7 +192,7 @@ export default function RecursosPage() {
 
         {/* §3 cases */}
         <section className="mt-16">
-          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section3Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section3Subtitle")}</p>
@@ -217,7 +217,7 @@ export default function RecursosPage() {
 
         {/* §4 timeline */}
         <section className="mt-16">
-          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section4Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section4Subtitle")}</p>
@@ -264,7 +264,7 @@ export default function RecursosPage() {
 
         {/* §5 pitfall */}
         <section className="mt-16">
-          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section5Title")}
           </h2>
           <div className="mt-5 rounded-2xl border border-negative/35 bg-negative/[0.06] p-6">

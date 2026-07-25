@@ -194,7 +194,7 @@ function ReferralsDashboard({
             </div>
 
             <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-              <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+              <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
                 {t("referrals.listTitle")}
               </h2>
               {stats && stats.referrals.length === 0 && (

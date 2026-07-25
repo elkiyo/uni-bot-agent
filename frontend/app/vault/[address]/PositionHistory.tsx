@@ -150,7 +150,7 @@ export function PositionHistory({ address, chain }: { address: `0x${string}`; ch
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+      <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
         {t("positionHistory.title")}
       </h2>
       <p className="mt-1 text-sm text-muted">{t("positionHistory.subtitle")}</p>

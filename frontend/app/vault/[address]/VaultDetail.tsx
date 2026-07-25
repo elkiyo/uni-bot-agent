@@ -660,7 +660,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             {isOwner && (
               <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
                 <h2
-                  className="text-xl font-semibold tracking-tight"
+                  className="text-2xl font-semibold tracking-tight text-white"
                   style={{ fontFamily: "var(--font-display)" }}
                 >
                   {t("vaultDetail.managementTitle")}

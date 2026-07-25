@@ -169,7 +169,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
       {closedVaults.length > 0 && (
         <div className="mt-12">
           <h2
-            className="text-lg font-semibold tracking-tight text-faint"
+            className="text-xl font-semibold tracking-tight text-white"
             style={{ fontFamily: "var(--font-display)" }}
           >
             {t("vaults.closedTitle")}

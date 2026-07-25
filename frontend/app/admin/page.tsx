@@ -392,7 +392,7 @@ export default function Admin() {
 
         {data && isPendingOwner && (
           <div className="glass mt-10 rounded-2xl border-accent/35 bg-accent/[0.06] p-6 sm:p-8">
-            <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+            <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
               {t("admin.pendingTransferTitle")}
             </h2>
             <p className="mt-2 text-sm text-muted">
@@ -559,7 +559,7 @@ export default function Admin() {
         {isPlatformOwner && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
             <h2
-              className="text-xl font-semibold tracking-tight"
+              className="text-2xl font-semibold tracking-tight text-white"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {t("admin.editConfigTitle")}
@@ -702,7 +702,7 @@ export default function Admin() {
         {isPlatformOwner && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
             <h2
-              className="text-xl font-semibold tracking-tight"
+              className="text-2xl font-semibold tracking-tight text-white"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {t("admin.unilabCallsTitle")}

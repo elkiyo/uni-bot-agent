@@ -49,7 +49,7 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
     <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
             {t("volumeChart.titlePre")}
             <span className="text-accent">{t("volumeChart.titleHighlight")}</span>
           </h2>

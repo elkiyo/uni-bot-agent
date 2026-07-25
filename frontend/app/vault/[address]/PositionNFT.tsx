@@ -173,7 +173,7 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center gap-3">
         <h2
-          className="text-xl font-semibold tracking-tight"
+          className="text-2xl font-semibold tracking-tight text-white"
           style={{ fontFamily: "var(--font-display)" }}
         >
           {t("positionNft.title", { id: String(tokenId) })}

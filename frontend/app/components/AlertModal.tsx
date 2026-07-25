@@ -15,7 +15,7 @@ export function AlertModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="glass max-w-md rounded-2xl p-6 sm:p-8">
-        <h3 className="text-lg font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+        <h3 className="text-xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
           {title}
         </h3>
         <p className="mt-3 text-sm text-muted">{message}</p>

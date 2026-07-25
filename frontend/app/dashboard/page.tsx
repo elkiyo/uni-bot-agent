@@ -89,7 +89,7 @@ export default function DashboardPage() {
         {metrics.poolTypes.length > 0 && <PoolTypeChart poolTypes={metrics.poolTypes} />}
 
         <div className="mt-10 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold tracking-tight text-white/90" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
             {t("dashboard.historicalSeries")}
           </h2>
           <div className="flex gap-1.5 rounded-full border border-hairline p-1">
@@ -246,7 +246,7 @@ function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocol
   const data = poolTypes.map((p) => ({ label: p.label, tvl: Number(p.tvlUsd.toFixed(2)), vaults: p.vaultCount }));
   return (
     <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+      <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
         {t("dashboard.poolTypeTitle")}
       </h2>
       <p className="mt-1 text-sm text-muted">{t("dashboard.poolTypeSubtitle")}</p>
@@ -285,7 +285,7 @@ function ChartShell({ title, subtitle, isLoading, empty, headerExtra, children }
   return (
     <div className="glass rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+        <h3 className="text-lg font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
           {title}
         </h3>
         {headerExtra}
@@ -765,7 +765,7 @@ function VaultHistoryTable({
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+      <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
         {title ?? t("dashboard.historyTitle")}
       </h2>
       <p className="mt-1 text-sm text-muted">{subtitle ?? t("dashboard.historySubtitle")}</p>
