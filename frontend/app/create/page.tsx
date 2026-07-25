@@ -1152,7 +1152,7 @@ function PriceRangeSlider({
             <span className="whitespace-nowrap rounded-md bg-white/10 px-3 py-1 font-mono text-base font-semibold text-white">
               ${current!.toFixed(2)}
             </span>
-            <span className="h-2 w-px bg-white/30" />
+            <span className="h-2 w-px" style={{ backgroundColor: "var(--positive)" }} />
           </div>
         )}
         <div className="relative h-1.5 w-full rounded-full bg-white/10">
@@ -1167,6 +1167,12 @@ function PriceRangeSlider({
           )}
           {upperPct !== undefined && (
             <Handle pct={upperPct} label={t("create.fieldMaxPrice")} onPointerDown={startDrag("upper")} />
+          )}
+          {currentPct !== undefined && (
+            <div
+              className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
+              style={{ left: `${currentPct}%`, backgroundColor: "var(--positive)", borderColor: "#050505" }}
+            />
           )}
         </div>
       </div>
