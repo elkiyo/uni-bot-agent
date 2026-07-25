@@ -416,6 +416,23 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
  *   the default) — a vault on a non-default fee-tier pool would otherwise
  *   get silently mispriced, same class of bug fixed in monitor.ts's
  *   out-of-range check.
+ *
+ *   Matched by tx_hash ALONE, not also by the Mint event's own `owner` —
+ *   confirmed directly on-chain 2026-07-25 (vault 0x53b70e6a...,
+ *   tx 0x9fb85430...) that a pool's Mint event always reports `owner` as
+ *   the NonfungiblePositionManager CONTRACT address, never the vault that
+ *   actually requested the mint (the position manager holds the pool-level
+ *   liquidity on every user's behalf; per-owner accounting only exists at
+ *   the NFT/tokenId level, not in the pool's own event). Filtering on that
+ *   owner field made every match silently fail, leaving this whole path
+ *   dead code in practice — and a handful of Rebalanced rows already
+ *   carried a WRONG usd_value from the eth_call approach this replaced
+ *   (garbage from reading a nearly-pruned block rather than cleanly
+ *   erroring), which is why every Rebalanced row's usd_value was reset to
+ *   null in Supabase before this fix shipped, so they all get correctly
+ *   recomputed from here instead of keeping stale bad numbers. A single
+ *   rebalance transaction only ever contains one relevant pool mint, so
+ *   tx_hash alone is already an exact, unambiguous match.
  */
 async function backfillMintUsd(chain: ChainRuntime): Promise<void> {
   const vaultRows = await fetchAllRows<{
@@ -504,11 +521,8 @@ async function backfillMintUsd(chain: ChainRuntime): Promise<void> {
       return; // transient RPC error — retried next tick
     }
 
-    const match = mintLogs.find((l) => {
-      const args = l.args as { owner?: Address } | undefined;
-      return l.transactionHash?.toLowerCase() === row.tx_hash.toLowerCase() && args?.owner?.toLowerCase() === row.address.toLowerCase();
-    });
-    if (!match) return; // no matching pool Mint in this exact block for this vault — leave null, shouldn't normally happen
+    const match = mintLogs.find((l) => l.transactionHash?.toLowerCase() === row.tx_hash.toLowerCase());
+    if (!match) return; // no pool Mint found in this exact block for this tx — leave null, shouldn't normally happen
 
     const args = match.args as { amount0: bigint; amount1: bigint };
     const stableRaw = pair.stableIsToken0 ? args.amount0 : args.amount1;
