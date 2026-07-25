@@ -1011,10 +1011,6 @@ export default function CreateVault() {
                   )}
                 </dl>
               </div>
-
-              <div className="glass rounded-2xl p-5">
-                <p className="text-[13px] leading-relaxed text-muted">{t("create.feeNote")}</p>
-              </div>
             </aside>
           </div>
         ) : (
