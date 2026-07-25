@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { useQueries } from "@tanstack/react-query";
@@ -36,6 +36,8 @@ export default function VaultsPage() {
   const { address, isConnected } = useAccount();
   const chains = useAvailableChains();
   const { t } = useTranslation();
+  const [chainFilter, setChainFilter] = useState<number | "all">("all");
+  const filteredChains = chainFilter === "all" ? chains : chains.filter((c) => c.id === chainFilter);
 
   return (
     <>
@@ -56,15 +58,39 @@ export default function VaultsPage() {
           </Link>
         </div>
 
+        {isConnected && chains.length > 1 && (
+          <div className="mt-8 flex flex-wrap gap-1.5 rounded-full border border-hairline p-1" style={{ width: "fit-content" }}>
+            <ChainTab label={t("vaults.chainAll")} active={chainFilter === "all"} onClick={() => setChainFilter("all")} />
+            {chains.map((c) => (
+              <ChainTab key={c.id} label={c.name} active={chainFilter === c.id} onClick={() => setChainFilter(c.id)} />
+            ))}
+          </div>
+        )}
+
         {!isConnected && (
           <div className="glass mt-10 rounded-2xl p-10 text-center">
             <p className="text-muted">{t("vaults.connectWallet")}</p>
           </div>
         )}
 
-        {isConnected && <AllVaults chains={chains} owner={address as `0x${string}`} />}
+        {isConnected && <AllVaults chains={filteredChains} owner={address as `0x${string}`} />}
       </main>
     </>
+  );
+}
+
+function ChainTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        active
+          ? "rounded-full bg-accent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
+          : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
+      }
+    >
+      {label}
+    </button>
   );
 }
 

@@ -243,6 +243,7 @@ const en: Dictionary = {
     eyebrow: "Panel",
     title: "My vaults",
     createVault: "Create vault",
+    chainAll: "All",
     connectWallet: "Connect your wallet to see your vaults.",
     loading: "Loading…",
     noneYet: "You don't have any vaults yet.",

@@ -241,6 +241,7 @@ const es = {
     eyebrow: "Panel",
     title: "Mis vaults",
     createVault: "Crear vault",
+    chainAll: "Todas",
     connectWallet: "Conectá tu wallet para ver tus vaults.",
     loading: "Cargando…",
     noneYet: "Todavía no tenés ningún vault.",

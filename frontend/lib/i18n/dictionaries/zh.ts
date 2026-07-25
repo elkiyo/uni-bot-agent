@@ -240,6 +240,7 @@ const zh: Dictionary = {
     eyebrow: "面板",
     title: "我的金库",
     createVault: "创建金库",
+    chainAll: "全部",
     connectWallet: "请连接钱包以查看你的金库。",
     loading: "加载中…",
     noneYet: "你还没有创建任何金库。",
