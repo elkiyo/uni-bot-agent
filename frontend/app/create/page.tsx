@@ -18,6 +18,7 @@ import { NetworkSelector } from "../components/NetworkSelector";
 import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
+import { sizeInitialSwap } from "@/lib/keeper/swapMath";
 import { usePoolMetrics } from "@/lib/usePoolMetrics";
 import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
 import { formatUsdCompact } from "@/lib/format";
@@ -312,6 +313,50 @@ export default function CreateVault() {
     Number(formatUnits(creationFeeUsdt, 6));
   const lowerPreview = parseFloat(minPrice) || undefined;
   const upperPreview = parseFloat(maxPrice) || undefined;
+
+  const rangeWidthPct =
+    lowerPreview !== undefined && upperPreview !== undefined && upperPreview > 0
+      ? ((upperPreview - lowerPreview) / upperPreview) * 100
+      : undefined;
+
+  // Estimated token split within the chosen range, at the current price —
+  // reuses the exact sizing math the keeper itself uses to balance a fresh
+  // position (sizeInitialSwap), just fed with preview values instead of the
+  // real on-chain tickSpacing-aligned range. Preview only, not what actually
+  // gets submitted on-chain.
+  const rangeComposition =
+    currentTick !== undefined &&
+    currentPrice !== undefined &&
+    lowerPreview !== undefined &&
+    upperPreview !== undefined &&
+    lowerPreview > 0 &&
+    upperPreview > lowerPreview &&
+    (parseFloat(investAmount) || 0) > 0
+      ? (() => {
+          const tickA = tickFromEthPrice(lowerPreview, chain.stableIsToken0);
+          const tickB = tickFromEthPrice(upperPreview, chain.stableIsToken0);
+          const investRaw = parseUnits(investAmount, 6);
+          const { amountIn } = sizeInitialSwap({
+            currentTick,
+            tickLower: Math.min(tickA, tickB),
+            tickUpper: Math.max(tickA, tickB),
+            availableStableRaw: investRaw,
+            ethPriceUsd: currentPrice,
+            stableIsToken0: chain.stableIsToken0,
+          });
+          const volatileUsd = Number(formatUnits(amountIn, 6));
+          const stableUsd = Math.max(0, (parseFloat(investAmount) || 0) - volatileUsd);
+          const totalUsd = stableUsd + volatileUsd;
+          if (totalUsd <= 0) return undefined;
+          return {
+            stableUsd,
+            volatileUsd,
+            volatileQty: volatileUsd / currentPrice,
+            stablePct: (stableUsd / totalUsd) * 100,
+            volatilePct: (volatileUsd / totalUsd) * 100,
+          };
+        })()
+      : undefined;
 
   // Only a real "insufficient funds" once there's an actual balance reading
   // AND the user has typed a real amount — otherwise every fresh page load
@@ -929,6 +974,18 @@ export default function CreateVault() {
                     v={
                       lowerPreview !== undefined && upperPreview !== undefined
                         ? `$${lowerPreview.toFixed(0)} – $${upperPreview.toFixed(0)}`
+                        : "…"
+                    }
+                  />
+                  <SummaryRow
+                    k={t("create.summaryRangeWidth")}
+                    v={rangeWidthPct !== undefined ? `${rangeWidthPct.toFixed(1)}%` : "…"}
+                  />
+                  <SummaryRow
+                    k={t("create.summaryComposition")}
+                    v={
+                      rangeComposition
+                        ? `${rangeComposition.stablePct.toFixed(0)}% ${chain.stableSymbol} · ${rangeComposition.volatilePct.toFixed(0)}% ${chain.volatileSymbol} (${rangeComposition.volatileQty.toFixed(4)} ${chain.volatileSymbol})`
                         : "…"
                     }
                   />

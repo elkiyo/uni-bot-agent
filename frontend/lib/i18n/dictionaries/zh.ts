@@ -213,6 +213,8 @@ const zh: Dictionary = {
     summaryPoolChosen: "已选资金池",
     summaryCurrentPrice: "当前 ETH 价格",
     summaryEstRange: "预计区间",
+    summaryRangeWidth: "区间宽度",
+    summaryComposition: "预计构成",
     summaryInvestable: "可投资本金",
     summaryReserve: "再注入储备金",
     summaryGasBudget: "Gas 预算",

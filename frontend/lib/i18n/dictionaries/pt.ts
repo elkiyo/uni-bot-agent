@@ -216,6 +216,8 @@ const pt: Dictionary = {
     summaryPoolChosen: "Pool escolhido",
     summaryCurrentPrice: "Preço atual do ETH",
     summaryEstRange: "Faixa estimada",
+    summaryRangeWidth: "Amplitude da faixa",
+    summaryComposition: "Composição estimada",
     summaryInvestable: "Capital investível",
     summaryReserve: "Reserva de reinjeção",
     summaryGasBudget: "Orçamento de gas",

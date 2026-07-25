@@ -214,6 +214,8 @@ const es = {
     summaryPoolChosen: "Pool elegida",
     summaryCurrentPrice: "Precio actual ETH",
     summaryEstRange: "Rango estimado",
+    summaryRangeWidth: "Amplitud del rango",
+    summaryComposition: "Composición estimada",
     summaryInvestable: "Capital invertible",
     summaryReserve: "Reserva de reinyección",
     summaryGasBudget: "Presupuesto de gas",
