@@ -267,9 +267,15 @@ export default function CreateVault() {
   // required it, only the old UI did.
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
-  const [maxRebalances, setMaxRebalances] = useState("");
-  const [reinjectionAmount, setReinjectionAmount] = useState("");
-  const [periodicHours, setPeriodicHours] = useState("");
+  // Fixed platform-wide values, not user input anymore — no rebalance-count
+  // cap in practice (1000 is effectively unlimited for a vault's lifetime),
+  // no per-cycle reinjection, no forced periodic trigger (rebalances only
+  // fire when the price actually leaves the range). Owners can no longer
+  // set these at creation or change them later — see VaultDetail.tsx's
+  // reconfigure flow, which dropped the matching inputs too.
+  const maxRebalances = "1000";
+  const reinjectionAmount = "0";
+  const periodicHours = "0";
   // Only meaningful on chains whose vault has a dedicated gasReserveBalance
   // ledger (RangeVaultArb — see chains.ts's supportsGasReserve) — optional,
   // blank = 0: the keeper gas reimbursement never blocks a rebalance even
@@ -318,7 +324,7 @@ export default function CreateVault() {
     setSafeConfirmations(null);
     let currentPhase: Step = "creating"; // tracked outside React state — setStep() batches, so `step` itself isn't reliable to read back mid-function
 
-    if (!investAmount || !minPrice || !maxPrice || !maxRebalances || !reinjectionAmount || !periodicHours) {
+    if (!investAmount || !minPrice || !maxPrice) {
       setError(t("create.errMissingFields"));
       setStep("error");
       return;
@@ -777,6 +783,7 @@ export default function CreateVault() {
                   value={investAmount}
                   onChange={setInvestAmount}
                   placeholder="100"
+                  hint={`${t("create.exampleLabel")} 100 ${chain.stableSymbol}`}
                 />
                 <Field
                   label={t("create.fieldMinPrice")}
@@ -784,7 +791,7 @@ export default function CreateVault() {
                   value={minPrice}
                   onChange={setMinPrice}
                   placeholder={minPricePlaceholder}
-                  hint={t("create.fieldMinPriceHint")}
+                  hint={`${t("create.fieldMinPriceHint")} · ${t("create.exampleLabel")} $${minPricePlaceholder}`}
                 />
                 <Field
                   label={t("create.fieldMaxPrice")}
@@ -792,29 +799,7 @@ export default function CreateVault() {
                   value={maxPrice}
                   onChange={setMaxPrice}
                   placeholder={maxPricePlaceholder}
-                  hint={t("create.fieldMaxPriceHint")}
-                />
-                <Field
-                  label={t("create.fieldMaxRebalances")}
-                  value={maxRebalances}
-                  onChange={setMaxRebalances}
-                  placeholder="10"
-                  hint={t("create.fieldMaxRebalancesHint")}
-                />
-                <Field
-                  label={t("create.fieldReinjection")}
-                  suffix={chain.stableSymbol}
-                  value={reinjectionAmount}
-                  onChange={setReinjectionAmount}
-                  placeholder="10"
-                  hint={t("create.fieldReinjectionHint")}
-                />
-                <Field
-                  label={t("create.fieldPeriodic")}
-                  suffix={t("create.hoursSuffix")}
-                  value={periodicHours}
-                  onChange={setPeriodicHours}
-                  placeholder="24"
+                  hint={`${t("create.fieldMaxPriceHint")} · ${t("create.exampleLabel")} $${maxPricePlaceholder}`}
                 />
                 {chain.supportsGasReserve && (
                   <Field
@@ -828,7 +813,7 @@ export default function CreateVault() {
                     value={gasReserveAmount}
                     onChange={setGasReserveAmount}
                     placeholder="5"
-                    hint={t("create.fieldGasReserveHint")}
+                    hint={`${t("create.fieldGasReserveHint")} ${t("create.exampleLabel")} 5 ${chain.stableSymbol}`}
                   />
                 )}
               </div>

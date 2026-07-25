@@ -176,6 +176,7 @@ const en: Dictionary = {
     viewExplorer: "View on explorer",
     contractsNotDeployed: "Contracts aren't configured on {{chain}} yet.",
 
+    exampleLabel: "E.g.:",
     fieldInvestAmount: "Investment amount",
     fieldMinPrice: "Minimum price",
     fieldMinPriceHint: "Range floor — doesn't have to be symmetric",

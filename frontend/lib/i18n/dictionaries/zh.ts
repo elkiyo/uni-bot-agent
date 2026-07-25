@@ -173,6 +173,7 @@ const zh: Dictionary = {
     viewExplorer: "在区块浏览器中查看",
     contractsNotDeployed: "{{chain}} 上的合约尚未配置完成。",
 
+    exampleLabel: "例：",
     fieldInvestAmount: "投资金额",
     fieldMinPrice: "最低价格",
     fieldMinPriceHint: "区间下限——无需对称",

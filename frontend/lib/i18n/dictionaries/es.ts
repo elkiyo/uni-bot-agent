@@ -174,6 +174,7 @@ const es = {
     viewExplorer: "Ver en el explorer",
     contractsNotDeployed: "Los contratos todavía no están configurados en {{chain}}.",
 
+    exampleLabel: "Ej:",
     fieldInvestAmount: "Monto de inversión",
     fieldMinPrice: "Precio mínimo",
     fieldMinPriceHint: "Piso del rango — no tiene que ser simétrico",
