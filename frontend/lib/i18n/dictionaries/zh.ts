@@ -183,7 +183,9 @@ const zh: Dictionary = {
     fieldMaxPriceHint: "区间上限",
     fieldMaxRebalances: "再平衡次数上限",
     fieldMaxRebalancesHint: "你的手续费支出上限",
-    fieldReinjection: "每周期再注入上限",
+    fieldReserve: "储备金",
+    fieldReserveHint: "创建时存入金库储备金——如果为空，再注入上限将没有可用资金",
+    fieldReinjection: "再注入（{{symbol}}）",
     fieldReinjectionHint: "智能体每次再平衡时可从储备金中调用的最大金额",
     fieldPeriodic: "周期性再平衡",
     fieldGasReservePre: "Gas 预算 · 支付给",
@@ -198,9 +200,9 @@ const zh: Dictionary = {
     fieldCooldownHint: "0 = 除周期性设置外无其他下限",
     fieldMaxDeviation: "区间最大偏离度",
     fieldMaxDeviationHint: "价格可偏离提议区间多少而不会被合约拒绝",
-    fieldRecenterMargin: "重新居中边际",
+    fieldRecenterMargin: "下方重新进场下限边际 %",
     fieldRecenterMarginHint: "从零重建区间时，在当前价格下方设置的新下限边际",
-    fieldExitTopMargin: "上限边际（向上突破时）",
+    fieldExitTopMargin: "上方退出上限边际 %",
     fieldExitTopMarginHint: "价格向上突破区间时，在当前价格上方设置的新上限边际",
 
     insufficientBalanceMsg:

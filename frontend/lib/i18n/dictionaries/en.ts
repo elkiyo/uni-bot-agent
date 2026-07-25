@@ -186,7 +186,9 @@ const en: Dictionary = {
     fieldMaxPriceHint: "Range ceiling",
     fieldMaxRebalances: "Rebalance cap",
     fieldMaxRebalancesHint: "Your spending ceiling on fees",
-    fieldReinjection: "Reinjection cap per cycle",
+    fieldReserve: "Reserve",
+    fieldReserveHint: "Deposited into the vault's reserve at creation — without this, a reinjection cap has nothing to actually draw from",
+    fieldReinjection: "Reinjection ({{symbol}})",
     fieldReinjectionHint: "Maximum the agent can move from the reserve per rebalance",
     fieldPeriodic: "Periodic rebalancing",
     fieldGasReservePre: "Gas budget for the ",
@@ -201,9 +203,9 @@ const en: Dictionary = {
     fieldCooldownHint: "0 = no floor beyond the periodic trigger",
     fieldMaxDeviation: "Max. range deviation",
     fieldMaxDeviationHint: "How far the price can stray from the proposed range before the contract rejects it",
-    fieldRecenterMargin: "Recenter margin",
+    fieldRecenterMargin: "Re-entry floor margin below %",
     fieldRecenterMarginHint: "New floor below the price when rebuilding the range from scratch",
-    fieldExitTopMargin: "Ceiling margin (upper exit)",
+    fieldExitTopMargin: "Exit ceiling margin above %",
     fieldExitTopMarginHint: "New ceiling above the price when exiting range from the top",
 
     insufficientBalanceMsg:

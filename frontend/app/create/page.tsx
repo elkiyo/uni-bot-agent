@@ -268,15 +268,9 @@ export default function CreateVault() {
   // required it, only the old UI did.
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
-  // Fixed at creation time — no rebalance-count cap in practice (1000 is
-  // effectively unlimited for a vault's lifetime), no per-cycle reinjection,
-  // no forced periodic trigger (rebalances only fire when the price
-  // actually leaves the range). Only removed from THIS form — the owner can
-  // still change these later from the vault's own reconfigure panel
-  // (VaultDetail.tsx), which keeps its cfgMaxRebalances/cfgReinjection/
-  // cfgPeriodicHours inputs untouched.
-  const maxRebalances = "1000";
-  const reinjectionAmount = "0";
+  // No forced periodic trigger by default — rebalances only fire when the
+  // price actually leaves the range, unless the owner opts into a periodic
+  // one later from the vault's own reconfigure panel (VaultDetail.tsx).
   const periodicHours = "0";
   // Only meaningful on chains whose vault has a dedicated gasReserveBalance
   // ledger (RangeVaultArb — see chains.ts's supportsGasReserve) — optional,
@@ -285,13 +279,20 @@ export default function CreateVault() {
   // until the owner tops this up.
   const [gasReserveAmount, setGasReserveAmount] = useState("");
 
-  // Advanced / risk knobs — unlike the fields above, these DO have sensible
-  // platform defaults (same values that used to be hardcoded here), so
-  // leaving them blank is a valid choice, not an error. See RangeVault.sol
-  // for what each one actually gates.
-  const [maxSlippagePct, setMaxSlippagePct] = useState("");
-  const [minRebalanceCooldownHours, setMinRebalanceCooldownHours] = useState("");
-  const [maxRangeDeviationTicks, setMaxRangeDeviationTicks] = useState("");
+  // Advanced / risk knobs — these DO have sensible platform defaults (same
+  // values this form used to hardcode outright), so leaving any of them
+  // blank is a valid choice, not an error. See RangeVault.sol for what each
+  // one actually gates. maxSlippagePct/minRebalanceCooldownHours/
+  // maxRangeDeviationTicks were dropped from this section entirely — always
+  // use the platform default now, not even editable here.
+  const [maxRebalances, setMaxRebalances] = useState("");
+  // Deposited into reserveBalance at creation — separate from
+  // reinjectionAmount below, which only caps how much of that reserve the
+  // agent can pull PER CYCLE. Funding zero reserve here means a later
+  // reinjectionAmount cap has nothing to actually draw from until a top-up
+  // deposit adds some.
+  const [reserveAmount, setReserveAmount] = useState("");
+  const [reinjectionAmount, setReinjectionAmount] = useState("");
   const [recenterMarginPct, setRecenterMarginPct] = useState("");
   const [exitTopCeilingMarginPct, setExitTopCeilingMarginPct] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -306,7 +307,7 @@ export default function CreateVault() {
 
   const totalUsdt =
     (parseFloat(investAmount) || 0) +
-    (parseFloat(reinjectionAmount) || 0) +
+    (parseFloat(reserveAmount) || 0) +
     (chain.supportsGasReserve ? parseFloat(gasReserveAmount) || 0 : 0) +
     Number(formatUnits(creationFeeUsdt, 6));
   const lowerPreview = parseFloat(minPrice) || undefined;
@@ -339,7 +340,7 @@ export default function CreateVault() {
     // DepositExceedsPlatformCap with no explanation, just a raw revert.
     const requestedTotalUsd =
       (parseFloat(investAmount) || 0) +
-      (parseFloat(reinjectionAmount) || 0) +
+      (parseFloat(reserveAmount) || 0) +
       (chain.supportsGasReserve ? parseFloat(gasReserveAmount) || 0 : 0);
     if (maxDepositUsd !== 0n && requestedTotalUsd > Number(formatUnits(maxDepositUsd, 6))) {
       setCapAlert(
@@ -442,21 +443,23 @@ export default function CreateVault() {
       const targetTickUpper = Math.max(tickA, tickB);
 
       const investable = parseUnits(investAmount, 6);
-      const reserve = parseUnits(reinjectionAmount, 6);
+      const reserve = parseUnits(reserveAmount || "0", 6);
       const gasReserve = chain.supportsGasReserve ? parseUnits(gasReserveAmount || "0", 6) : 0n;
       const total = investable + reserve + gasReserve;
 
       // Blank = platform default, same values this form used to hardcode —
-      // see the field hints for what each one does.
+      // see the field hints for what each one does. maxSlippageBps/
+      // minRebalanceIntervalSec/maxRangeDeviationBps are no longer editable
+      // here at all — always the platform default, not even in Avanzado.
+      const maxRebalancesFinal = maxRebalances ? BigInt(maxRebalances) : 1000n;
+      const reinjectionCap = parseUnits(reinjectionAmount || "0", 6);
       const recenterMarginBps = recenterMarginPct ? BigInt(Math.round(Number(recenterMarginPct) * 100)) : 500n;
       const exitTopCeilingMarginBps = exitTopCeilingMarginPct
         ? BigInt(Math.round(Number(exitTopCeilingMarginPct) * 100))
         : 300n;
-      const maxSlippageBps = maxSlippagePct ? BigInt(Math.round(Number(maxSlippagePct) * 100)) : 30n;
-      const minRebalanceIntervalSec = minRebalanceCooldownHours
-        ? BigInt(Math.round(Number(minRebalanceCooldownHours) * 3600))
-        : 0n;
-      const maxRangeDeviationBps = maxRangeDeviationTicks ? BigInt(maxRangeDeviationTicks) : 5_000n;
+      const maxSlippageBps = 30n;
+      const minRebalanceIntervalSec = 0n;
+      const maxRangeDeviationBps = 5_000n;
       const depositArgs: readonly bigint[] = chain.supportsGasReserve
         ? [reserve, investable, gasReserve]
         : [reserve, investable];
@@ -490,8 +493,8 @@ export default function CreateVault() {
                 parseUnits(investAmount, 6),
                 targetTickLower,
                 targetTickUpper,
-                BigInt(maxRebalances),
-                reserve,
+                maxRebalancesFinal,
+                reinjectionCap,
                 BigInt(Number(periodicHours) * 3600),
                 recenterMarginBps,
                 exitTopCeilingMarginBps,
@@ -548,8 +551,8 @@ export default function CreateVault() {
             parseUnits(investAmount, 6),
             targetTickLower,
             targetTickUpper,
-            BigInt(maxRebalances),
-            reserve,
+            maxRebalancesFinal,
+            reinjectionCap,
             BigInt(Number(periodicHours) * 3600),
             recenterMarginBps,
             exitTopCeilingMarginBps,
@@ -828,29 +831,6 @@ export default function CreateVault() {
                 {showAdvanced && (
                   <div className="mt-4 grid gap-6 sm:grid-cols-2">
                     <Field
-                      label={t("create.fieldMaxSlippage")}
-                      suffix="%"
-                      value={maxSlippagePct}
-                      onChange={setMaxSlippagePct}
-                      placeholder="0.3"
-                    />
-                    <Field
-                      label={t("create.fieldCooldown")}
-                      suffix={t("create.hoursSuffix")}
-                      value={minRebalanceCooldownHours}
-                      onChange={setMinRebalanceCooldownHours}
-                      placeholder="0"
-                      hint={t("create.fieldCooldownHint")}
-                    />
-                    <Field
-                      label={t("create.fieldMaxDeviation")}
-                      suffix="ticks"
-                      value={maxRangeDeviationTicks}
-                      onChange={setMaxRangeDeviationTicks}
-                      placeholder="5000"
-                      hint={t("create.fieldMaxDeviationHint")}
-                    />
-                    <Field
                       label={t("create.fieldRecenterMargin")}
                       suffix="%"
                       value={recenterMarginPct}
@@ -865,6 +845,29 @@ export default function CreateVault() {
                       onChange={setExitTopCeilingMarginPct}
                       placeholder="3"
                       hint={t("create.fieldExitTopMarginHint")}
+                    />
+                    <Field
+                      label={t("create.fieldMaxRebalances")}
+                      value={maxRebalances}
+                      onChange={setMaxRebalances}
+                      placeholder="1000"
+                      hint={t("create.fieldMaxRebalancesHint")}
+                    />
+                    <Field
+                      label={t("create.fieldReserve")}
+                      suffix={chain.stableSymbol}
+                      value={reserveAmount}
+                      onChange={setReserveAmount}
+                      placeholder="0"
+                      hint={t("create.fieldReserveHint")}
+                    />
+                    <Field
+                      label={t("create.fieldReinjection", { symbol: chain.stableSymbol })}
+                      suffix={chain.stableSymbol}
+                      value={reinjectionAmount}
+                      onChange={setReinjectionAmount}
+                      placeholder="0"
+                      hint={t("create.fieldReinjectionHint")}
                     />
                   </div>
                 )}
@@ -931,7 +934,7 @@ export default function CreateVault() {
                   />
                   <div className="my-1 border-t border-hairline" />
                   <SummaryRow k={t("create.summaryInvestable")} v={`${investAmount || "0"} ${chain.stableSymbol}`} />
-                  <SummaryRow k={t("create.summaryReserve")} v={`${reinjectionAmount || "0"} ${chain.stableSymbol}`} />
+                  <SummaryRow k={t("create.summaryReserve")} v={`${reserveAmount || "0"} ${chain.stableSymbol}`} />
                   {chain.supportsGasReserve && (
                     <SummaryRow k={t("create.summaryGasBudget")} v={`${gasReserveAmount || "0"} ${chain.stableSymbol}`} />
                   )}

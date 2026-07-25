@@ -186,7 +186,9 @@ const pt: Dictionary = {
     fieldMaxPriceHint: "Teto da faixa",
     fieldMaxRebalances: "Teto de rebalanceamentos",
     fieldMaxRebalancesHint: "Seu teto de gasto em taxas",
-    fieldReinjection: "Teto de reinjeção por ciclo",
+    fieldReserve: "Reserva",
+    fieldReserveHint: "É depositado na reserva do vault ao criá-lo — sem isso, um teto de reinjeção não tem de onde tirar fundos",
+    fieldReinjection: "Reinjeção ({{symbol}})",
     fieldReinjectionHint: "Máximo que o agente pode mover da reserva por rebalanceamento",
     fieldPeriodic: "Rebalanceamento periódico",
     fieldGasReservePre: "Orçamento de gas para o ",
@@ -201,9 +203,9 @@ const pt: Dictionary = {
     fieldCooldownHint: "0 = sem piso além do periódico",
     fieldMaxDeviation: "Desvio máx. de faixa",
     fieldMaxDeviationHint: "Quanto o preço pode se afastar da faixa proposta sem que o contrato a rejeite",
-    fieldRecenterMargin: "Margem de recentralização",
+    fieldRecenterMargin: "Margem do piso de reentrada abaixo %",
     fieldRecenterMarginHint: "Novo piso abaixo do preço ao reconstruir a faixa do zero",
-    fieldExitTopMargin: "Margem do teto (saída por cima)",
+    fieldExitTopMargin: "Margem do teto de saída acima %",
     fieldExitTopMarginHint: "Novo teto acima do preço ao sair da faixa por cima",
 
     insufficientBalanceMsg:

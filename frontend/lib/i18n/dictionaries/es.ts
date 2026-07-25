@@ -184,7 +184,9 @@ const es = {
     fieldMaxPriceHint: "Techo del rango",
     fieldMaxRebalances: "Tope de rebalanceos",
     fieldMaxRebalancesHint: "Tu techo de gasto en fees",
-    fieldReinjection: "Tope de reinyección por ciclo",
+    fieldReserve: "Reserva",
+    fieldReserveHint: "Se deposita en la reserva del vault al crearlo — sin esto, un tope de reinyección no tiene de dónde sacar fondos",
+    fieldReinjection: "Reinyección ({{symbol}})",
     fieldReinjectionHint: "Máximo que el agente puede mover de la reserva por rebalanceo",
     fieldPeriodic: "Rebalanceo periódico",
     fieldGasReservePre: "Presupuesto de gas para el ",
@@ -199,9 +201,9 @@ const es = {
     fieldCooldownHint: "0 = sin piso además del periódico",
     fieldMaxDeviation: "Desviación máx. de rango",
     fieldMaxDeviationHint: "Cuánto puede alejarse el precio del rango propuesto sin que el contrato lo rechace",
-    fieldRecenterMargin: "Margen de recentrado",
+    fieldRecenterMargin: "Margen del piso de reentrada abajo %",
     fieldRecenterMarginHint: "Piso nuevo por debajo del precio al reconstruir el rango desde cero",
-    fieldExitTopMargin: "Margen del techo (salida por arriba)",
+    fieldExitTopMargin: "Margen techo salida arriba %",
     fieldExitTopMarginHint: "Techo nuevo por encima del precio al salir de rango por arriba",
 
     insufficientBalanceMsg:
