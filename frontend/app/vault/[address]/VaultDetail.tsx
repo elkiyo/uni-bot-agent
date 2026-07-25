@@ -19,7 +19,7 @@ import { PositionHistory } from "./PositionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
 import { erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
 import type { ChainDef } from "@/lib/chains";
-import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
+import { ethPriceFromTick } from "@/lib/priceMath";
 import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
@@ -162,12 +162,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const { data: feesSummary } = useVaultFeesSummary(address, chain);
   const { data: depositSummary } = useVaultDepositSummary(address, chain);
   const { data: createdAt } = useVaultCreatedAt(address, chain);
-  const { data: tickSpacing } = useReadContract({
-    address: poolAddress,
-    abi: uniswapV3PoolAbi,
-    functionName: "tickSpacing",
-    chainId: chain.id,
-  });
   const { data: slot0 } = useReadContract({
     address: poolAddress,
     abi: uniswapV3PoolAbi,
@@ -238,8 +232,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
   const [cfgReinjection, setCfgReinjection] = useState("");
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
-  const [cfgMinPrice, setCfgMinPrice] = useState("");
-  const [cfgMaxPrice, setCfgMaxPrice] = useState("");
   const [cfgRecenterMarginPct, setCfgRecenterMarginPct] = useState("");
   const [cfgExitTopCeilingMarginPct, setCfgExitTopCeilingMarginPct] = useState("");
   const [riskMaxSlippagePct, setRiskMaxSlippagePct] = useState("");
@@ -250,6 +242,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [withdrawFundsPct, setWithdrawFundsPct] = useState("0");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showRiskLimits, setShowRiskLimits] = useState(false);
 
   // Single choke point for every write in this file — the viewing chain
   // (chain, from useSelectedChain) and the wallet's actual connected chain
@@ -329,33 +322,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleReconfigure() {
-    // Leaving both price fields blank keeps the existing on-chain tick range
-    // (the min/max sort also repairs vaults configured with inverted ticks by
-    // an older create flow — higher USD price of ETH = lower tick in this
-    // pool). Filling them in sets a FRESH range — the only way to finish
-    // configuring a vault that only ever got as far as createVault() (e.g.
-    // the create flow was abandoned mid-way): targetTickLower/Upper are both
-    // 0 on those, so there's no "existing range" to fall back to.
-    let lo: number;
-    let hi: number;
-    const settingFreshRange = Boolean(cfgMinPrice && cfgMaxPrice);
-    if (settingFreshRange) {
-      if (tickSpacing === undefined) return;
-      const lowerPrice = Number(cfgMinPrice);
-      const upperPrice = Number(cfgMaxPrice);
-      if (!(lowerPrice > 0) || !(upperPrice > lowerPrice)) {
-        setError(t("vaultDetail.errPriceRange"));
-        return;
-      }
-      const tickA = alignToTickSpacing(tickFromEthPrice(lowerPrice, chain.stableIsToken0), Number(tickSpacing));
-      const tickB = alignToTickSpacing(tickFromEthPrice(upperPrice, chain.stableIsToken0), Number(tickSpacing));
-      lo = Math.min(tickA, tickB);
-      hi = Math.max(tickA, tickB);
-    } else {
-      if (targetTickLower === undefined || targetTickUpper === undefined) return;
-      lo = Math.min(Number(targetTickLower), Number(targetTickUpper));
-      hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
-    }
+    // Always keeps the existing on-chain tick range now — no price-range
+    // override from this form anymore (the min/max sort here still repairs
+    // vaults configured with inverted ticks by an older create flow, higher
+    // USD price of ETH = lower tick in this pool). A vault that never
+    // finished its initial configureTarget() (targetTickLower/Upper both 0)
+    // gets fixed via create/page.tsx's own resume flow instead, not here.
+    if (targetTickLower === undefined || targetTickUpper === undefined) return;
+    const lo = Math.min(Number(targetTickLower), Number(targetTickUpper));
+    const hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
 
     await withTx(t("vaultDetail.txReconfiguring"), () =>
       writeContractAsync({
@@ -380,18 +355,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       }),
     );
 
-    // A fresh range needs its near-market tolerance set too — the vault
-    // starts with maxRangeDeviationBps = 0, which makes _checkRangeNearMarket
-    // reject initPosition() almost always. Not needed when just tuning
-    // cadence/caps on an already-working vault. Uses whatever's in the risk
-    // params form below (blank = keep the vault's current value, or the
-    // create flow's generous default if it never had one) — resubmitting a
-    // range here is also how an already-broken vault's on-chain tolerance
-    // gets raised, since setRiskParams is owner-only and this form is the
-    // owner-facing path to call it.
-    if (settingFreshRange) {
-      await handleUpdateRiskParams();
-    }
   }
 
   async function handleUpdateRiskParams() {
@@ -704,7 +667,52 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </h2>
                 <p className="mt-1 text-sm text-muted">{t("vaultDetail.managementSubtitle")}</p>
 
+                {hasPosition && (
+                  <div className="mt-6">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                      {t("vaultDetail.increasePositionLabel")}
+                    </span>
+                    <p className="mt-1 text-xs text-faint">{t("vaultDetail.increasePositionHint")}</p>
+                    <div className="mt-2 flex flex-wrap items-end gap-3">
+                      <MiniField
+                        label={t("vaultDetail.fieldAmountSymbol", { symbol: chain.stableSymbol })}
+                        value={increaseAmount}
+                        onChange={setIncreaseAmount}
+                      />
+                      <button
+                        onClick={handleIncreasePosition}
+                        disabled={Boolean(busy)}
+                        className="btn-secondary !py-3"
+                      >
+                        {t("vaultDetail.addToPosition")}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-6">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                    {t("vaultDetail.partialWithdrawLabel")}
+                  </span>
+                  <p className="mt-1 text-xs text-faint">{t("vaultDetail.partialWithdrawHint")}</p>
+                  <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <MiniField
+                      label={t("vaultDetail.fieldPositionPct")}
+                      value={withdrawPositionPct}
+                      onChange={setWithdrawPositionPct}
+                    />
+                    <MiniField label={t("vaultDetail.fieldIdleFundsPct")} value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
+                    <button
+                      onClick={handlePartialWithdraw}
+                      disabled={Boolean(busy)}
+                      className="btn-secondary !py-3"
+                    >
+                      {t("vaultDetail.partialWithdraw")}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-8">
                   <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
                     {t("vaultDetail.depositLabel", { symbol: chain.stableSymbol })}
                   </span>
@@ -755,8 +763,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       : t("vaultDetail.reconfigureHintUnconfigured")}
                   </p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <MiniField label={t("vaultDetail.fieldMinPriceUsd")} value={cfgMinPrice} onChange={setCfgMinPrice} />
-                    <MiniField label={t("vaultDetail.fieldMaxPriceUsd")} value={cfgMaxPrice} onChange={setCfgMaxPrice} />
                     <MiniField
                       label={t("vaultDetail.fieldMaxRebalancesToday", { n: maxRebalances !== undefined ? String(maxRebalances) : "…" })}
                       value={cfgMaxRebalances}
@@ -785,75 +791,48 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
 
                 <div className="mt-8">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    {t("vaultDetail.riskLimitsLabel")}
-                  </span>
-                  <p className="mt-1 text-xs text-faint">{t("vaultDetail.riskLimitsHint")}</p>
-                  <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <MiniField
-                      label={t("vaultDetail.fieldMaxSlippageToday", { n: Number(maxSlippageBps ?? 30n) / 100 })}
-                      value={riskMaxSlippagePct}
-                      onChange={setRiskMaxSlippagePct}
-                    />
-                    <MiniField
-                      label={t("vaultDetail.fieldCooldownToday", { n: Number(minRebalanceInterval ?? 0n) / 3600 })}
-                      value={riskMinCooldownHours}
-                      onChange={setRiskMinCooldownHours}
-                    />
-                    <MiniField
-                      label={t("vaultDetail.fieldMaxDeviationToday", { n: maxRangeDeviationBps !== undefined ? String(maxRangeDeviationBps) : "5000" })}
-                      value={riskMaxRangeDeviationTicks}
-                      onChange={setRiskMaxRangeDeviationTicks}
-                    />
-                    <button onClick={handleUpdateRiskParams} disabled={Boolean(busy)} className="btn-secondary !py-3">
-                      {t("vaultDetail.update")}
-                    </button>
-                  </div>
-                </div>
-
-                {hasPosition && (
-                  <div className="mt-8">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                      {t("vaultDetail.increasePositionLabel")}
-                    </span>
-                    <p className="mt-1 text-xs text-faint">{t("vaultDetail.increasePositionHint")}</p>
-                    <div className="mt-2 flex flex-wrap items-end gap-3">
-                      <MiniField
-                        label={t("vaultDetail.fieldAmountSymbol", { symbol: chain.stableSymbol })}
-                        value={increaseAmount}
-                        onChange={setIncreaseAmount}
-                      />
-                      <button
-                        onClick={handleIncreasePosition}
-                        disabled={Boolean(busy)}
-                        className="btn-secondary !py-3"
-                      >
-                        {t("vaultDetail.addToPosition")}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-8">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                    {t("vaultDetail.partialWithdrawLabel")}
-                  </span>
-                  <p className="mt-1 text-xs text-faint">{t("vaultDetail.partialWithdrawHint")}</p>
-                  <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <MiniField
-                      label={t("vaultDetail.fieldPositionPct")}
-                      value={withdrawPositionPct}
-                      onChange={setWithdrawPositionPct}
-                    />
-                    <MiniField label={t("vaultDetail.fieldIdleFundsPct")} value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
-                    <button
-                      onClick={handlePartialWithdraw}
-                      disabled={Boolean(busy)}
-                      className="btn-secondary !py-3"
+                  <button
+                    type="button"
+                    onClick={() => setShowRiskLimits((v) => !v)}
+                    aria-expanded={showRiskLimits}
+                    className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"
+                  >
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 10 10"
+                      fill="none"
+                      className={`shrink-0 transition-transform ${showRiskLimits ? "rotate-180" : ""}`}
                     >
-                      {t("vaultDetail.partialWithdraw")}
-                    </button>
-                  </div>
+                      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    {t("vaultDetail.riskLimitsLabel")}
+                  </button>
+                  {showRiskLimits && (
+                    <>
+                      <p className="mt-1 text-xs text-faint">{t("vaultDetail.riskLimitsHint")}</p>
+                      <div className="mt-2 flex flex-wrap items-end gap-3">
+                        <MiniField
+                          label={t("vaultDetail.fieldMaxSlippageToday", { n: Number(maxSlippageBps ?? 30n) / 100 })}
+                          value={riskMaxSlippagePct}
+                          onChange={setRiskMaxSlippagePct}
+                        />
+                        <MiniField
+                          label={t("vaultDetail.fieldCooldownToday", { n: Number(minRebalanceInterval ?? 0n) / 3600 })}
+                          value={riskMinCooldownHours}
+                          onChange={setRiskMinCooldownHours}
+                        />
+                        <MiniField
+                          label={t("vaultDetail.fieldMaxDeviationToday", { n: maxRangeDeviationBps !== undefined ? String(maxRangeDeviationBps) : "5000" })}
+                          value={riskMaxRangeDeviationTicks}
+                          onChange={setRiskMaxRangeDeviationTicks}
+                        />
+                        <button onClick={handleUpdateRiskParams} disabled={Boolean(busy)} className="btn-secondary !py-3">
+                          {t("vaultDetail.update")}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">

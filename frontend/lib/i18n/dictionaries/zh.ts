@@ -434,7 +434,7 @@ const zh: Dictionary = {
     fieldMaxRebalancesToday: "再平衡次数上限（当前：{{n}}）",
     fieldReinjectionSymbol: "再注入（{{symbol}}）",
     fieldPeriodicHours: "周期（小时）",
-    fieldRecenterMarginToday: "重新居中边际 %（当前：{{n}}）",
+    fieldRecenterMarginToday: "下方重新进场下限边际 %（当前：{{n}}）",
     fieldTopMarginToday: "向上突破上限边际 %（当前：{{n}}）",
     update: "更新",
 

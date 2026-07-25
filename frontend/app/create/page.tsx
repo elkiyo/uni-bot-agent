@@ -771,7 +771,7 @@ export default function CreateVault() {
                   suffix={chain.stableSymbol}
                   value={investAmount}
                   onChange={setInvestAmount}
-                  placeholder="100"
+                  placeholder={`${t("create.exampleLabel")} 100`}
                   hint={`${t("create.exampleLabel")} 100 ${chain.stableSymbol}`}
                 />
                 <Field
@@ -779,7 +779,7 @@ export default function CreateVault() {
                   suffix="USD"
                   value={minPrice}
                   onChange={setMinPrice}
-                  placeholder={minPricePlaceholder}
+                  placeholder={`${t("create.exampleLabel")} ${minPricePlaceholder}`}
                   hint={`${t("create.fieldMinPriceHint")} · ${t("create.exampleLabel")} $${minPricePlaceholder}`}
                 />
                 <Field
@@ -787,7 +787,7 @@ export default function CreateVault() {
                   suffix="USD"
                   value={maxPrice}
                   onChange={setMaxPrice}
-                  placeholder={maxPricePlaceholder}
+                  placeholder={`${t("create.exampleLabel")} ${maxPricePlaceholder}`}
                   hint={`${t("create.fieldMaxPriceHint")} · ${t("create.exampleLabel")} $${maxPricePlaceholder}`}
                 />
                 {chain.supportsGasReserve && (
@@ -801,7 +801,7 @@ export default function CreateVault() {
                     suffix={chain.stableSymbol}
                     value={gasReserveAmount}
                     onChange={setGasReserveAmount}
-                    placeholder="5"
+                    placeholder={`${t("create.exampleLabel")} 5`}
                     hint={`${t("create.fieldGasReserveHint")} ${t("create.exampleLabel")} 5 ${chain.stableSymbol}`}
                   />
                 )}

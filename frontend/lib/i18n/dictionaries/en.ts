@@ -437,7 +437,7 @@ const en: Dictionary = {
     fieldMaxRebalancesToday: "Rebalance cap (today: {{n}})",
     fieldReinjectionSymbol: "Reinjection ({{symbol}})",
     fieldPeriodicHours: "Periodic (hours)",
-    fieldRecenterMarginToday: "Recenter margin % (today: {{n}})",
+    fieldRecenterMarginToday: "Re-entry floor margin below % (today: {{n}})",
     fieldTopMarginToday: "Ceiling margin upper exit % (today: {{n}})",
     update: "Update",
 

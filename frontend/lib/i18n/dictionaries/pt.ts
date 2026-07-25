@@ -437,7 +437,7 @@ const pt: Dictionary = {
     fieldMaxRebalancesToday: "Teto de rebalanceamentos (hoje: {{n}})",
     fieldReinjectionSymbol: "Reinjeção ({{symbol}})",
     fieldPeriodicHours: "Periódico (horas)",
-    fieldRecenterMarginToday: "Margem de recentralização % (hoje: {{n}})",
+    fieldRecenterMarginToday: "Margem do piso de reentrada abaixo % (hoje: {{n}})",
     fieldTopMarginToday: "Margem de teto na saída por cima % (hoje: {{n}})",
     update: "Atualizar",
 

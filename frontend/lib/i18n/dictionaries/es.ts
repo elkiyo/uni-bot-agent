@@ -435,7 +435,7 @@ const es = {
     fieldMaxRebalancesToday: "Tope rebalanceos (hoy: {{n}})",
     fieldReinjectionSymbol: "Reinyección ({{symbol}})",
     fieldPeriodicHours: "Periódico (horas)",
-    fieldRecenterMarginToday: "Margen recentrado % (hoy: {{n}})",
+    fieldRecenterMarginToday: "Margen del piso de reentrada abajo % (hoy: {{n}})",
     fieldTopMarginToday: "Margen techo salida arriba % (hoy: {{n}})",
     update: "Actualizar",
 
