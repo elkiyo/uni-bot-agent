@@ -7,6 +7,7 @@ import { useQueries } from "@tanstack/react-query";
 import { formatUnits } from "viem";
 import { Header } from "../components/Header";
 import { ChainIcon } from "../components/ChainIcon";
+import { PairIcon } from "../components/TokenIcon";
 import { uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
@@ -157,7 +158,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
   return (
     <>
       {activeVaults.length > 0 && (
-        <ul className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="mt-10 flex flex-col gap-4">
           {activeVaults.map(({ chain, address, createdAt }) => (
             <li key={`${chain.id}-${address}`}>
               <VaultCard vaultAddress={address} chain={chain} createdAt={createdAt} />
@@ -175,7 +176,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
             {t("vaults.closedTitle")}
           </h2>
           <p className="mt-1 text-sm text-muted">{t("vaults.closedSubtitle")}</p>
-          <ul className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="mt-4 flex flex-col gap-4">
             {closedVaults.map(({ chain, address, createdAt }) => (
               <li key={`${chain.id}-${address}`}>
                 <VaultCard vaultAddress={address} chain={chain} createdAt={createdAt} isClosed />
@@ -343,84 +344,91 @@ function VaultCard({
     <Link
       href={`/vault/${vaultAddress}`}
       onClick={onNavigate}
-      className={`glass glass-hover group block rounded-2xl p-5 ${isClosed ? "opacity-60" : ""}`}
+      className={`glass glass-hover group block overflow-hidden rounded-2xl ${isClosed ? "opacity-60" : ""}`}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="eyebrow flex items-center gap-1.5 !border-accent/40 !px-3 !py-1 !text-accent">
-            <ChainIcon chainId={chain.id} className="h-3.5 w-3.5 shrink-0" />
-            {chain.name}
-          </span>
-          {isClosed ? (
-            <span className="eyebrow !px-3 !py-1">{t("vaults.closed")}</span>
-          ) : paused ? (
-            <span className="eyebrow !border-negative/40 !px-3 !py-1 !text-negative">{t("vaults.paused")}</span>
-          ) : (
-            <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">{t("vaults.active")}</span>
-          )}
-          {!isClosed && !hasPosition && <span className="eyebrow !px-3 !py-1">{t("vaults.noPosition")}</span>}
-          {!isClosed && hasPosition && inRange !== undefined && (
-            <span
-              className={
-                inRange
-                  ? "eyebrow !border-positive/40 !px-3 !py-1 !text-positive"
-                  : "eyebrow !border-negative/40 !px-3 !py-1 !text-negative"
-              }
-            >
-              {inRange ? t("vaults.inRange") : t("vaults.outOfRange")}
+      {/* Header row: pair icon anchors the row like a Uniswap position list
+          entry, badges/address trail after it, all on one line on desktop. */}
+      <div className="flex flex-wrap items-center gap-4 p-5">
+        <PairIcon volatileSymbol={chain.volatileSymbol} stableSymbol={chain.stableSymbol} size={36} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-semibold text-white">
+              {chain.stableSymbol} / {chain.volatileSymbol}
             </span>
-          )}
+            <span className="rounded-md border border-hairline px-1.5 py-0.5 font-mono text-[11px] text-faint">
+              {feeTier / 10_000}%
+            </span>
+            <span className="eyebrow flex items-center gap-1.5 !px-2.5 !py-0.5">
+              <ChainIcon chainId={chain.id} size={13} />
+              {chain.name}
+            </span>
+            {isClosed ? (
+              <span className="eyebrow !px-2.5 !py-0.5">{t("vaults.closed")}</span>
+            ) : paused ? (
+              <span className="eyebrow !border-negative/40 !px-2.5 !py-0.5 !text-negative">{t("vaults.paused")}</span>
+            ) : (
+              <span className="eyebrow !border-positive/40 !px-2.5 !py-0.5 !text-positive">{t("vaults.active")}</span>
+            )}
+            {!isClosed && !hasPosition && <span className="eyebrow !px-2.5 !py-0.5">{t("vaults.noPosition")}</span>}
+            {!isClosed && hasPosition && inRange !== undefined && (
+              <span
+                className={
+                  inRange
+                    ? "eyebrow !border-positive/40 !px-2.5 !py-0.5 !text-positive"
+                    : "eyebrow !border-negative/40 !px-2.5 !py-0.5 !text-negative"
+                }
+              >
+                {inRange ? t("vaults.inRange") : t("vaults.outOfRange")}
+              </span>
+            )}
+          </div>
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] text-faint">
+            <span className="break-all">{vaultAddress}</span>
+            {createdOnLabel && <span>{createdOnLabel}</span>}
+          </p>
         </div>
-        <span className="text-xs text-faint transition-colors group-hover:text-accent">{t("vaults.viewDetail")}</span>
+        <span className="hidden shrink-0 text-xs text-faint transition-colors group-hover:text-accent sm:block">
+          {t("vaults.viewDetail")}
+        </span>
       </div>
 
-      <p className="mt-4 break-all font-mono text-xs text-white/70">{vaultAddress}</p>
-      <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-        {chain.stableSymbol} / {chain.volatileSymbol} · {feeTier / 10_000}%
-      </p>
-      {createdOnLabel && <p className="mt-1 font-mono text-[11px] text-faint">{createdOnLabel}</p>}
+      {/* Stat strip: one row of columns spanning the card's full width,
+          wrapping down on narrower screens. Color is reserved for what it
+          actually means — accent on the headline position value, green/red
+          only on genuine gain/loss figures, everything else neutral. */}
+      <div className="grid grid-cols-2 gap-4 border-t border-hairline bg-white/[0.02] px-5 py-4 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCell label={t("vaults.positionValue")}>
+          <p className="text-lg font-semibold tabular-nums text-accent" style={{ fontFamily: "var(--font-display)" }}>
+            {hasPosition && positionValueUsd !== undefined ? `$${positionValueUsd.toFixed(2)}` : "—"}
+          </p>
+        </StatCell>
 
-      {/* Headline: what the position is actually worth right now, and where */}
-      <div className="mt-4 rounded-xl border border-hairline bg-white/[0.02] p-4">
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.positionValue")}</p>
-        <p
-          className="mt-1 text-2xl font-semibold tabular-nums text-accent"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          {hasPosition && positionValueUsd !== undefined ? `$${positionValueUsd.toFixed(2)}` : "—"}
-        </p>
-        {hasPosition && rangeLabel ? (
-          <>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.range")}</p>
-            <p className="mt-0.5 font-mono text-xs text-sky-400">{rangeLabel}</p>
-          </>
-        ) : (
-          <p className="mt-1 font-mono text-xs text-sky-400">{t("vaults.noOpenPosition")}</p>
-        )}
-      </div>
+        <StatCell label={t("vaults.range")}>
+          <p className="font-mono text-xs text-white/80">
+            {hasPosition && rangeLabel ? rangeLabel : t("vaults.noOpenPosition")}
+          </p>
+        </StatCell>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-hairline pt-4">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.freeCapital")}</p>
-          <p className="mt-1 text-sm font-medium text-white/90">
+        <StatCell label={t("vaults.freeCapital")}>
+          <p className="text-sm font-medium text-white/90">
             {formatUnits(idleCapital, 6)} {chain.stableSymbol}
           </p>
           {idleWethRaw > 0n && (
-            <p className="mt-0.5 font-mono text-xs text-negative">
+            <p className="mt-0.5 font-mono text-xs text-amber-400">
               + {Number(formatUnits(idleWethRaw, 18)).toFixed(6)} {chain.volatileSymbol}
               {idleWethUsd !== undefined ? ` (~$${idleWethUsd.toFixed(2)})` : ""}
             </p>
           )}
-        </div>
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.rebalances")}</p>
-          <p className="mt-1 text-sm font-medium text-violet-400">
+        </StatCell>
+
+        <StatCell label={t("vaults.rebalances")}>
+          <p className="text-sm font-medium text-white/90">
             {String(rebalanceCount ?? 0)} / {String(maxRebalances ?? 0)}
           </p>
-        </div>
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.fees")}</p>
-          <p className="mt-1 text-sm font-medium text-positive">
+        </StatCell>
+
+        <StatCell label={t("vaults.fees")}>
+          <p className="text-sm font-medium text-positive">
             {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} {chain.stableSymbol}
           </p>
           {(feesSummary?.totalWeth ?? 0n) > 0n && (
@@ -431,15 +439,24 @@ function VaultCard({
                 : ""}
             </p>
           )}
-          <p className="mt-0.5 font-mono text-xs text-accent">{rentLabel}</p>
-        </div>
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("vaults.floatingReturn")}</p>
-          <p className={`mt-1 text-sm font-medium ${(floatingPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}>
+          <p className="mt-0.5 font-mono text-xs text-white/50">{rentLabel}</p>
+        </StatCell>
+
+        <StatCell label={t("vaults.floatingReturn")}>
+          <p className={`text-sm font-medium ${(floatingPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}>
             {floatingLabel}
           </p>
-        </div>
+        </StatCell>
       </div>
     </Link>
+  );
+}
+
+function StatCell({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{label}</p>
+      <div className="mt-1">{children}</div>
+    </div>
   );
 }
