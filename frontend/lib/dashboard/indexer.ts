@@ -11,6 +11,26 @@ import { estimatePositionAmounts } from "../keeper/swapMath";
 import { serializeArgs } from "../eventArgsCodec";
 
 const SCAN_CONCURRENCY = 6;
+// PostgREST caps a single response at this many rows (db-max-rows) —
+// confirmed hit in production 2026-07-25 (see app/api/dashboard/events/
+// route.ts's own note). Every query below that lists ALL known vault
+// addresses is paginated through this, since silently seeing only the
+// first 1000 would mean any vault created after that point stops getting
+// its events scanned/priced at all, with no error.
+const PAGE_SIZE = 1000;
+
+async function fetchAllRows<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 0; ; page++) {
+    const { data, error } = await build(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+    if (error) throw error;
+    all.push(...(data ?? []));
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return all;
+}
 // Bounded so a chain with a large mint backlog (first run after this
 // feature ships, or a long gap while the indexer was broken) can't blow out
 // a single tick's runtime — same reasoning as mintVolume.ts's old MAX_MINTS
@@ -155,12 +175,10 @@ async function currentEthPrice(chain: ChainRuntime): Promise<number> {
 
 async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
   const key = `events:${chain.id}`;
-  const { data: vaultRows, error: vaultErr } = await supabase()
-    .from("indexed_vaults")
-    .select("address")
-    .eq("chain_id", chain.id);
-  if (vaultErr) throw vaultErr;
-  const addresses = ((vaultRows ?? []) as { address: string }[]).map((v) => v.address as Address);
+  const vaultRows = await fetchAllRows<{ address: string }>((from, to) =>
+    supabase().from("indexed_vaults").select("address").eq("chain_id", chain.id).range(from, to),
+  );
+  const addresses = vaultRows.map((v) => v.address as Address);
   if (addresses.length === 0) return;
 
   const latest = await chain.publicClient.getBlockNumber();
@@ -302,14 +320,10 @@ async function backfillMintUsd(chain: ChainRuntime): Promise<void> {
   }[];
   if (rows.length === 0) return;
 
-  const { data: vaultRows, error: vaultErr } = await supabase()
-    .from("indexed_vaults")
-    .select("address,pool")
-    .eq("chain_id", chain.id);
-  if (vaultErr) throw vaultErr;
-  const poolByAddress = new Map(
-    ((vaultRows ?? []) as { address: string; pool: string }[]).map((v) => [v.address.toLowerCase(), v.pool as Address]),
+  const vaultRows = await fetchAllRows<{ address: string; pool: string }>((from, to) =>
+    supabase().from("indexed_vaults").select("address,pool").eq("chain_id", chain.id).range(from, to),
   );
+  const poolByAddress = new Map(vaultRows.map((v) => [v.address.toLowerCase(), v.pool as Address]));
 
   await mapWithConcurrency(rows, SCAN_CONCURRENCY, async (row) => {
     const pool = poolByAddress.get(row.address.toLowerCase());
