@@ -159,6 +159,8 @@ const es = {
     subtitle:
       "Par {{pair}} en {{chain}}. El agente arma la posición inicial con estos parámetros y la rebalancea automáticamente — vos mantenés el control y la custodia.",
     networkLabel: "Red:",
+    searchNetworks: "Buscar redes",
+    noNetworksFound: "No se encontró ninguna red.",
     choosePoolLabel: "Elegí la pool donde vive tu posición",
     choosePoolHint:
       "Métricas en vivo, se actualizan cada minuto. Menor fee no es automáticamente mejor — depende del volumen real que pase por esa pool, no solo de la tasa. La comisión por unidad de liquidez es la mejor referencia de cuánto rendiría un LP ahí ahora mismo.",

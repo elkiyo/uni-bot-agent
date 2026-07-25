@@ -161,6 +161,8 @@ const en: Dictionary = {
     subtitle:
       "{{pair}} pair on {{chain}}. The agent builds the initial position with these parameters and rebalances it automatically — you keep control and custody.",
     networkLabel: "Network:",
+    searchNetworks: "Search networks",
+    noNetworksFound: "No network found.",
     choosePoolLabel: "Choose the pool where your position lives",
     choosePoolHint:
       "Live metrics, updated every minute. A lower fee isn't automatically better — it depends on the actual volume flowing through that pool, not just the rate. Fee per unit of liquidity is the best reference for how an LP would be performing there right now.",

@@ -161,6 +161,8 @@ const pt: Dictionary = {
     subtitle:
       "Par {{pair}} em {{chain}}. O agente monta a posição inicial com esses parâmetros e a rebalanceia automaticamente — você mantém o controle e a custódia.",
     networkLabel: "Rede:",
+    searchNetworks: "Buscar redes",
+    noNetworksFound: "Nenhuma rede encontrada.",
     choosePoolLabel: "Escolha o pool onde sua posição vai viver",
     choosePoolHint:
       "Métricas em tempo real, atualizadas a cada minuto. Fee menor não é automaticamente melhor — depende do volume real que passa por esse pool, não só da taxa. A comissão por unidade de liquidez é a melhor referência de quanto um LP renderia ali agora.",

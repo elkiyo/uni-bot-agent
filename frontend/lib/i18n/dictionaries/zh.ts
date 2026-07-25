@@ -158,6 +158,8 @@ const zh: Dictionary = {
     subtitle:
       "{{chain}} 上的 {{pair}} 交易对。智能体会根据这些参数建立初始仓位并自动执行再平衡——控制权和资金托管权始终归你所有。",
     networkLabel: "网络：",
+    searchNetworks: "搜索网络",
+    noNetworksFound: "未找到相关网络。",
     choosePoolLabel: "选择你的仓位所在的资金池",
     choosePoolHint:
       "实时数据，每分钟更新一次。费率更低不代表一定更优——这取决于该资金池的实际交易量，而不仅仅是费率本身。单位流动性手续费是衡量当前 LP 收益水平的最佳参考指标。",

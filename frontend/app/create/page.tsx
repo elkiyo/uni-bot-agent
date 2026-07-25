@@ -14,6 +14,7 @@ import SafeAppsSDK, { type GatewayTransactionDetails } from "@safe-global/safe-a
 import { Header } from "../components/Header";
 import { AlertModal } from "../components/AlertModal";
 import { PairIcon } from "../components/TokenIcon";
+import { NetworkSelector } from "../components/NetworkSelector";
 import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
@@ -640,20 +641,7 @@ export default function CreateVault() {
         {availableChains.length > 1 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("create.networkLabel")}</span>
-            {availableChains.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setSelectedChainId(c.id)}
-                className={
-                  c.id === chain.id
-                    ? "rounded-full border border-accent bg-accent/[0.08] px-3 py-1.5 text-sm font-medium text-accent"
-                    : "rounded-full border border-hairline px-3 py-1.5 text-sm text-white/70 transition-colors hover:border-accent/50 hover:text-white"
-                }
-              >
-                {c.name}
-              </button>
-            ))}
+            <NetworkSelector chains={availableChains} selectedId={chain.id} onSelect={setSelectedChainId} />
           </div>
         )}
 
