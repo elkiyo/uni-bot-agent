@@ -267,12 +267,13 @@ export default function CreateVault() {
   // required it, only the old UI did.
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
-  // Fixed platform-wide values, not user input anymore — no rebalance-count
-  // cap in practice (1000 is effectively unlimited for a vault's lifetime),
-  // no per-cycle reinjection, no forced periodic trigger (rebalances only
-  // fire when the price actually leaves the range). Owners can no longer
-  // set these at creation or change them later — see VaultDetail.tsx's
-  // reconfigure flow, which dropped the matching inputs too.
+  // Fixed at creation time — no rebalance-count cap in practice (1000 is
+  // effectively unlimited for a vault's lifetime), no per-cycle reinjection,
+  // no forced periodic trigger (rebalances only fire when the price
+  // actually leaves the range). Only removed from THIS form — the owner can
+  // still change these later from the vault's own reconfigure panel
+  // (VaultDetail.tsx), which keeps its cfgMaxRebalances/cfgReinjection/
+  // cfgPeriodicHours inputs untouched.
   const maxRebalances = "1000";
   const reinjectionAmount = "0";
   const periodicHours = "0";

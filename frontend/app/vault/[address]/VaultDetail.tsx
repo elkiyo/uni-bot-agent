@@ -235,6 +235,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [depInvestable, setDepInvestable] = useState("0");
   const [depReserve, setDepReserve] = useState("0");
   const [depGasReserve, setDepGasReserve] = useState("0");
+  const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
+  const [cfgReinjection, setCfgReinjection] = useState("");
+  const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
   const [cfgMinPrice, setCfgMinPrice] = useState("");
   const [cfgMaxPrice, setCfgMaxPrice] = useState("");
   const [cfgRecenterMarginPct, setCfgRecenterMarginPct] = useState("");
@@ -363,11 +366,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           (investableUsdt as bigint) ?? 0n,
           lo,
           hi,
-          // Fixed platform-wide values, not owner-editable anymore — see
-          // create/page.tsx's matching constants.
-          1000n,
-          0n,
-          0n,
+          BigInt(cfgMaxRebalances || String(maxRebalances ?? 0)),
+          parseUnits(cfgReinjection || "0", 6),
+          BigInt(Math.round(Number(cfgPeriodicHours || "24") * 3600)),
           cfgRecenterMarginPct
             ? BigInt(Math.round(Number(cfgRecenterMarginPct) * 100))
             : ((recenterMarginBps as bigint) ?? 500n),
@@ -756,6 +757,17 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField label={t("vaultDetail.fieldMinPriceUsd")} value={cfgMinPrice} onChange={setCfgMinPrice} />
                     <MiniField label={t("vaultDetail.fieldMaxPriceUsd")} value={cfgMaxPrice} onChange={setCfgMaxPrice} />
+                    <MiniField
+                      label={t("vaultDetail.fieldMaxRebalancesToday", { n: maxRebalances !== undefined ? String(maxRebalances) : "…" })}
+                      value={cfgMaxRebalances}
+                      onChange={setCfgMaxRebalances}
+                    />
+                    <MiniField
+                      label={t("vaultDetail.fieldReinjectionSymbol", { symbol: chain.stableSymbol })}
+                      value={cfgReinjection}
+                      onChange={setCfgReinjection}
+                    />
+                    <MiniField label={t("vaultDetail.fieldPeriodicHours")} value={cfgPeriodicHours} onChange={setCfgPeriodicHours} />
                     <MiniField
                       label={t("vaultDetail.fieldRecenterMarginToday", { n: Number(recenterMarginBps ?? 500n) / 100 })}
                       value={cfgRecenterMarginPct}
