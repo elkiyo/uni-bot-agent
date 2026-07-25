@@ -358,16 +358,17 @@ export default function CreateVault() {
         })()
       : undefined;
 
-  // Fixed ±50% window around the current price, widened to always fit
-  // whatever the user has actually typed so a handle never gets stuck off
-  // the visible track.
+  // Zoomed to the selected [min, max] itself (plus a thin margin for drag
+  // headroom) rather than a fixed window around the current price — keeps
+  // the handles pinned near the track's own edges instead of bunched in the
+  // middle, and re-fits automatically every time min/max changes.
   const sliderDomain = useMemo(() => {
     if (currentPrice === undefined || currentPrice <= 0) return undefined;
-    let lo = currentPrice * 0.5;
-    let hi = currentPrice * 1.5;
-    if (lowerPreview !== undefined) lo = Math.min(lo, lowerPreview * 0.9);
-    if (upperPreview !== undefined) hi = Math.max(hi, upperPreview * 1.1);
-    return { lo, hi };
+    const lo = lowerPreview ?? currentPrice * 0.9;
+    const hi = upperPreview ?? currentPrice * 1.1;
+    const span = Math.max(hi - lo, currentPrice * 0.005);
+    const pad = span * 0.15;
+    return { lo: lo - pad, hi: hi + pad };
   }, [currentPrice, lowerPreview, upperPreview]);
 
   // Only a real "insufficient funds" once there's an actual balance reading
@@ -1142,13 +1143,13 @@ function PriceRangeSlider({
           </span>
         )}
       </div>
-      <div className="relative mt-9 pt-8" ref={trackRef}>
+      <div className="relative mt-9 pt-10" ref={trackRef}>
         {currentPct !== undefined && (
           <div
             className="pointer-events-none absolute top-0 flex -translate-x-1/2 flex-col items-center"
             style={{ left: `${currentPct}%` }}
           >
-            <span className="whitespace-nowrap rounded-md bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white/70">
+            <span className="whitespace-nowrap rounded-md bg-white/10 px-3 py-1 font-mono text-base font-semibold text-white">
               ${current!.toFixed(2)}
             </span>
             <span className="h-2 w-px bg-white/30" />
