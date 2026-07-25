@@ -5,9 +5,8 @@ import { getChainRuntime, type ChainRuntime } from "../keeper/wallet";
 import { deployedChains } from "../chains";
 import { getLogsChunkedMulti } from "../getLogsChunked";
 import { withRetry, mapWithConcurrency } from "../concurrency";
-import { positionManagerAbi, uniswapV3PoolAbi } from "../contracts";
+import { uniswapV3PoolAbi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
-import { estimatePositionAmounts } from "../keeper/swapMath";
 import { serializeArgs } from "../eventArgsCodec";
 
 const SCAN_CONCURRENCY = 6;
@@ -31,23 +30,22 @@ async function fetchAllRows<T>(
   }
   return all;
 }
-// Bounded so a chain with a large mint backlog (first run after this
-// feature ships, or a long gap while the indexer was broken) can't blow out
-// a single tick's runtime — same reasoning as mintVolume.ts's old MAX_MINTS
-// cap. Whatever doesn't fit gets picked up on the next tick; a mint's USD
-// value is a historical, block-pinned read that never changes once
-// resolved, so there's no correctness cost to spreading the backfill
-// across several ticks, only a cosmetic delay before it shows up. Raised
-// 80->400 (2026-07-24) once the raw event scan below started surfacing
-// real mint backlogs (700+ Rebalanced events on Arbitrum alone) — but 400
-// combined with MAX_SCAN_BLOCKS=1M turned out to be a real regression, not
-// just theoretically risky: confirmed in production the same day, 3
-// consecutive /api/cron/tick timeouts at the 200s ceiling, worse than the
-// dashboard just being slow, since a killed tick can also skip a trading
-// cycle. The per-request cost estimate this was sized against (~0.5s) was
-// too optimistic under real load. Pulled back to 150 — still ~2.5x the
-// original safe value, but with real margin this time instead of a
-// recomputed "should be fine."
+// Bounds only the Rebalanced/pool-Mint-matching half of backfillMintUsd now
+// (PositionInitialized is zero-RPC and unbounded — see that function) — a
+// large mint backlog can't blow out a single tick's runtime. Whatever
+// doesn't fit gets picked up on the next tick; a mint's USD value is a
+// block-pinned fact that never changes once resolved, so there's no
+// correctness cost to spreading this across several ticks, only a cosmetic
+// delay. History: 80 -> 400 (2026-07-24) once the raw event scan started
+// surfacing real mint backlogs (700+ Rebalanced events on Arbitrum alone);
+// 400 combined with MAX_SCAN_BLOCKS=1M then caused 3 real /api/cron/tick
+// timeouts the same day back when this ran an eth_call-based historical
+// read per mint. That approach was replaced entirely (see
+// backfillMintUsd's docstring — it could never have worked past ~100
+// blocks deep on a public RPC anyway) with a single-block eth_getLogs
+// lookup per mint, which is both cheaper AND actually correct. Left at 150
+// for now since the timeout was only just fixed — safe to raise again once
+// this cheaper path proves itself over a few real ticks.
 const MINT_BACKFILL_BATCH = 150;
 // Caps how much of a chain's history one indexer run advances through —
 // same reasoning as MINT_BACKFILL_BATCH, but for the raw eth_getLogs scans
@@ -153,7 +151,16 @@ function cheapUsdValue(
   const toUsd = (stableRaw: unknown, volatileRaw: unknown) =>
     Number((stableRaw as bigint) ?? 0n) * 1e-6 + Number((volatileRaw as bigint) ?? 0n) * 1e-18 * ethPrice;
 
-  if (eventName === "LpFeesPaidToOwner" || eventName === "FeesCollected" || eventName === "PerformanceFeeCollected") {
+  if (
+    eventName === "LpFeesPaidToOwner" ||
+    eventName === "FeesCollected" ||
+    eventName === "PerformanceFeeCollected" ||
+    // PositionInitialized carries its own amount0/amount1 directly (unlike
+    // Rebalanced — see RangeVaultArb.sol's event, and backfillMintUsd for
+    // how Rebalanced gets priced instead) — same token0/token1 -> stable/
+    // volatile routing as the fee events above, no RPC needed at all.
+    eventName === "PositionInitialized"
+  ) {
     const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
     const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
     return toUsd(stableRaw, volatileRaw);
@@ -168,7 +175,7 @@ function cheapUsdValue(
       ((args.gasReserveAmount as bigint) ?? 0n);
     return Number(total) * 1e-6;
   }
-  return null; // PositionInitialized/Rebalanced need a historical read — see backfillMintUsd. Everything else has no natural USD value.
+  return null; // Rebalanced needs the pool's own Mint event — see backfillMintUsd. Everything else has no natural USD value.
 }
 
 async function currentEthPrice(chain: ChainRuntime): Promise<number> {
@@ -249,96 +256,96 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
   await setIndexerState(key, toBlock);
 }
 
-type PositionTuple = readonly [
-  bigint,
-  Address,
-  Address,
-  Address,
-  number,
-  number,
-  number,
-  bigint,
-  bigint,
-  bigint,
-  bigint,
-  bigint,
-];
-
-async function computeMintUsd(
-  chain: ChainRuntime,
-  pool: Address,
-  tokenId: bigint,
-  blockNumber: bigint,
-): Promise<number | null> {
-  try {
-    return await withRetry(async () => {
-      const [position, slot0] = await Promise.all([
-        chain.publicClient.readContract({
-          address: chain.positionManager,
-          abi: positionManagerAbi,
-          functionName: "positions",
-          args: [tokenId],
-          blockNumber,
-        }) as Promise<PositionTuple>,
-        chain.publicClient.readContract({
-          address: pool,
-          abi: uniswapV3PoolAbi,
-          functionName: "slot0",
-          blockNumber,
-        }) as Promise<readonly [bigint, number, ...unknown[]]>,
-      ]);
-      const [, , , , , tickLower, tickUpper, liquidity] = position;
-      const currentTick = slot0[1];
-      const ethPrice = ethPriceFromTick(currentTick, chain.stableIsToken0);
-      const { amount0Raw, amount1Raw } = estimatePositionAmounts({ liquidity, currentTick, tickLower, tickUpper });
-      const stableRaw = chain.stableIsToken0 ? amount0Raw : amount1Raw;
-      const volatileRaw = chain.stableIsToken0 ? amount1Raw : amount0Raw;
-      return stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
-    });
-  } catch {
-    return null; // RPC couldn't serve this historical block even after retrying — leave null, retried next tick.
-  }
-}
-
 /**
- * Resolves the USD value of a bounded batch of still-unpriced mint events
- * (PositionInitialized/Rebalanced) — the one kind of event whose value needs
- * an expensive historical position+pool read instead of a cheap current-price
- * conversion. Uses each vault's OWN pool (not chain.pool, the chain's
- * default) — a vault on a non-default fee-tier pool would otherwise get
- * silently mispriced against the wrong pool's tick, same class of bug fixed
- * in monitor.ts's out-of-range check.
+ * Resolves usd_value for still-unpriced mint events (PositionInitialized/
+ * Rebalanced) — split two ways:
+ *
+ * - PositionInitialized already carries its own amount0/amount1 (see
+ *   cheapUsdValue) — this just re-runs that same cheap conversion against
+ *   the row's own already-stored args. Zero RPC calls, not batched/capped
+ *   (cheap enough to clear the whole backlog in one pass).
+ *
+ * - Rebalanced does NOT carry amount0/amount1 on its own event (see
+ *   RangeVaultArb.sol) — the mint's real amounts are read from the
+ *   underlying Uniswap pool's own `Mint` event in the SAME transaction
+ *   instead, via a single-block eth_getLogs call. This replaced an
+ *   eth_call-based positions()/slot0() read at that historical block
+ *   (2026-07-25): confirmed in production that a public RPC only retains
+ *   state ~100 blocks deep, so that approach could NEVER have resolved
+ *   anything past the freshest few mints, no matter how many ticks ran —
+ *   eth_getLogs has no such depth limit, confirmed working across this
+ *   platform's entire history. Uses each vault's OWN pool (not chain.pool,
+ *   the default) — a vault on a non-default fee-tier pool would otherwise
+ *   get silently mispriced, same class of bug fixed in monitor.ts's
+ *   out-of-range check.
  */
 async function backfillMintUsd(chain: ChainRuntime): Promise<void> {
-  const { data, error } = await supabase()
+  const ethPrice = await currentEthPrice(chain);
+
+  const initRows = await fetchAllRows<{ id: number; args: Record<string, unknown> }>((from, to) =>
+    supabase()
+      .from("indexed_events")
+      .select("id,args")
+      .eq("chain_id", chain.id)
+      .eq("event_name", "PositionInitialized")
+      .is("usd_value", null)
+      .range(from, to),
+  );
+  for (const row of initRows) {
+    const usd = cheapUsdValue("PositionInitialized", row.args, chain, ethPrice);
+    if (usd === null) continue;
+     
+    const { error } = await supabase().from("indexed_events").update({ usd_value: usd }).eq("id", row.id);
+    if (error) throw error;
+  }
+
+  const { data, error: rebalErr } = await supabase()
     .from("indexed_events")
-    .select("id,address,event_name,args,block_number")
+    .select("id,address,block_number,tx_hash")
     .eq("chain_id", chain.id)
-    .in("event_name", ["PositionInitialized", "Rebalanced"])
+    .eq("event_name", "Rebalanced")
     .is("usd_value", null)
     .limit(MINT_BACKFILL_BATCH);
-  if (error) throw error;
-  const rows = (data ?? []) as {
-    id: number;
-    address: string;
-    event_name: string;
-    args: Record<string, unknown>;
-    block_number: string;
-  }[];
-  if (rows.length === 0) return;
+  if (rebalErr) throw rebalErr;
+  const rebalRows = (data ?? []) as { id: number; address: string; block_number: string; tx_hash: string }[];
+  if (rebalRows.length === 0) return;
 
   const vaultRows = await fetchAllRows<{ address: string; pool: string }>((from, to) =>
     supabase().from("indexed_vaults").select("address,pool").eq("chain_id", chain.id).range(from, to),
   );
   const poolByAddress = new Map(vaultRows.map((v) => [v.address.toLowerCase(), v.pool as Address]));
 
-  await mapWithConcurrency(rows, SCAN_CONCURRENCY, async (row) => {
+  await mapWithConcurrency(rebalRows, SCAN_CONCURRENCY, async (row) => {
     const pool = poolByAddress.get(row.address.toLowerCase());
     if (!pool) return;
-    const tokenIdRaw = row.event_name === "PositionInitialized" ? row.args.tokenId : row.args.newTokenId;
-    if (tokenIdRaw === undefined || tokenIdRaw === null) return;
-    const usd = await computeMintUsd(chain, pool, BigInt(tokenIdRaw as string), BigInt(row.block_number));
-    if (usd === null) return;
+    const blockNumber = BigInt(row.block_number);
+
+    let mintLogs;
+    try {
+      mintLogs = await withRetry(() =>
+        chain.publicClient.getContractEvents({
+          address: pool,
+          abi: uniswapV3PoolAbi,
+          eventName: "Mint",
+          fromBlock: blockNumber,
+          toBlock: blockNumber,
+        }),
+      );
+    } catch {
+      return; // transient RPC error — retried next tick
+    }
+
+    const match = mintLogs.find((l) => {
+      const args = l.args as { owner?: Address } | undefined;
+      return l.transactionHash?.toLowerCase() === row.tx_hash.toLowerCase() && args?.owner?.toLowerCase() === row.address.toLowerCase();
+    });
+    if (!match) return; // no matching pool Mint in this exact block for this vault — leave null, shouldn't normally happen
+
+    const args = match.args as { amount0: bigint; amount1: bigint };
+    const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
+    const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
+    const usd = Number(stableRaw) * 1e-6 + Number(volatileRaw) * 1e-18 * ethPrice;
+
     const { error: updateErr } = await supabase().from("indexed_events").update({ usd_value: usd }).eq("id", row.id);
     if (updateErr) throw updateErr;
   });

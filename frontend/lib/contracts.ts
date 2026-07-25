@@ -63,6 +63,28 @@ export const uniswapV3PoolAbi = [
       { name: "tick", type: "int24", indexed: false },
     ],
   },
+  // Emitted by the pool itself on every mint — including the one INSIDE a
+  // vault's rebalance() call, which doesn't carry amount0/amount1 on its own
+  // Rebalanced event (unlike PositionInitialized). Used by the indexer
+  // (lib/dashboard/indexer.ts) to price a rebalance's mint by matching this
+  // event's owner (the vault) + tx_hash against the vault's own Rebalanced
+  // event in the same transaction — reading it via eth_getLogs works at any
+  // historical depth, unlike an eth_call-based positions()/slot0() read,
+  // which needs archive-node state a public RPC doesn't retain past ~100
+  // blocks (confirmed in production 2026-07-25).
+  {
+    type: "event",
+    name: "Mint",
+    inputs: [
+      { name: "sender", type: "address", indexed: false },
+      { name: "owner", type: "address", indexed: true },
+      { name: "tickLower", type: "int24", indexed: true },
+      { name: "tickUpper", type: "int24", indexed: true },
+      { name: "amount", type: "uint128", indexed: false },
+      { name: "amount0", type: "uint256", indexed: false },
+      { name: "amount1", type: "uint256", indexed: false },
+    ],
+  },
   // Below: enough of IUniswapV3PoolState to compute a position's LIVE
   // uncollected fees client-side (feeGrowthInside math) — see
   // lib/positionMath.ts's uncollectedFeesRaw. positions() alone only exposes
