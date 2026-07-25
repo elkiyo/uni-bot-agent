@@ -34,6 +34,13 @@ interface UniLabCallRow {
   created_at: string;
 }
 
+interface GasDepletedVaultRow {
+  chain_id: number;
+  address: string;
+  kind: string;
+  gas_reserve_empty_since: string;
+}
+
 export default function Admin() {
   const { address: connected, chainId: walletChainId } = useAccount();
   const { selectedChain: chain, setSelectedChainId } = useSelectedChain();
@@ -297,6 +304,15 @@ export default function Admin() {
   const x402Ok = uniLabCalls?.filter((c) => c.ok).length ?? 0;
   const x402Failed = uniLabCalls ? uniLabCalls.length - x402Ok : 0;
 
+  const [gasDepletedVaults, setGasDepletedVaults] = useState<GasDepletedVaultRow[] | null>(null);
+  useEffect(() => {
+    if (!isPlatformOwner) return;
+    fetch("/api/admin/gas-reserve-depleted")
+      .then((res) => res.json())
+      .then((body) => setGasDepletedVaults(body.vaults ?? []))
+      .catch((err) => console.error("failed to load gas-reserve-depleted vaults", err));
+  }, [isPlatformOwner]);
+
   const [newOperator, setNewOperator] = useState("");
   const [newCap, setNewCap] = useState("");
   const [newPerformanceFeePct, setNewPerformanceFeePct] = useState("");
@@ -490,6 +506,11 @@ export default function Admin() {
                 negative={vaultsOutOfRange > 0}
               />
               <Stat label={t("admin.statTotalRebalances")} value={platformStats ? String(platformStats.totalRebalances) : "…"} />
+              <Stat
+                label={t("admin.statGasDepletedVaults")}
+                value={gasDepletedVaults ? String(gasDepletedVaults.length) : "…"}
+                negative={Boolean(gasDepletedVaults && gasDepletedVaults.length > 0)}
+              />
             </div>
 
             <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">{t("admin.operatorLabel")}</p>
@@ -721,6 +742,46 @@ export default function Admin() {
               <div className="mt-6 flex flex-col gap-3">
                 {uniLabCalls.map((call) => (
                   <UniLabCallRowView key={call.id} call={call} t={t} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isPlatformOwner && (
+          <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
+            <h2
+              className="text-2xl font-semibold tracking-tight text-white"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {t("admin.gasDepletedTitle")}
+            </h2>
+            <p className="mt-2 text-sm text-muted">{t("admin.gasDepletedSubtitle")}</p>
+
+            {gasDepletedVaults === null && (
+              <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                {t("admin.loading")}
+              </p>
+            )}
+            {gasDepletedVaults?.length === 0 && (
+              <p className="mt-6 text-sm text-muted">{t("admin.noneDepleted")}</p>
+            )}
+            {gasDepletedVaults && gasDepletedVaults.length > 0 && (
+              <div className="mt-6 flex flex-col gap-3">
+                {gasDepletedVaults.map((v) => (
+                  <div key={`${v.chain_id}-${v.address}`} className="rounded-xl border border-negative/30 bg-negative/[0.04] p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Link
+                        href={v.kind === "compound" ? `/vault/${v.address}?kind=compound` : `/vault/${v.address}`}
+                        className="font-mono text-xs text-white/90 hover:underline"
+                      >
+                        {v.address}
+                      </Link>
+                      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-negative/70">
+                        {t("admin.gasDepletedSince", { date: new Date(v.gas_reserve_empty_since).toLocaleString() })}
+                      </span>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

@@ -177,6 +177,11 @@ const pt: Dictionary = {
     copied: "Copiado ✓",
     viewExplorer: "Ver no explorer",
     contractsNotDeployed: "Os contratos ainda não estão configurados em {{chain}}.",
+    vaultKindLabel: "Tipo de vault:",
+    vaultKindStandard: "Padrão",
+    vaultKindCompound: "Juros compostos",
+    vaultKindCompoundHint:
+      "As comissões são reinjetadas na posição em vez de pagas para sua carteira — você pode desativar isso a qualquer momento nas configurações do vault.",
 
     exampleLabel: "Ex:",
     fieldInvestAmount: "Valor do investimento",
@@ -253,6 +258,7 @@ const pt: Dictionary = {
     closed: "Fechado",
     paused: "Pausado",
     active: "Ativo",
+    compoundBadge: "Juros compostos",
     noPosition: "Sem posição",
     inRange: "Dentro da faixa",
     outOfRange: "Fora da faixa",
@@ -328,6 +334,8 @@ const pt: Dictionary = {
     positionIncreasedDetail: "{{deposited}} depositados, {{used}} entraram na posição na hora",
     reinjectedTitle: "O agente reinjetou reserva na posição",
     reinjectedDetail: "{{amount}} saíram da reserva, {{used}} entraram na posição sem fechá-la",
+    feesReinjectedTitle: "Comissões reinvestidas na posição",
+    feesReinjectedDetail: "{{amounts}} reinjetados em vez de pagos — os juros compostos estão ativos",
     dustSweptTitle: "O agente varreu sobras soltas com um swap",
     dustSweptDetail: "{{amounts}} que estavam soltos entraram na posição",
     emergencyWithdrawTitle: "Saque de emergência",
@@ -378,6 +386,7 @@ const pt: Dictionary = {
     txReconfiguring: "Reconfigurando",
     txSettingRisk: "Definindo limites de risco",
     txCollectingFees: "Resgatando comissões",
+    txSettingAutoCompound: "Configurando juros compostos",
     txWithdrawing: "Sacando",
     txResuming: "Retomando",
     txPausing: "Pausando",
@@ -389,12 +398,18 @@ const pt: Dictionary = {
     eyebrow: "Vault · {{pair}} {{fee}}%",
     paused: "Pausado",
     active: "Ativo",
+    compoundBadgeOn: "Juros compostos: ativos",
+    compoundBadgeOff: "Juros compostos: desativados",
     positionLabel: "Posição #{{id}}",
     noPositionYet: "Ainda sem posição",
     ownerNote: "Você é o proprietário deste vault.",
     readOnlyNote: "Visualização somente leitura — você não é o proprietário.",
     rebalanceFailedTitle:
       "O último rebalanceamento não pôde ser concluído — não foi possível consultar a API de preços (uni-lab).",
+    gasReserveDepletedTitle: "A reserva de gás deste vault acabou",
+    gasReserveDepletedBody:
+      "O agente continua operando o vault normalmente, mas não consegue mais se reembolsar pelo custo de gás de suas transações. Considere adicionar mais reserva de gás.",
+    gasReserveDepletedSince: "Sem reembolso desde {{date}}",
     loading: "Carregando…",
 
     statAge: "Idade do vault",
@@ -426,6 +441,13 @@ const pt: Dictionary = {
     configRecenterMargin: "Margem de recentralização",
     configTopMargin: "Margem de teto (saída por cima)",
     configMaxRebalances: "Teto de rebalanceamentos",
+    configAutoCompound: "Juros compostos",
+    configOnValue: "ativos",
+    configOffValue: "desativados",
+    configFeeClaimThreshold: "Limite de auto-resgate",
+    configFeeClaimInterval: "Intervalo de auto-resgate",
+    configLastFeeClaim: "Último resgate",
+    configNever: "nunca",
 
     managementTitle: "Gestão",
     managementSubtitle: "Só o proprietário pode executar essas ações.",
@@ -452,6 +474,8 @@ const pt: Dictionary = {
     fieldPeriodicHours: "Periódico (horas)",
     fieldRecenterMarginToday: "Margem do piso de reentrada abaixo % (hoje: {{n}})",
     fieldTopMarginToday: "Margem de teto na saída por cima % (hoje: {{n}})",
+    fieldFeeClaimThresholdToday: "Limite de auto-resgate, % do valor da posição (hoje: {{n}})",
+    fieldFeeClaimIntervalToday: "Intervalo de auto-resgate, horas (hoje: {{n}})",
     update: "Atualizar",
 
     riskLimitsLabel: "Limites de risco",
@@ -478,6 +502,11 @@ const pt: Dictionary = {
     collectFeesTooltipEnabled:
       "Cobra só as comissões de trading acumuladas — a posição continua aberta, sem tocar no principal",
     collectFeesTooltipDisabled: "Ainda não há posição aberta",
+    collectFeesTooltipCompoundOn: "Os juros compostos estão ativos — as comissões resgatadas são reinjetadas na posição em vez de pagas para sua carteira",
+    autoCompoundToggleOn: "Ativar juros compostos",
+    autoCompoundToggleOff: "Desativar juros compostos",
+    autoCompoundToggleHint:
+      "Com isso ativo, as comissões de cada rebalanceamento, do resgate manual e do auto-resgate programado são reinjetadas na posição em vez de pagas para sua carteira.",
     withdrawAll: "Sacar tudo",
     resume: "Retomar",
     pause: "Pausar",
@@ -971,6 +1000,7 @@ const pt: Dictionary = {
     statClosed: "Fechados",
     statOutOfRangeNow: "Fora de faixa agora",
     statTotalRebalances: "Rebalanceamentos totais",
+    statGasDepletedVaults: "Vaults sem reembolso de gás",
 
     operatorLabel: "Operador",
     statGasLabel: "{{symbol}} (gas, {{chain}})",
@@ -1012,6 +1042,12 @@ const pt: Dictionary = {
     errorLabel: "Erro",
     okLabel: "ok",
     errorShortLabel: "erro",
+
+    gasDepletedTitle: "Vaults com reserva de gás esgotada",
+    gasDepletedSubtitle:
+      "O agente continua operando esses vaults normalmente, mas não consegue reembolsar seu gás até que o proprietário reabasteça a reserva.",
+    noneDepleted: "Nenhum vault está com a reserva de gás esgotada no momento.",
+    gasDepletedSince: "Sem reembolso desde {{date}}",
   },
   referrals: {
     eyebrow: "Indicações",

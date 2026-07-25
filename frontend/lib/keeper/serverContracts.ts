@@ -11,10 +11,14 @@ function client(chain: ChainRuntime) {
   return chain.walletClient;
 }
 
-export function vaultContract(chain: ChainRuntime, address: Address) {
+// `abi` defaults to the chain's standard vault ABI — pass `chain.compoundVaultAbi`
+// explicitly for a compound (interest-auto-reinject) vault, see chains.ts's
+// ChainDef docstring on those fields. Optional so every existing call site
+// (all of them standard vaults) keeps working unchanged.
+export function vaultContract(chain: ChainRuntime, address: Address, abi: Abi = chain.vaultAbi) {
   return getContract({
     address,
-    abi: chain.vaultAbi,
+    abi,
     client: { public: chain.publicClient, wallet: client(chain) },
   });
 }

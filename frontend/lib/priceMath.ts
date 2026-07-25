@@ -1,7 +1,9 @@
 const Q = 1.0001;
 
-// USDT/USDC are 6-decimal, WETH is 18-decimal, on every chain this platform
-// currently supports — true regardless of which one Uniswap calls token0.
+// USDT/USDC are 6-decimal, WETH is 18-decimal — true for every pair this
+// platform supported before multi-pair. Kept as defaults (not removed) so
+// every existing call site keeps working unchanged; pass a vault's own
+// resolved decimals (see lib/keeper/pairInfo.ts) for any other pair.
 const STABLE_DECIMALS = 6;
 const VOLATILE_DECIMALS = 18;
 
@@ -17,9 +19,14 @@ const VOLATILE_DECIMALS = 18;
  * open a position. See RangeVault.sol's class docstring for the on-chain half
  * of this same fix.
  */
-export function ethPriceFromTick(tick: number, stableIsToken0: boolean): number {
+export function ethPriceFromTick(
+  tick: number,
+  stableIsToken0: boolean,
+  stableDecimals: number = STABLE_DECIMALS,
+  volatileDecimals: number = VOLATILE_DECIMALS,
+): number {
   const rawRatio = Q ** tick; // raw token1 per raw token0
-  const decimalsExp = stableIsToken0 ? STABLE_DECIMALS - VOLATILE_DECIMALS : VOLATILE_DECIMALS - STABLE_DECIMALS;
+  const decimalsExp = stableIsToken0 ? stableDecimals - volatileDecimals : volatileDecimals - stableDecimals;
   const humanRatio = rawRatio * 10 ** decimalsExp; // human token1 per human token0
   // stableIsToken0: humanRatio is WETH-per-USD — invert to get USD-per-WETH.
   // !stableIsToken0: humanRatio is already USD(stable)-per-WETH directly.
@@ -27,9 +34,14 @@ export function ethPriceFromTick(tick: number, stableIsToken0: boolean): number 
 }
 
 /** Inverse of ethPriceFromTick — the tick whose implied ETH price is `priceUsd`. */
-export function tickFromEthPrice(priceUsd: number, stableIsToken0: boolean): number {
+export function tickFromEthPrice(
+  priceUsd: number,
+  stableIsToken0: boolean,
+  stableDecimals: number = STABLE_DECIMALS,
+  volatileDecimals: number = VOLATILE_DECIMALS,
+): number {
   const humanRatio = stableIsToken0 ? 1 / priceUsd : priceUsd;
-  const decimalsExp = stableIsToken0 ? VOLATILE_DECIMALS - STABLE_DECIMALS : STABLE_DECIMALS - VOLATILE_DECIMALS;
+  const decimalsExp = stableIsToken0 ? volatileDecimals - stableDecimals : stableDecimals - volatileDecimals;
   const rawRatio = humanRatio * 10 ** decimalsExp;
   return Math.log(rawRatio) / Math.log(Q);
 }

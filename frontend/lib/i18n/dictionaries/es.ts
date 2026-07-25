@@ -175,6 +175,11 @@ const es = {
     copied: "Copiado ✓",
     viewExplorer: "Ver en el explorer",
     contractsNotDeployed: "Los contratos todavía no están configurados en {{chain}}.",
+    vaultKindLabel: "Tipo de vault:",
+    vaultKindStandard: "Estándar",
+    vaultKindCompound: "Interés compuesto",
+    vaultKindCompoundHint:
+      "Las comisiones se reinyectan en la posición en vez de pagarse a tu wallet — podés desactivarlo cuando quieras desde la configuración del vault.",
 
     exampleLabel: "Ej:",
     fieldInvestAmount: "Monto de inversión",
@@ -251,6 +256,7 @@ const es = {
     closed: "Cerrado",
     paused: "Pausado",
     active: "Activo",
+    compoundBadge: "Interés compuesto",
     noPosition: "Sin posición",
     inRange: "En rango",
     outOfRange: "Fuera de rango",
@@ -326,6 +332,8 @@ const es = {
     positionIncreasedDetail: "{{deposited}} depositados, {{used}} entraron a la posición al instante",
     reinjectedTitle: "El agente reinyectó reserva a la posición",
     reinjectedDetail: "{{amount}} salieron de la reserva, {{used}} entraron a la posición sin cerrarla",
+    feesReinjectedTitle: "Comisiones reinvertidas en la posición",
+    feesReinjectedDetail: "{{amounts}} reinyectados en vez de pagados — el interés compuesto está activo",
     dustSweptTitle: "El agente barrió sobrante suelto con un swap",
     dustSweptDetail: "{{amounts}} que estaban sueltos entraron a la posición",
     emergencyWithdrawTitle: "Retiro de emergencia",
@@ -376,6 +384,7 @@ const es = {
     txReconfiguring: "Reconfigurando",
     txSettingRisk: "Fijando límites de riesgo",
     txCollectingFees: "Reclamando comisiones",
+    txSettingAutoCompound: "Configurando interés compuesto",
     txWithdrawing: "Retirando",
     txResuming: "Reanudando",
     txPausing: "Pausando",
@@ -387,12 +396,18 @@ const es = {
     eyebrow: "Vault · {{pair}} {{fee}}%",
     paused: "Pausado",
     active: "Activo",
+    compoundBadgeOn: "Interés compuesto: activo",
+    compoundBadgeOff: "Interés compuesto: apagado",
     positionLabel: "Posición #{{id}}",
     noPositionYet: "Sin posición aún",
     ownerNote: "Sos el owner de este vault.",
     readOnlyNote: "Vista de solo lectura — no sos el owner.",
     rebalanceFailedTitle:
       "El último rebalanceo no se pudo completar — no se pudo consultar la API de precios (uni-lab).",
+    gasReserveDepletedTitle: "La reserva de gas de este vault se agotó",
+    gasReserveDepletedBody:
+      "El agente sigue operando el vault con normalidad, pero ya no puede reembolsarse el costo de gas de sus transacciones. Considerá agregar más reserva de gas.",
+    gasReserveDepletedSince: "Sin reembolso desde {{date}}",
     loading: "Cargando…",
 
     statAge: "Antigüedad del vault",
@@ -424,6 +439,13 @@ const es = {
     configRecenterMargin: "Margen de recentrado",
     configTopMargin: "Margen techo (salida arriba)",
     configMaxRebalances: "Tope de rebalanceos",
+    configAutoCompound: "Interés compuesto",
+    configOnValue: "activo",
+    configOffValue: "apagado",
+    configFeeClaimThreshold: "Umbral de auto-reclamo",
+    configFeeClaimInterval: "Intervalo de auto-reclamo",
+    configLastFeeClaim: "Último reclamo",
+    configNever: "nunca",
 
     managementTitle: "Gestión",
     managementSubtitle: "Solo el owner puede ejecutar estas acciones.",
@@ -450,6 +472,8 @@ const es = {
     fieldPeriodicHours: "Periódico (horas)",
     fieldRecenterMarginToday: "Margen del piso de reentrada abajo % (hoy: {{n}})",
     fieldTopMarginToday: "Margen techo salida arriba % (hoy: {{n}})",
+    fieldFeeClaimThresholdToday: "Umbral de auto-reclamo, % del valor de la posición (hoy: {{n}})",
+    fieldFeeClaimIntervalToday: "Intervalo de auto-reclamo, horas (hoy: {{n}})",
     update: "Actualizar",
 
     riskLimitsLabel: "Límites de riesgo",
@@ -476,6 +500,11 @@ const es = {
     collectFeesTooltipEnabled:
       "Cobra solo las comisiones de trading acumuladas — la posición sigue abierta, sin tocar el principal",
     collectFeesTooltipDisabled: "No hay posición abierta todavía",
+    collectFeesTooltipCompoundOn: "El interés compuesto está activo — las comisiones reclamadas se reinyectan en la posición en vez de pagarse a tu wallet",
+    autoCompoundToggleOn: "Activar interés compuesto",
+    autoCompoundToggleOff: "Desactivar interés compuesto",
+    autoCompoundToggleHint:
+      "Con esto activo, las comisiones de cada rebalanceo, del reclamo manual y del auto-reclamo programado se reinyectan en la posición en vez de pagarse a tu wallet.",
     withdrawAll: "Retirar todo",
     resume: "Reanudar",
     pause: "Pausar",
@@ -978,6 +1007,7 @@ const es = {
     statClosed: "Cerrados",
     statOutOfRangeNow: "Fuera de rango ahora",
     statTotalRebalances: "Rebalanceos totales",
+    statGasDepletedVaults: "Vaults sin reembolso de gas",
 
     operatorLabel: "Operador",
     statGasLabel: "{{symbol}} (gas, {{chain}})",
@@ -1019,6 +1049,12 @@ const es = {
     errorLabel: "Error",
     okLabel: "ok",
     errorShortLabel: "error",
+
+    gasDepletedTitle: "Vaults con reserva de gas agotada",
+    gasDepletedSubtitle:
+      "El agente sigue operando estos vaults con normalidad, pero no puede reembolsarse el gas hasta que el owner agregue más reserva.",
+    noneDepleted: "Ningún vault tiene la reserva de gas agotada ahora mismo.",
+    gasDepletedSince: "Sin reembolso desde {{date}}",
   },
   referrals: {
     eyebrow: "Referidos",

@@ -1,6 +1,13 @@
 import { celo, arbitrum } from "viem/chains";
 import type { Abi, Chain } from "viem";
-import { rangeVaultAbi, vaultFactoryAbi, rangeVaultArbAbi, vaultFactoryArbAbi } from "./contracts";
+import {
+  rangeVaultAbi,
+  vaultFactoryAbi,
+  rangeVaultArbAbi,
+  vaultFactoryArbAbi,
+  rangeVaultArbCompoundAbi,
+  vaultFactoryArbCompoundAbi,
+} from "./contracts";
 
 // Per-chain config — the single source of truth every page/hook/keeper file
 // should read from instead of hardcoding an address. Each chain's own
@@ -8,8 +15,22 @@ import { rangeVaultAbi, vaultFactoryAbi, rangeVaultArbAbi, vaultFactoryArbAbi } 
 // token0 as "the pool's stablecoin leg" generically, never assuming USDT
 // specifically, so different chains can pair the volatile leg (WETH on both,
 // so far) against whatever stablecoin actually has the deepest pool there.
-function computeStableIsToken0(stableToken: `0x${string}`, volatileToken: `0x${string}`): boolean {
+export function computeStableIsToken0(stableToken: `0x${string}`, volatileToken: `0x${string}`): boolean {
   return BigInt(stableToken) < BigInt(volatileToken);
+}
+
+// A pair the team has curated (verified real liquidity) to OFFER at
+// vault-creation time — the one piece of multi-pair support that genuinely
+// can't be derived from the chain, since it's a product decision, not
+// on-chain fact (see wild-exploring-bumblebee.md's multi-pair Fase 4).
+// Deliberately minimal: no decimals/symbols here — those are read live off
+// each token's own decimals()/symbol() (see lib/useVaultPairInfo.ts,
+// lib/keeper/pairInfo.ts) so this list can never drift out of sync with
+// what the tokens actually report.
+export interface SupportedPair {
+  stableToken: `0x${string}`;
+  volatileToken: `0x${string}`;
+  candidateSwapFeeTiers: readonly number[];
 }
 
 export interface ChainDef {
@@ -21,12 +42,28 @@ export interface ChainDef {
   stableSymbol: string; // USDT on Celo, USDC on Arbitrum — for display copy
   volatileToken: `0x${string}`;
   volatileSymbol: string;
+  // This CHAIN's default pair's decimals — 6/18 on both chains today (every
+  // stablecoin this platform has used so far is 6-decimal, WETH is
+  // 18-decimal). A vault on a DIFFERENT pair (multi-pair, see
+  // lib/keeper/pairInfo.ts) uses its own resolved decimals instead, read
+  // live from each token's decimals(); these two fields only describe the
+  // chain-level default, used as the initial-scan fallback and by any code
+  // that hasn't been resolved to a specific vault's pair yet.
+  stableDecimals: number;
+  volatileDecimals: number;
   pool: `0x${string}`; // the vault position's home pool
   feeTier: number;
   positionManager: `0x${string}`;
   swapRouter02: `0x${string}`;
   uniswapV3Factory: `0x${string}`;
   candidateSwapFeeTiers: readonly number[];
+  // Every pair /create is allowed to offer for a NEW vault on this chain —
+  // stableToken/volatileToken/candidateSwapFeeTiers above are this array's
+  // first element, kept as their own top-level fields so every existing
+  // reader of chain.stableToken/etc keeps working unchanged. Adding a
+  // second, team-verified pair here is the only step needed to offer it in
+  // /create's pair selector — see SupportedPair's own docstring.
+  supportedPairs: SupportedPair[];
   factoryDeployBlock: bigint;
   factoryAddress: `0x${string}` | "";
   platformConfigAddress: `0x${string}` | "";
@@ -70,6 +107,16 @@ export interface ChainDef {
   // field in /create and VaultDetail.tsx so the deposit() call encodes the
   // right argument count for whichever contract this chain actually runs.
   supportsGasReserve: boolean;
+  // Interest-compounding vault flavor — Arbitrum only (see
+  // RangeVaultArbCompound.sol's class docstring), a second factory/ABI pair
+  // pointed at the SAME pool/positionManager/swapRouter this chain already
+  // uses. Undefined on every other chain (Celo included) — every reader
+  // gates on this being present instead of assuming it exists, same nullable
+  // convention `factoryAddress` already uses for "not deployed yet".
+  compoundFactoryAddress?: `0x${string}` | "";
+  compoundVaultAbi?: Abi;
+  compoundFactoryAbi?: Abi;
+  compoundFactoryDeployBlock?: bigint;
 }
 
 // Verified in autorange.md — cross-checked against Celopedia, CoinGecko, DefiLlama, and
@@ -87,6 +134,8 @@ const CELO: ChainDef = {
   stableSymbol: "USDT",
   volatileToken: CELO_VOLATILE,
   volatileSymbol: "WETH",
+  stableDecimals: 6,
+  volatileDecimals: 18,
   pool: "0x6F42B9D2085a0dEb711C00A460a98B9863ae4897", // USDT/WETH 0.3%
   feeTier: 3000,
   positionManager: "0x3d79EdAaBC0EaB6F08ED885C05Fc0B014290D95A",
@@ -97,6 +146,7 @@ const CELO: ChainDef = {
   // factory.getPool 2026-07-17): 0.01%, 0.05% (deployed but empty — 0
   // liquidity), 0.3% (POOL itself). No 1% pool exists for this pair.
   candidateSwapFeeTiers: [100, 500, 3000],
+  supportedPairs: [{ stableToken: CELO_STABLE, volatileToken: CELO_VOLATILE, candidateSwapFeeTiers: [100, 500, 3000] }],
   // Block the current factory was deployed in (2026-07-16 — added
   // sweepIdleDust()). No vault event from THIS factory can precede it.
   factoryDeployBlock: 72269264n,
@@ -127,6 +177,8 @@ const ARBITRUM: ChainDef = {
   stableSymbol: "USDC",
   volatileToken: ARBITRUM_VOLATILE,
   volatileSymbol: "WETH",
+  stableDecimals: 6,
+  volatileDecimals: 18,
   pool: "0xC6962004f452bE9203591991D15f6b388e09E8D0", // USDC/WETH 0.05%
   feeTier: 500,
   positionManager: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
@@ -135,6 +187,9 @@ const ARBITRUM: ChainDef = {
   // All 4 standard tiers confirmed to exist for USDC/WETH on Arbitrum
   // 2026-07-17 (unlike Celo, which has no 1% pool for its pair).
   candidateSwapFeeTiers: [100, 500, 3000, 10000],
+  supportedPairs: [
+    { stableToken: ARBITRUM_STABLE, volatileToken: ARBITRUM_VOLATILE, candidateSwapFeeTiers: [100, 500, 3000, 10000] },
+  ],
   // Factory deployed 2026-07-18 — replaces the earlier 2026-07-17 factory
   // after the gasReserveBalance mint-accounting fix (see RangeVaultArb.sol's
   // _reimburseKeeperGas()); the 3 vaults built on the old factory were all
@@ -153,6 +208,13 @@ const ARBITRUM: ChainDef = {
   vaultAbi: rangeVaultArbAbi,
   factoryAbi: vaultFactoryArbAbi,
   supportsGasReserve: true,
+  // Second factory, same pool/positionManager/swapRouter as above — see
+  // ChainDef's own docstring on these fields. Empty string (same convention
+  // as factoryAddress) until DeployArbCompound.s.sol actually runs.
+  compoundFactoryAddress: (process.env.NEXT_PUBLIC_COMPOUND_FACTORY_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
+  compoundVaultAbi: rangeVaultArbCompoundAbi,
+  compoundFactoryAbi: vaultFactoryArbCompoundAbi,
+  compoundFactoryDeployBlock: 485000685n, // placeholder — update to DeployArbCompound.s.sol's real deploy block once it runs
 };
 
 export const CHAINS: Record<number, ChainDef> = {

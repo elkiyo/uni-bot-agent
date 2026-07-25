@@ -202,10 +202,26 @@ export default function CreateVault() {
   // in an effect — an effect-based setState here would commit the stale
   // value for one extra render first, then cascade into a second one.
   const [prevChainId, setPrevChainId] = useState(chain.id);
-  if (chain.id !== prevChainId) {
+  // "Estándar" vs "Interés compuesto" — the latter only exists as a factory on
+  // chains that have deployed VaultFactoryArbCompound (Arbitrum today, see
+  // chains.ts's ChainDef docstring on compoundFactoryAddress). Reset to
+  // "standard" on every chain switch, same reasoning as selectedFee below —
+  // without this, switching FROM Arbitrum-with-compound-selected TO Celo would
+  // silently keep pointing at fields Celo's ChainDef doesn't have. Computed
+  // once, before either reset block runs, since the first one below mutates
+  // prevChainId itself.
+  const [vaultKind, setVaultKind] = useState<"standard" | "compound">("standard");
+  const chainJustChanged = chain.id !== prevChainId;
+  if (chainJustChanged) {
     setPrevChainId(chain.id);
     setSelectedFee(chain.feeTier);
+    if (vaultKind !== "standard") setVaultKind("standard");
   }
+  const compoundAvailable = Boolean(chain.compoundFactoryAddress);
+  const isCompound = compoundAvailable && vaultKind === "compound";
+  const effectiveFactoryAddress = isCompound ? chain.compoundFactoryAddress! : chain.factoryAddress;
+  const effectiveFactoryAbi = isCompound ? chain.compoundFactoryAbi! : chain.factoryAbi;
+  const effectiveVaultAbi = isCompound ? chain.compoundVaultAbi! : chain.vaultAbi;
   const selectedPoolMeta = poolMetrics?.find((p) => p.fee === selectedFee);
   const selectedPool = (selectedPoolMeta?.pool ?? chain.pool) as `0x${string}`;
 
@@ -466,8 +482,8 @@ export default function CreateVault() {
         currentPhase = "creating";
         setStep(currentPhase);
         const createHash = await writeContractAsync({
-          address: chain.factoryAddress || "0x0000000000000000000000000000000000000000",
-          abi: chain.factoryAbi,
+          address: effectiveFactoryAddress || "0x0000000000000000000000000000000000000000",
+          abi: effectiveFactoryAbi,
           functionName: "createVault",
           args: [selectedPool, chain.stableToken, chain.volatileToken, selectedFee],
           chainId: chain.id,
@@ -488,7 +504,7 @@ export default function CreateVault() {
 
         for (const log of createReceipt.logs) {
           try {
-            const decoded = decodeEventLog({ abi: chain.factoryAbi, data: log.data, topics: log.topics });
+            const decoded = decodeEventLog({ abi: effectiveFactoryAbi, data: log.data, topics: log.topics });
             if (decoded.eventName === "VaultCreated") {
               vaultAddress = (decoded.args as unknown as { vault: `0x${string}` }).vault;
               break;
@@ -535,6 +551,24 @@ export default function CreateVault() {
       const depositArgs: readonly bigint[] = chain.supportsGasReserve
         ? [reserve, investable, gasReserve]
         : [reserve, investable];
+      // RangeVaultArbCompound's configureTarget() takes 2 extra trailing args
+      // (feeClaimThresholdBps/feeClaimIntervalSeconds — the scheduled/threshold
+      // fee-auto-claim knobs) that RangeVault.sol/RangeVaultArb.sol don't have.
+      // Left at 0 here (interés compuesto starts OFF, autoCompoundFees defaults
+      // false) — the owner turns compounding on and tunes these later from the
+      // vault's own "Reconfigurar agente" panel, same as every other advanced
+      // knob this form doesn't ask about upfront.
+      const configureTargetArgs: readonly (bigint | number)[] = [
+        parseUnits(investAmount, 6),
+        targetTickLower,
+        targetTickUpper,
+        maxRebalancesFinal,
+        reinjectionCap,
+        BigInt(Number(periodicHours) * 3600),
+        recenterMarginBps,
+        exitTopCeilingMarginBps,
+        ...(isCompound ? [0n, 0n] : []),
+      ];
 
       if (isSafeApp && safeSdk) {
         // Safe path: approve + configureTarget + setRiskParams + deposit
@@ -559,25 +593,16 @@ export default function CreateVault() {
             to: vaultAddress,
             value: "0",
             data: encodeFunctionData({
-              abi: chain.vaultAbi,
+              abi: effectiveVaultAbi,
               functionName: "configureTarget",
-              args: [
-                parseUnits(investAmount, 6),
-                targetTickLower,
-                targetTickUpper,
-                maxRebalancesFinal,
-                reinjectionCap,
-                BigInt(Number(periodicHours) * 3600),
-                recenterMarginBps,
-                exitTopCeilingMarginBps,
-              ],
+              args: configureTargetArgs,
             }),
           },
           {
             to: vaultAddress,
             value: "0",
             data: encodeFunctionData({
-              abi: chain.vaultAbi,
+              abi: effectiveVaultAbi,
               functionName: "setRiskParams",
               args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
             }),
@@ -585,7 +610,7 @@ export default function CreateVault() {
           {
             to: vaultAddress,
             value: "0",
-            data: encodeFunctionData({ abi: chain.vaultAbi, functionName: "deposit", args: depositArgs }),
+            data: encodeFunctionData({ abi: effectiveVaultAbi, functionName: "deposit", args: depositArgs }),
           },
         ];
 
@@ -617,18 +642,9 @@ export default function CreateVault() {
         setStep(currentPhase);
         const configureHash = await writeContractAsync({
           address: vaultAddress,
-          abi: chain.vaultAbi,
+          abi: effectiveVaultAbi,
           functionName: "configureTarget",
-          args: [
-            parseUnits(investAmount, 6),
-            targetTickLower,
-            targetTickUpper,
-            maxRebalancesFinal,
-            reinjectionCap,
-            BigInt(Number(periodicHours) * 3600),
-            recenterMarginBps,
-            exitTopCeilingMarginBps,
-          ],
+          args: configureTargetArgs,
           chainId: chain.id,
         });
         await publicClient.waitForTransactionReceipt({ hash: configureHash });
@@ -654,7 +670,7 @@ export default function CreateVault() {
         setStep(currentPhase);
         const riskHash = await writeContractAsync({
           address: vaultAddress,
-          abi: chain.vaultAbi,
+          abi: effectiveVaultAbi,
           functionName: "setRiskParams",
           args: [maxSlippageBps, minRebalanceIntervalSec, maxRangeDeviationBps],
           chainId: chain.id,
@@ -665,7 +681,7 @@ export default function CreateVault() {
         setStep(currentPhase);
         const depositHash = await writeContractAsync({
           address: vaultAddress,
-          abi: chain.vaultAbi,
+          abi: effectiveVaultAbi,
           functionName: "deposit",
           // RangeVaultArb's deposit() takes a 3rd gasReserveAmount arg that the
           // original RangeVault.sol doesn't have — chain.vaultAbi already
@@ -678,7 +694,11 @@ export default function CreateVault() {
       }
 
       setStep("done");
-      router.push(`/vault/${vaultAddress}`);
+      // ?kind=compound tells VaultDetail.tsx which ABI to read this vault
+      // with (RangeVaultArbCompound vs the standard vault) — see that page's
+      // own docstring on vault-kind detection. Fixed forever for this
+      // address: whichever factory createVault() above actually hit.
+      router.push(isCompound ? `/vault/${vaultAddress}?kind=compound` : `/vault/${vaultAddress}`);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
@@ -718,6 +738,41 @@ export default function CreateVault() {
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{t("create.networkLabel")}</span>
             <NetworkSelector chains={availableChains} selectedId={chain.id} onSelect={setSelectedChainId} />
           </div>
+        )}
+
+        {compoundAvailable && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+              {t("create.vaultKindLabel")}
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setVaultKind("standard")}
+                className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
+                  vaultKind === "standard"
+                    ? "border-accent bg-accent/[0.08] text-white"
+                    : "border-hairline text-muted hover:border-accent/50"
+                }`}
+              >
+                {t("create.vaultKindStandard")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setVaultKind("compound")}
+                className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
+                  vaultKind === "compound"
+                    ? "border-accent bg-accent/[0.08] text-white"
+                    : "border-hairline text-muted hover:border-accent/50"
+                }`}
+              >
+                {t("create.vaultKindCompound")}
+              </button>
+            </div>
+          </div>
+        )}
+        {isCompound && (
+          <p className="mt-2 max-w-xl text-xs text-faint">{t("create.vaultKindCompoundHint")}</p>
         )}
 
         {isConnected && (
@@ -814,7 +869,7 @@ export default function CreateVault() {
           </div>
         )}
 
-        {!chain.factoryAddress && (
+        {!effectiveFactoryAddress && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5 text-sm text-muted">
             {t("create.contractsNotDeployed", { chain: chain.name })}
           </div>
@@ -963,7 +1018,7 @@ export default function CreateVault() {
 
               <button
                 onClick={() => handleCreate()}
-                disabled={busy || !chain.factoryAddress || insufficientBalance}
+                disabled={busy || !effectiveFactoryAddress || insufficientBalance}
                 className="btn-primary mt-8 w-full"
               >
                 {stepLabel[step]}

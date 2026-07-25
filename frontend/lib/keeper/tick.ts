@@ -1,10 +1,10 @@
 import "server-only";
-import type { Address } from "viem";
+import type { Abi, Address } from "viem";
 import { operatorAccount, getChainRuntime } from "./wallet";
 import { Store, acquireTickLock, releaseTickLock } from "./store";
 import { discoverAndRegisterVaults } from "./discovery";
 import { checkVault } from "./monitor";
-import { runInitPosition, runRebalance, maybeSweepIdleDust } from "./rebalancer";
+import { runInitPosition, runRebalance, maybeSweepIdleDust, runClaimFees } from "./rebalancer";
 import { logEvent } from "./logger";
 import { deployedChains } from "../chains";
 
@@ -61,18 +61,43 @@ export async function runTick(): Promise<TickSummary[]> {
         summary.errors.push({ msg: `discovery failed: ${String(err)}` });
       }
 
+      // Second factory, compound-interest vaults — Arbitrum only today (see
+      // chains.ts's ChainDef docstring on compoundFactoryAddress). Undefined
+      // on every other chain, so this whole block is a no-op there.
+      if (chainDef.compoundFactoryAddress) {
+        try {
+          await discoverAndRegisterVaults(
+            chain,
+            chainDef.compoundFactoryAddress,
+            store,
+            "compound",
+            chainDef.compoundFactoryAbi,
+          );
+        } catch (err) {
+          logEvent({ level: "error", chain: chain.name, msg: "compound discovery failed", err: String(err) });
+          summary.errors.push({ msg: `compound discovery failed: ${String(err)}` });
+        }
+      }
+
       for (const record of await store.listVaults()) {
         summary.vaultsChecked++;
+        // Which ABI/contract this specific vault actually runs — resolved
+        // once per vault from its stored `kind`, then threaded through every
+        // call below instead of re-deriving it each time.
+        const abi: Abi = record.kind === "compound" ? (chainDef.compoundVaultAbi as Abi) : chainDef.vaultAbi;
         try {
-          const action = await checkVault(chain, record.address as Address);
+          const action = await checkVault(chain, record, store);
           if (action.kind === "init") {
-            await runInitPosition(chain, record.address as Address, store);
+            await runInitPosition(chain, record.address as Address, store, abi);
             summary.actions.push({ vault: record.address, action: "initPosition" });
           } else if (action.kind === "rebalance") {
-            await runRebalance(chain, record.address as Address, store, action.reason);
+            await runRebalance(chain, record.address as Address, store, action.reason, abi);
             summary.actions.push({ vault: record.address, action: `rebalance:${action.reason}` });
+          } else if (action.kind === "claimFees") {
+            await runClaimFees(chain, record.address as Address, store, abi);
+            summary.actions.push({ vault: record.address, action: "claimFees" });
           } else if (action.kind === "sweep") {
-            await maybeSweepIdleDust(chain, record.address as Address);
+            await maybeSweepIdleDust(chain, record.address as Address, store, abi);
             summary.actions.push({ vault: record.address, action: "sweepIdleDust" });
           }
         } catch (err) {

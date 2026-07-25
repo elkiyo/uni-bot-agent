@@ -5,9 +5,22 @@ import { getChainRuntime, type ChainRuntime } from "../keeper/wallet";
 import { deployedChains } from "../chains";
 import { getLogsChunkedMulti } from "../getLogsChunked";
 import { withRetry, mapWithConcurrency } from "../concurrency";
-import { uniswapV3PoolAbi } from "../contracts";
+import { uniswapV3PoolAbi, erc20Abi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
 import { serializeArgs } from "../eventArgsCodec";
+
+/** A single indexed vault's own pair, exactly like lib/keeper/pairInfo.ts's
+ * VaultPairInfo — kept as a separate (structurally identical) type since this
+ * module reads it from indexed_vaults, a completely different table than the
+ * keeper's own keeper_vaults, and the two subsystems are deliberately never
+ * coupled (see schema.sql's own note on why indexed_vaults/indexed_events are
+ * kept separate from the keeper's trading-critical bookkeeping). */
+interface IndexedVaultPair {
+  pool: Address;
+  stableIsToken0: boolean;
+  stableDecimals: number;
+  volatileDecimals: number;
+}
 
 const SCAN_CONCURRENCY = 6;
 // PostgREST caps a single response at this many rows (db-max-rows) —
@@ -120,9 +133,28 @@ async function indexVaultDirectory(chain: ChainRuntime, factoryAddress: Address)
     );
     const timestampByBlock = new Map(uniqueBlocks.map((bn, i) => [bn, Number(blocks[i].timestamp)]));
 
+    // Resolved once per new vault here (stableIsToken0()/decimals() — NOT
+    // derivable from token0/token1 alone, see schema.sql's own note on these
+    // columns) and cached in indexed_vaults forever, same one-time-read
+    // pattern as lib/keeper/pairInfo.ts on the keeper side. Best-effort: a
+    // vault whose read fails here just gets picked up by
+    // backfillVaultPairInfo() below on a later tick instead of failing the
+    // whole directory scan.
+    const pairByVault = new Map<string, IndexedVaultPair>();
+    await mapWithConcurrency(logs, SCAN_CONCURRENCY, async (l) => {
+      const a = l.args as unknown as VaultCreatedArgs;
+      try {
+        const pair = await readIndexedVaultPair(chain, a.vault);
+        pairByVault.set(a.vault.toLowerCase(), pair);
+      } catch (err) {
+        console.error(`Failed to resolve pair info for vault ${a.vault}, will backfill lazily:`, err);
+      }
+    });
+
     const rows = logs.map((l) => {
       const a = l.args as unknown as VaultCreatedArgs;
       const blockNumber = l.blockNumber ?? 0n;
+      const pair = pairByVault.get(a.vault.toLowerCase());
       return {
         chain_id: chain.id,
         address: a.vault.toLowerCase(),
@@ -134,6 +166,9 @@ async function indexVaultDirectory(chain: ChainRuntime, factoryAddress: Address)
         created_at_block: blockNumber.toString(),
         created_at: new Date((timestampByBlock.get(blockNumber) ?? 0) * 1000).toISOString(),
         tx_hash: l.transactionHash,
+        stable_is_token0: pair?.stableIsToken0 ?? null,
+        stable_decimals: pair?.stableDecimals ?? null,
+        volatile_decimals: pair?.volatileDecimals ?? null,
       };
     });
     const { error } = await supabase().from("indexed_vaults").upsert(rows, { onConflict: "chain_id,address" });
@@ -142,14 +177,75 @@ async function indexVaultDirectory(chain: ChainRuntime, factoryAddress: Address)
   await setIndexerState(key, toBlock);
 }
 
-function cheapUsdValue(
-  eventName: string,
-  args: Record<string, unknown>,
-  chain: ChainRuntime,
-  ethPrice: number,
-): number | null {
+// Minimal fragment shared with lib/keeper/pairInfo.ts's own resolution —
+// stableIsToken0() exists on both the standard and compound vault ABIs
+// (identical signature), so this narrow, hand-written fragment works for
+// either without needing to import the full ABI just for one function.
+const stableIsToken0Abi = [
+  { type: "function", name: "stableIsToken0", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+] as const;
+
+/** Reads a vault's own pair directly — pool from indexed_vaults isn't
+ * available yet at indexVaultDirectory's call site (that row doesn't exist
+ * until AFTER this resolves), so this takes pool explicitly rather than
+ * looking it up. */
+async function readIndexedVaultPair(chain: ChainRuntime, vaultAddress: Address, pool?: Address): Promise<IndexedVaultPair> {
+  const [stableIsToken0, token0, token1, resolvedPool] = await Promise.all([
+    chain.publicClient.readContract({ address: vaultAddress, abi: stableIsToken0Abi, functionName: "stableIsToken0" }),
+    chain.publicClient.readContract({ address: vaultAddress, abi: chain.vaultAbi, functionName: "token0" }) as Promise<Address>,
+    chain.publicClient.readContract({ address: vaultAddress, abi: chain.vaultAbi, functionName: "token1" }) as Promise<Address>,
+    pool
+      ? Promise.resolve(pool)
+      : (chain.publicClient.readContract({ address: vaultAddress, abi: chain.vaultAbi, functionName: "pool" }) as Promise<Address>),
+  ]);
+  const stableToken = stableIsToken0 ? token0 : token1;
+  const volatileToken = stableIsToken0 ? token1 : token0;
+  const [stableDecimals, volatileDecimals] = await Promise.all([
+    chain.publicClient.readContract({ address: stableToken, abi: erc20Abi, functionName: "decimals" }) as Promise<number>,
+    chain.publicClient.readContract({ address: volatileToken, abi: erc20Abi, functionName: "decimals" }) as Promise<number>,
+  ]);
+  return { pool: resolvedPool, stableIsToken0, stableDecimals, volatileDecimals };
+}
+
+/** Self-heals any indexed_vaults row left with a null pair (a legacy row
+ * from before these columns existed, or one whose resolution failed at
+ * directory-scan time) — same "lazy backfill" pattern as
+ * lib/keeper/pairInfo.ts's resolveVaultPair, just batched across every
+ * pending row at once instead of one-at-a-time on demand, since this table
+ * has no per-request caller waiting on the result. */
+async function backfillVaultPairInfo(chain: ChainRuntime): Promise<void> {
+  const { data, error } = await supabase()
+    .from("indexed_vaults")
+    .select("address,pool")
+    .eq("chain_id", chain.id)
+    .is("stable_is_token0", null);
+  if (error) throw error;
+  const rows = (data ?? []) as { address: string; pool: string }[];
+  if (rows.length === 0) return;
+
+  await mapWithConcurrency(rows, SCAN_CONCURRENCY, async (row) => {
+    try {
+      const pair = await readIndexedVaultPair(chain, row.address as Address, row.pool as Address);
+      const { error: updateErr } = await supabase()
+        .from("indexed_vaults")
+        .update({
+          stable_is_token0: pair.stableIsToken0,
+          stable_decimals: pair.stableDecimals,
+          volatile_decimals: pair.volatileDecimals,
+        })
+        .eq("chain_id", chain.id)
+        .eq("address", row.address);
+      if (updateErr) throw updateErr;
+    } catch (err) {
+      console.error(`Failed to backfill pair info for indexed vault ${row.address}, will retry next tick:`, err);
+    }
+  });
+}
+
+function cheapUsdValue(eventName: string, args: Record<string, unknown>, pair: IndexedVaultPair, ethPrice: number): number | null {
   const toUsd = (stableRaw: unknown, volatileRaw: unknown) =>
-    Number((stableRaw as bigint) ?? 0n) * 1e-6 + Number((volatileRaw as bigint) ?? 0n) * 1e-18 * ethPrice;
+    Number((stableRaw as bigint) ?? 0n) * 10 ** -pair.stableDecimals +
+    Number((volatileRaw as bigint) ?? 0n) * 10 ** -pair.volatileDecimals * ethPrice;
 
   if (
     eventName === "LpFeesPaidToOwner" ||
@@ -161,39 +257,68 @@ function cheapUsdValue(
     // volatile routing as the fee events above, no RPC needed at all.
     eventName === "PositionInitialized"
   ) {
-    const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
-    const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
+    const stableRaw = pair.stableIsToken0 ? args.amount0 : args.amount1;
+    const volatileRaw = pair.stableIsToken0 ? args.amount1 : args.amount0;
     return toUsd(stableRaw, volatileRaw);
   }
   if (eventName === "KeeperGasReimbursed") {
-    return Number((args.amountUsd as bigint) ?? 0n) * 1e-6;
+    return Number((args.amountUsd as bigint) ?? 0n) * 10 ** -pair.stableDecimals;
   }
   if (eventName === "Deposited") {
     const total =
       ((args.investableAmount as bigint) ?? 0n) +
       ((args.reserveAmount as bigint) ?? 0n) +
       ((args.gasReserveAmount as bigint) ?? 0n);
-    return Number(total) * 1e-6;
+    return Number(total) * 10 ** -pair.stableDecimals;
   }
   return null; // Rebalanced needs the pool's own Mint event — see backfillMintUsd. Everything else has no natural USD value.
 }
 
-async function currentEthPrice(chain: ChainRuntime): Promise<number> {
+async function ethPriceForPair(chain: ChainRuntime, pair: IndexedVaultPair): Promise<number> {
   const slot0 = (await chain.publicClient.readContract({
-    address: chain.pool,
+    address: pair.pool,
     abi: uniswapV3PoolAbi,
     functionName: "slot0",
   })) as readonly [bigint, number, ...unknown[]];
-  return ethPriceFromTick(slot0[1], chain.stableIsToken0);
+  return ethPriceFromTick(slot0[1], pair.stableIsToken0, pair.stableDecimals, pair.volatileDecimals);
 }
 
 async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
   const key = `events:${chain.id}`;
-  const vaultRows = await fetchAllRows<{ address: string }>((from, to) =>
-    supabase().from("indexed_vaults").select("address").eq("chain_id", chain.id).range(from, to),
+  const vaultRows = await fetchAllRows<{
+    address: string;
+    pool: string;
+    stable_is_token0: boolean | null;
+    stable_decimals: number | null;
+    volatile_decimals: number | null;
+  }>((from, to) =>
+    supabase()
+      .from("indexed_vaults")
+      .select("address,pool,stable_is_token0,stable_decimals,volatile_decimals")
+      .eq("chain_id", chain.id)
+      .range(from, to),
   );
   const addresses = vaultRows.map((v) => v.address as Address);
   if (addresses.length === 0) return;
+
+  // Per-vault pair — a row whose pair hasn't been resolved yet (null, see
+  // backfillVaultPairInfo) falls back to the CHAIN's own default pair rather
+  // than skipping pricing entirely: every vault predating multi-pair really
+  // is on that default pair, so this is a correct value, not a guess, for
+  // every vault that exists today; only matters as a genuine approximation
+  // once a non-default-pair vault's row hasn't been backfilled yet, a narrow
+  // window (one indexer tick) this same call also actively closes.
+  const pairByVault = new Map<string, IndexedVaultPair>(
+    vaultRows.map((v) => [
+      v.address.toLowerCase(),
+      {
+        pool: v.pool as Address,
+        stableIsToken0: v.stable_is_token0 ?? chain.stableIsToken0,
+        stableDecimals: v.stable_decimals ?? chain.stableDecimals,
+        volatileDecimals: v.volatile_decimals ?? chain.volatileDecimals,
+      },
+    ]),
+  );
 
   const latest = await chain.publicClient.getBlockNumber();
   let fromBlock = await getIndexerState(key);
@@ -220,7 +345,17 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
     chain.publicClient.getBlock({ blockNumber: bn }),
   );
   const timestampByBlock = new Map(uniqueBlocks.map((bn, i) => [bn, Number(blocks[i].timestamp)]));
-  const ethPrice = await currentEthPrice(chain);
+
+  // One live price PER POOL, not per vault — several vaults on the same
+  // pair/pool (the common case) share a single quote instead of each paying
+  // for its own redundant slot0() read.
+  const uniquePools = [...new Set([...pairByVault.values()].map((p) => p.pool))];
+  const priceByPool = new Map<Address, number>(
+    await mapWithConcurrency(uniquePools, SCAN_CONCURRENCY, async (pool) => {
+      const pair = [...pairByVault.values()].find((p) => p.pool === pool)!;
+      return [pool, await ethPriceForPair(chain, pair)] as const;
+    }),
+  );
 
   const rows = parsed.map((l) => {
     // viem's parseEventLogs returns `args: undefined` (not `{}`) for a
@@ -233,16 +368,19 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
     // MAX_SCAN_BLOCKS range reached one.
     const args = (l.args ?? {}) as Record<string, unknown>;
     const blockNumber = l.blockNumber as bigint;
+    const address = (l.address as string).toLowerCase();
+    const pair = pairByVault.get(address);
+    const ethPrice = pair ? priceByPool.get(pair.pool) : undefined;
     return {
       chain_id: chain.id,
-      address: (l.address as string).toLowerCase(),
+      address,
       event_name: l.eventName,
       args: serializeArgs(args),
       block_number: blockNumber.toString(),
       log_index: l.logIndex as number,
       tx_hash: l.transactionHash as string,
       block_timestamp: new Date((timestampByBlock.get(blockNumber) ?? 0) * 1000).toISOString(),
-      usd_value: cheapUsdValue(l.eventName, args, chain, ethPrice),
+      usd_value: pair && ethPrice !== undefined ? cheapUsdValue(l.eventName, args, pair, ethPrice) : null,
     };
   });
 
@@ -280,21 +418,57 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
  *   out-of-range check.
  */
 async function backfillMintUsd(chain: ChainRuntime): Promise<void> {
-  const ethPrice = await currentEthPrice(chain);
+  const vaultRows = await fetchAllRows<{
+    address: string;
+    pool: string;
+    stable_is_token0: boolean | null;
+    stable_decimals: number | null;
+    volatile_decimals: number | null;
+  }>((from, to) =>
+    supabase()
+      .from("indexed_vaults")
+      .select("address,pool,stable_is_token0,stable_decimals,volatile_decimals")
+      .eq("chain_id", chain.id)
+      .range(from, to),
+  );
+  // Same "fall back to the chain default for a not-yet-backfilled row"
+  // reasoning as indexVaultEvents above.
+  const pairByAddress = new Map<string, IndexedVaultPair>(
+    vaultRows.map((v) => [
+      v.address.toLowerCase(),
+      {
+        pool: v.pool as Address,
+        stableIsToken0: v.stable_is_token0 ?? chain.stableIsToken0,
+        stableDecimals: v.stable_decimals ?? chain.stableDecimals,
+        volatileDecimals: v.volatile_decimals ?? chain.volatileDecimals,
+      },
+    ]),
+  );
+  const priceCache = new Map<Address, number>();
+  async function priceForPool(pair: IndexedVaultPair): Promise<number> {
+    const cached = priceCache.get(pair.pool);
+    if (cached !== undefined) return cached;
+    const price = await ethPriceForPair(chain, pair);
+    priceCache.set(pair.pool, price);
+    return price;
+  }
 
-  const initRows = await fetchAllRows<{ id: number; args: Record<string, unknown> }>((from, to) =>
+  const initRows = await fetchAllRows<{ id: number; address: string; args: Record<string, unknown> }>((from, to) =>
     supabase()
       .from("indexed_events")
-      .select("id,args")
+      .select("id,address,args")
       .eq("chain_id", chain.id)
       .eq("event_name", "PositionInitialized")
       .is("usd_value", null)
       .range(from, to),
   );
   for (const row of initRows) {
-    const usd = cheapUsdValue("PositionInitialized", row.args, chain, ethPrice);
+    const pair = pairByAddress.get(row.address.toLowerCase());
+    if (!pair) continue; // this vault's own row hasn't indexed yet — retried next tick
+    const ethPrice = await priceForPool(pair);
+    const usd = cheapUsdValue("PositionInitialized", row.args, pair, ethPrice);
     if (usd === null) continue;
-     
+
     const { error } = await supabase().from("indexed_events").update({ usd_value: usd }).eq("id", row.id);
     if (error) throw error;
   }
@@ -310,21 +484,16 @@ async function backfillMintUsd(chain: ChainRuntime): Promise<void> {
   const rebalRows = (data ?? []) as { id: number; address: string; block_number: string; tx_hash: string }[];
   if (rebalRows.length === 0) return;
 
-  const vaultRows = await fetchAllRows<{ address: string; pool: string }>((from, to) =>
-    supabase().from("indexed_vaults").select("address,pool").eq("chain_id", chain.id).range(from, to),
-  );
-  const poolByAddress = new Map(vaultRows.map((v) => [v.address.toLowerCase(), v.pool as Address]));
-
   await mapWithConcurrency(rebalRows, SCAN_CONCURRENCY, async (row) => {
-    const pool = poolByAddress.get(row.address.toLowerCase());
-    if (!pool) return;
+    const pair = pairByAddress.get(row.address.toLowerCase());
+    if (!pair) return;
     const blockNumber = BigInt(row.block_number);
 
     let mintLogs;
     try {
       mintLogs = await withRetry(() =>
         chain.publicClient.getContractEvents({
-          address: pool,
+          address: pair.pool,
           abi: uniswapV3PoolAbi,
           eventName: "Mint",
           fromBlock: blockNumber,
@@ -342,9 +511,10 @@ async function backfillMintUsd(chain: ChainRuntime): Promise<void> {
     if (!match) return; // no matching pool Mint in this exact block for this vault — leave null, shouldn't normally happen
 
     const args = match.args as { amount0: bigint; amount1: bigint };
-    const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
-    const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
-    const usd = Number(stableRaw) * 1e-6 + Number(volatileRaw) * 1e-18 * ethPrice;
+    const stableRaw = pair.stableIsToken0 ? args.amount0 : args.amount1;
+    const volatileRaw = pair.stableIsToken0 ? args.amount1 : args.amount0;
+    const ethPrice = await priceForPool(pair);
+    const usd = Number(stableRaw) * 10 ** -pair.stableDecimals + Number(volatileRaw) * 10 ** -pair.volatileDecimals * ethPrice;
 
     const { error: updateErr } = await supabase().from("indexed_events").update({ usd_value: usd }).eq("id", row.id);
     if (updateErr) throw updateErr;
@@ -365,6 +535,7 @@ export async function runIndexer(): Promise<void> {
     const chain = getChainRuntime(chainDef);
     try {
       await indexVaultDirectory(chain, chainDef.factoryAddress);
+      await backfillVaultPairInfo(chain);
       await indexVaultEvents(chain);
       await backfillMintUsd(chain);
     } catch (err) {

@@ -12,6 +12,7 @@ import { uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts"
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
+import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { fetchVaultCreationTimes } from "@/lib/useVaultCreationTimes";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
@@ -21,6 +22,7 @@ import { useTranslation } from "@/lib/i18n/useTranslation";
 interface VaultRef {
   chain: ChainDef;
   address: `0x${string}`;
+  kind: "standard" | "compound";
 }
 
 /**
@@ -94,36 +96,72 @@ function ChainTab({ label, active, onClick }: { label: string; active: boolean; 
   );
 }
 
+// One entry per (chain, factory) pair to actually query — a chain with a
+// compound factory deployed (Arbitrum, see chains.ts's ChainDef docstring on
+// compoundFactoryAddress) contributes TWO entries, standard and compound;
+// every other chain contributes just its standard one. Without this, a
+// compound vault would be created successfully (see create/page.tsx) but
+// then be permanently invisible from this list — the only factory ever
+// queried here today is the standard one.
+function factoryTargets(chains: ChainDef[]) {
+  return chains.flatMap((chain) => {
+    const targets: {
+      chain: ChainDef;
+      kind: "standard" | "compound";
+      factoryAddress: ChainDef["factoryAddress"];
+      factoryAbi: ChainDef["factoryAbi"];
+    }[] = [{ chain, kind: "standard", factoryAddress: chain.factoryAddress, factoryAbi: chain.factoryAbi }];
+    if (chain.compoundFactoryAddress) {
+      targets.push({
+        chain,
+        kind: "compound" as const,
+        factoryAddress: chain.compoundFactoryAddress,
+        factoryAbi: chain.compoundFactoryAbi!,
+      });
+    }
+    return targets;
+  });
+}
+
 function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}` }) {
   const { t } = useTranslation();
-  // Stage 1: which vaults exist, per chain — one batched call across chains.
+  const targets = useMemo(() => factoryTargets(chains), [chains]);
+
+  // Stage 1: which vaults exist, per (chain, factory) target — one batched
+  // call across every standard AND compound factory.
   const { data: vaultListsData, isLoading: vaultListsLoading } = useReadContracts({
-    contracts: chains.map(
-      (chain) =>
+    contracts: targets.map(
+      (target) =>
         ({
-          address: chain.factoryAddress || undefined,
-          abi: chain.factoryAbi,
+          address: target.factoryAddress || undefined,
+          abi: target.factoryAbi,
           functionName: "getVaultsByOwner",
           args: [owner],
-          chainId: chain.id,
+          chainId: target.chain.id,
         }) as const,
     ),
-    query: { enabled: chains.some((c) => c.factoryAddress) },
+    query: { enabled: targets.some((tg) => tg.factoryAddress) },
   });
 
   const vaultRefs: VaultRef[] = useMemo(
     () =>
-      chains.flatMap((chain, i) => {
+      targets.flatMap((target, i) => {
         const list = (vaultListsData?.[i]?.result as string[] | undefined) ?? [];
-        return list.map((address) => ({ chain, address: address as `0x${string}` }));
+        return list.map((address) => ({ chain: target.chain, address: address as `0x${string}`, kind: target.kind }));
       }),
-    [chains, vaultListsData],
+    [targets, vaultListsData],
   );
 
   // Stage 2: closed flag for every vault across every chain — one batched call.
   const { data: closedData, isLoading: closedLoading } = useReadContracts({
     contracts: vaultRefs.map(
-      ({ chain, address }) => ({ address, abi: chain.vaultAbi, functionName: "closed", chainId: chain.id }) as const,
+      ({ chain, address, kind }) =>
+        ({
+          address,
+          abi: kind === "compound" ? chain.compoundVaultAbi! : chain.vaultAbi,
+          functionName: "closed",
+          chainId: chain.id,
+        }) as const,
     ),
     query: { enabled: vaultRefs.length > 0, refetchInterval: 60_000 },
   });
@@ -185,9 +223,9 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
     <>
       {activeVaults.length > 0 && (
         <ul className="mt-10 flex flex-col gap-4">
-          {activeVaults.map(({ chain, address, createdAt }) => (
+          {activeVaults.map(({ chain, address, kind, createdAt }) => (
             <li key={`${chain.id}-${address}`}>
-              <VaultCard vaultAddress={address} chain={chain} createdAt={createdAt} />
+              <VaultCard vaultAddress={address} chain={chain} kind={kind} createdAt={createdAt} />
             </li>
           ))}
         </ul>
@@ -203,9 +241,9 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
           </h2>
           <p className="mt-1 text-sm text-muted">{t("vaults.closedSubtitle")}</p>
           <ul className="mt-4 flex flex-col gap-4">
-            {closedVaults.map(({ chain, address, createdAt }) => (
+            {closedVaults.map(({ chain, address, kind, createdAt }) => (
               <li key={`${chain.id}-${address}`}>
-                <VaultCard vaultAddress={address} chain={chain} createdAt={createdAt} isClosed />
+                <VaultCard vaultAddress={address} chain={chain} kind={kind} createdAt={createdAt} isClosed />
               </li>
             ))}
           </ul>
@@ -230,11 +268,13 @@ const cardReads = (address: `0x${string}`, vaultAbi: ChainDef["vaultAbi"]) =>
 function VaultCard({
   vaultAddress,
   chain,
+  kind,
   createdAt,
   isClosed,
 }: {
   vaultAddress: `0x${string}`;
   chain: ChainDef;
+  kind: "standard" | "compound";
   createdAt?: number;
   isClosed?: boolean;
 }) {
@@ -246,8 +286,21 @@ function VaultCard({
   const onNavigate = () => setSelectedChainId(chain.id);
   const { t } = useTranslation();
 
+  const vaultAbi = kind === "compound" ? chain.compoundVaultAbi! : chain.vaultAbi;
+
+  // This vault's OWN pair (see lib/useVaultPairInfo.ts) — falls back to the
+  // chain's default while loading, correct for every vault today since none
+  // are on a non-default pair yet (wild-exploring-bumblebee.md's Fase 3).
+  const pairInfo = useVaultPairInfo(vaultAddress, chain, vaultAbi);
+  const volatileToken = pairInfo.data?.volatileToken ?? chain.volatileToken;
+  const stableIsToken0 = pairInfo.data?.stableIsToken0 ?? chain.stableIsToken0;
+  const stableDecimals = pairInfo.data?.stableDecimals ?? 6;
+  const volatileDecimals = pairInfo.data?.volatileDecimals ?? 18;
+  const stableSymbol = pairInfo.data?.stableSymbol ?? chain.stableSymbol;
+  const volatileSymbol = pairInfo.data?.volatileSymbol ?? chain.volatileSymbol;
+
   const { data } = useReadContracts({
-    contracts: cardReads(vaultAddress, chain.vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
+    contracts: cardReads(vaultAddress, vaultAbi).map((c) => ({ ...c, chainId: chain.id })),
     query: { refetchInterval: 60_000 },
   });
   const [paused, positionTokenId, rebalanceCount, maxRebalances, investableUsdt, reserveBalance, poolRaw, feeTierRaw] =
@@ -280,7 +333,8 @@ function VaultCard({
     query: { enabled: hasPosition, refetchInterval: 60_000 },
   });
 
-  const ethPrice = currentTick !== undefined ? ethPriceFromTick(currentTick, chain.stableIsToken0) : undefined;
+  const ethPrice =
+    currentTick !== undefined ? ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals) : undefined;
 
   let positionValueUsd: number | undefined;
   let rangeLabel: string | undefined;
@@ -301,12 +355,12 @@ function VaultCard({
       bigint,
     ];
     const { amount0Raw, amount1Raw } = estimatePositionAmounts({ liquidity, currentTick, tickLower, tickUpper });
-    const stableRaw = chain.stableIsToken0 ? amount0Raw : amount1Raw;
-    const volatileRaw = chain.stableIsToken0 ? amount1Raw : amount0Raw;
-    positionValueUsd = stableRaw * 1e-6 + volatileRaw * 1e-18 * ethPrice;
+    const stableRaw = stableIsToken0 ? amount0Raw : amount1Raw;
+    const volatileRaw = stableIsToken0 ? amount1Raw : amount0Raw;
+    positionValueUsd = stableRaw * 10 ** -stableDecimals + volatileRaw * 10 ** -volatileDecimals * ethPrice;
 
-    const priceA = ethPriceFromTick(tickLower, chain.stableIsToken0);
-    const priceB = ethPriceFromTick(tickUpper, chain.stableIsToken0);
+    const priceA = ethPriceFromTick(tickLower, stableIsToken0, stableDecimals, volatileDecimals);
+    const priceB = ethPriceFromTick(tickUpper, stableIsToken0, stableDecimals, volatileDecimals);
     const lo = Math.min(priceA, priceB);
     const hi = Math.max(priceA, priceB);
     rangeLabel = `$${lo.toFixed(0)} – $${hi.toFixed(0)}`;
@@ -325,7 +379,7 @@ function VaultCard({
   // production 2026-07-16, e.g. vault 0x0Bf394B3...5dEBCE5b8: $191 of WETH
   // sitting here with the USDT-only stat showing $0).
   const { data: idleWeth } = useReadContract({
-    address: chain.volatileToken,
+    address: volatileToken,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [vaultAddress],
@@ -333,7 +387,7 @@ function VaultCard({
     query: { refetchInterval: 60_000 },
   });
   const idleWethRaw = (idleWeth as bigint) ?? 0n;
-  const idleWethUsd = ethPrice !== undefined ? Number(idleWethRaw) * 1e-18 * ethPrice : undefined;
+  const idleWethUsd = ethPrice !== undefined ? Number(idleWethRaw) * 10 ** -volatileDecimals * ethPrice : undefined;
 
   // Rentabilidad = comisiones acumuladas (convertidas a USD) sobre el monto
   // depositado cuando se creó el vault — no el total histórico (top-ups
@@ -341,9 +395,9 @@ function VaultCard({
   // se abre/reinyecta una posición), ni anualizado.
   const { data: depositSummary } = useVaultDepositSummary(vaultAddress, chain);
   const feesUsdEquivalent =
-    Number(formatUnits(feesSummary?.totalUsdt ?? 0n, 6)) +
-    (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)) * ethPrice : 0);
-  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, 6));
+    Number(formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)) +
+    (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice : 0);
+  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, stableDecimals));
   const rentLabel =
     initialInvestmentUsd > 0
       ? t("vaults.returnLabel", { pct: ((feesUsdEquivalent / initialInvestmentUsd) * 100).toFixed(2) })
@@ -354,7 +408,7 @@ function VaultCard({
   // inversión inicial — a diferencia de "rentLabel" arriba, esto SÍ refleja
   // impermanent loss / suba de precio, no solo comisiones cobradas.
   const currentTotalValueUsd =
-    (hasPosition ? (positionValueUsd ?? 0) : 0) + Number(formatUnits(idleCapital, 6)) + (idleWethUsd ?? 0);
+    (hasPosition ? (positionValueUsd ?? 0) : 0) + Number(formatUnits(idleCapital, stableDecimals)) + (idleWethUsd ?? 0);
   const floatingPct =
     initialInvestmentUsd > 0 ? ((currentTotalValueUsd - initialInvestmentUsd) / initialInvestmentUsd) * 100 : undefined;
   const floatingLabel = floatingPct !== undefined ? t("vaults.floatingReturnLabel", { pct: floatingPct.toFixed(2) }) : "—";
@@ -368,18 +422,18 @@ function VaultCard({
 
   return (
     <Link
-      href={`/vault/${vaultAddress}`}
+      href={kind === "compound" ? `/vault/${vaultAddress}?kind=compound` : `/vault/${vaultAddress}`}
       onClick={onNavigate}
       className={`glass glass-hover group block overflow-hidden rounded-2xl ${isClosed ? "opacity-60" : ""}`}
     >
       {/* Header row: pair icon anchors the row like a Uniswap position list
           entry, badges/address trail after it, all on one line on desktop. */}
       <div className="flex flex-wrap items-center gap-4 p-5">
-        <PairIcon volatileSymbol={chain.volatileSymbol} stableSymbol={chain.stableSymbol} size={36} />
+        <PairIcon volatileSymbol={volatileSymbol} stableSymbol={stableSymbol} size={36} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-base font-semibold text-white">
-              {chain.stableSymbol} / {chain.volatileSymbol}
+              {stableSymbol} / {volatileSymbol}
             </span>
             <span className="rounded-md border border-hairline px-1.5 py-0.5 font-mono text-[11px] text-faint">
               {feeTier / 10_000}%
@@ -388,6 +442,11 @@ function VaultCard({
               <ChainIcon chainId={chain.id} size={13} />
               {chain.name}
             </span>
+            {kind === "compound" && (
+              <span className="eyebrow !border-accent/40 !px-2.5 !py-0.5 !text-accent">
+                {t("vaults.compoundBadge")}
+              </span>
+            )}
             {isClosed ? (
               <span className="eyebrow !px-2.5 !py-0.5">{t("vaults.closed")}</span>
             ) : paused ? (
@@ -437,11 +496,11 @@ function VaultCard({
 
         <StatCell label={t("vaults.freeCapital")}>
           <p className="text-sm font-medium text-white/90">
-            {formatUnits(idleCapital, 6)} {chain.stableSymbol}
+            {formatUnits(idleCapital, stableDecimals)} {stableSymbol}
           </p>
           {idleWethRaw > 0n && (
             <p className="mt-0.5 font-mono text-xs text-amber-400">
-              + {Number(formatUnits(idleWethRaw, 18)).toFixed(6)} {chain.volatileSymbol}
+              + {Number(formatUnits(idleWethRaw, volatileDecimals)).toFixed(6)} {volatileSymbol}
               {idleWethUsd !== undefined ? ` (~$${idleWethUsd.toFixed(2)})` : ""}
             </p>
           )}
@@ -455,13 +514,13 @@ function VaultCard({
 
         <StatCell label={t("vaults.fees")}>
           <p className="text-sm font-medium text-positive">
-            {formatUnits(feesSummary?.totalUsdt ?? 0n, 6)} {chain.stableSymbol}
+            {formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)} {stableSymbol}
           </p>
           {(feesSummary?.totalWeth ?? 0n) > 0n && (
             <p className="mt-0.5 font-mono text-xs text-positive/70">
-              + {Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)).toFixed(6)} {chain.volatileSymbol}
+              + {Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)).toFixed(6)} {volatileSymbol}
               {ethPrice !== undefined
-                ? ` (~$${(Number(formatUnits(feesSummary?.totalWeth ?? 0n, 18)) * ethPrice).toFixed(2)})`
+                ? ` (~$${(Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice).toFixed(2)})`
                 : ""}
             </p>
           )}

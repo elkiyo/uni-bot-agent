@@ -248,6 +248,23 @@ function describe(
         title: t("activity.reinjectedTitle"),
         detail: t("activity.reinjectedDetail", { amount: usdt(args.amount), used: usdt(args.used0) }),
       };
+    // Compound vaults only (RangeVaultArbCompound.sol) — fires instead of
+    // LpFeesPaidToOwner whenever autoCompoundFees is on: netFee0/netFee1
+    // stayed in the vault and got folded into the position instead of paid
+    // out. used0/used1 are 0 on the free/automatic rebalance() path (folded
+    // into that cycle's own mint, no separately-attributable "used" amount —
+    // see RangeVaultArbCompound.sol's FeesReinjected docstring) and real on
+    // collectFees()/harvestFees().
+    case "FeesReinjected": {
+      const netFee1 = (args.netFee1 as bigint) ?? 0n;
+      return {
+        kind: "agent",
+        title: t("activity.feesReinjectedTitle"),
+        detail: t("activity.feesReinjectedDetail", {
+          amounts: `${usdt(args.netFee0)}${netFee1 > 0n ? ` + ${weth(netFee1)}` : ""}`,
+        }),
+      };
+    }
     case "IdleDustSwept": {
       const used1 = (args.used1 as bigint) ?? 0n;
       return {

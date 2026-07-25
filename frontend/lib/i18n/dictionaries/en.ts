@@ -177,6 +177,11 @@ const en: Dictionary = {
     copied: "Copied ✓",
     viewExplorer: "View on explorer",
     contractsNotDeployed: "Contracts aren't configured on {{chain}} yet.",
+    vaultKindLabel: "Vault type:",
+    vaultKindStandard: "Standard",
+    vaultKindCompound: "Compound interest",
+    vaultKindCompoundHint:
+      "LP fees get reinjected into the position instead of paid out to your wallet — turn it off anytime from the vault's own settings.",
 
     exampleLabel: "E.g.:",
     fieldInvestAmount: "Investment amount",
@@ -253,6 +258,7 @@ const en: Dictionary = {
     closed: "Closed",
     paused: "Paused",
     active: "Active",
+    compoundBadge: "Compound interest",
     noPosition: "No position",
     inRange: "In range",
     outOfRange: "Out of range",
@@ -328,6 +334,8 @@ const en: Dictionary = {
     positionIncreasedDetail: "{{deposited}} deposited, {{used}} entered the position instantly",
     reinjectedTitle: "Agent reinjected reserve into the position",
     reinjectedDetail: "{{amount}} left the reserve, {{used}} entered the position without closing it",
+    feesReinjectedTitle: "Fees compounded into the position",
+    feesReinjectedDetail: "{{amounts}} reinjected instead of paid out — compounding is on",
     dustSweptTitle: "Agent swept loose dust with a swap",
     dustSweptDetail: "{{amounts}} that were sitting idle entered the position",
     emergencyWithdrawTitle: "Emergency withdrawal",
@@ -378,6 +386,7 @@ const en: Dictionary = {
     txReconfiguring: "Reconfiguring",
     txSettingRisk: "Setting risk limits",
     txCollectingFees: "Claiming fees",
+    txSettingAutoCompound: "Setting compounding",
     txWithdrawing: "Withdrawing",
     txResuming: "Resuming",
     txPausing: "Pausing",
@@ -389,12 +398,18 @@ const en: Dictionary = {
     eyebrow: "Vault · {{pair}} {{fee}}%",
     paused: "Paused",
     active: "Active",
+    compoundBadgeOn: "Compounding: on",
+    compoundBadgeOff: "Compounding: off",
     positionLabel: "Position #{{id}}",
     noPositionYet: "No position yet",
     ownerNote: "You're the owner of this vault.",
     readOnlyNote: "Read-only view — you're not the owner.",
     rebalanceFailedTitle:
       "The last rebalance couldn't be completed — the price API (uni-lab) couldn't be reached.",
+    gasReserveDepletedTitle: "This vault's gas reserve ran out",
+    gasReserveDepletedBody:
+      "The agent keeps operating the vault normally, but it can no longer reimburse itself for the gas cost of its transactions. Consider topping up the gas reserve.",
+    gasReserveDepletedSince: "Unreimbursed since {{date}}",
     loading: "Loading…",
 
     statAge: "Vault age",
@@ -426,6 +441,13 @@ const en: Dictionary = {
     configRecenterMargin: "Recenter margin",
     configTopMargin: "Ceiling margin (upper exit)",
     configMaxRebalances: "Rebalance cap",
+    configAutoCompound: "Compound interest",
+    configOnValue: "on",
+    configOffValue: "off",
+    configFeeClaimThreshold: "Auto-claim threshold",
+    configFeeClaimInterval: "Auto-claim interval",
+    configLastFeeClaim: "Last claim",
+    configNever: "never",
 
     managementTitle: "Management",
     managementSubtitle: "Only the owner can execute these actions.",
@@ -452,6 +474,8 @@ const en: Dictionary = {
     fieldPeriodicHours: "Periodic (hours)",
     fieldRecenterMarginToday: "Re-entry floor margin below % (today: {{n}})",
     fieldTopMarginToday: "Ceiling margin upper exit % (today: {{n}})",
+    fieldFeeClaimThresholdToday: "Auto-claim threshold, % of position value (today: {{n}})",
+    fieldFeeClaimIntervalToday: "Auto-claim interval, hours (today: {{n}})",
     update: "Update",
 
     riskLimitsLabel: "Risk limits",
@@ -478,6 +502,11 @@ const en: Dictionary = {
     collectFeesTooltipEnabled:
       "Collects only the accrued trading fees — the position stays open, without touching the principal",
     collectFeesTooltipDisabled: "There's no open position yet",
+    collectFeesTooltipCompoundOn: "Compounding is on — claimed fees get reinjected into the position instead of paid out to your wallet",
+    autoCompoundToggleOn: "Turn compounding on",
+    autoCompoundToggleOff: "Turn compounding off",
+    autoCompoundToggleHint:
+      "When on, fees from every rebalance, manual claim, and scheduled auto-claim get reinjected into the position instead of paid out to your wallet.",
     withdrawAll: "Withdraw all",
     resume: "Resume",
     pause: "Pause",
@@ -971,6 +1000,7 @@ const en: Dictionary = {
     statClosed: "Closed",
     statOutOfRangeNow: "Out of range now",
     statTotalRebalances: "Total rebalances",
+    statGasDepletedVaults: "Vaults with unreimbursed gas",
 
     operatorLabel: "Operator",
     statGasLabel: "{{symbol}} (gas, {{chain}})",
@@ -1012,6 +1042,12 @@ const en: Dictionary = {
     errorLabel: "Error",
     okLabel: "ok",
     errorShortLabel: "error",
+
+    gasDepletedTitle: "Vaults with a depleted gas reserve",
+    gasDepletedSubtitle:
+      "The agent keeps operating these vaults normally, but can't reimburse its gas until the owner tops up the reserve.",
+    noneDepleted: "No vault currently has a depleted gas reserve.",
+    gasDepletedSince: "Unreimbursed since {{date}}",
   },
   referrals: {
     eyebrow: "Referrals",

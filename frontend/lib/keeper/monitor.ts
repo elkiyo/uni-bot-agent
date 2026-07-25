@@ -1,14 +1,23 @@
 import "server-only";
-import type { Address } from "viem";
+import type { Abi, Address } from "viem";
 import type { ChainRuntime } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi } from "./serverContracts";
 import { erc20Abi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
+import { estimatePositionValueUsd } from "./swapMath";
+import { resolveVaultPair, applyVaultPair } from "./pairInfo";
+import type { Store, VaultRecord } from "./store";
+
+// "compound" is Arbitrum-only (RangeVaultArbCompound.sol) — see chains.ts's
+// ChainDef docstring on compoundVaultAbi. A "standard" vault (the default)
+// never has autoCompoundFees/feeClaimThresholdBps/etc. on its ABI at all.
+export type VaultKind = "standard" | "compound";
 
 export type VaultAction =
   | { kind: "none" }
   | { kind: "init"; reason: string }
   | { kind: "rebalance"; reason: "out-of-range-top" | "out-of-range-bottom" | "periodic" }
+  | { kind: "claimFees" }
   | { kind: "sweep" };
 
 // Not worth a transaction below this — matches DUST_SWEEP_MIN_USD in
@@ -24,8 +33,12 @@ const DUST_SWEEP_MIN_USD = 1;
  * itself, this is just the off-chain pre-check so we don't waste a paid API call
  * on a doomed transaction.
  */
-export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Promise<VaultAction> {
-  const vault = vaultContract(chain, vaultAddress);
+export async function checkVault(chain: ChainRuntime, record: VaultRecord, store: Store): Promise<VaultAction> {
+  const vaultAddress = record.address as Address;
+  const vaultKind: VaultKind = record.kind;
+  const abi = vaultKind === "compound" ? (chain.compoundVaultAbi as Abi) : chain.vaultAbi;
+  chain = applyVaultPair(chain, await resolveVaultPair(chain, vaultAddress, abi, store, record));
+  const vault = vaultContract(chain, vaultAddress, abi);
 
   const [targetConfigured, positionTokenId, rebalanceCount, maxRebalances, lastRebalanceTimestamp, minInterval, periodicInterval] =
     await Promise.all([
@@ -85,7 +98,7 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
     args: [positionTokenId],
   })) as readonly [bigint, Address, Address, Address, number, number, number, bigint, bigint, bigint, bigint, bigint];
 
-  const [, , , , , tickLower, tickUpper] = positions;
+  const [, , , , , tickLower, tickUpper, liquidity, , , tokensOwed0, tokensOwed1] = positions;
   // The vault's own pool — NOT necessarily chain.pool, the chain's "default"
   // pool. createVault() lets the owner pick any fee-tier pool for the pair;
   // a vault on a different one had its out-of-range check (and, before this
@@ -107,9 +120,9 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
   // out-of-range directions need different rebuild rules (rebalancer.ts's
   // Case 2 vs Case 3), so they're reported separately instead of collapsed
   // into one "out-of-range" reason.
-  const ethPriceNow = ethPriceFromTick(currentTick, chain.stableIsToken0);
-  const priceAtTickLower = ethPriceFromTick(tickLower, chain.stableIsToken0);
-  const priceAtTickUpper = ethPriceFromTick(tickUpper, chain.stableIsToken0);
+  const ethPriceNow = ethPriceFromTick(currentTick, chain.stableIsToken0, chain.stableDecimals, chain.volatileDecimals);
+  const priceAtTickLower = ethPriceFromTick(tickLower, chain.stableIsToken0, chain.stableDecimals, chain.volatileDecimals);
+  const priceAtTickUpper = ethPriceFromTick(tickUpper, chain.stableIsToken0, chain.stableDecimals, chain.volatileDecimals);
   const priceFloor = Math.min(priceAtTickLower, priceAtTickUpper);
   const priceCeiling = Math.max(priceAtTickLower, priceAtTickUpper);
   if (ethPriceNow > priceCeiling) {
@@ -123,6 +136,30 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
   // ceiling) actually valid input for uni-lab.xyz.
   const periodicDue = periodicInterval > 0n && now >= lastRebalanceTimestamp + periodicInterval;
   if (periodicDue) return { kind: "rebalance", reason: "periodic" };
+
+  // Compound-only: scheduled/threshold fee auto-claim. Both knobs
+  // (feeClaimThresholdBps/feeClaimIntervalSeconds) are off-chain-only —
+  // stored on the vault, never enforced by the contract itself (same pattern
+  // as recenterMarginBps) — so this is the single place that actually
+  // decides "due". Only relevant when autoCompoundFees is on: if it's off,
+  // there's nothing to schedule, fees just accumulate for the next
+  // rebalance's default payout, same as a plain RangeVaultArb vault.
+  if (vaultKind === "compound") {
+    const claimDue = await checkFeeClaimDue(vault, {
+      liquidity,
+      tokensOwed0,
+      tokensOwed1,
+      currentTick,
+      tickLower,
+      tickUpper,
+      ethPriceNow,
+      stableIsToken0: chain.stableIsToken0,
+      stableDecimals: chain.stableDecimals,
+      volatileDecimals: chain.volatileDecimals,
+      now,
+    });
+    if (claimDue) return { kind: "claimFees" };
+  }
 
   // In range and nothing else to do this cycle — but check for stranded
   // dust before giving up. Ideally sweepIdleDust() runs right after the mint
@@ -143,8 +180,78 @@ export async function checkVault(chain: ChainRuntime, vaultAddress: Address): Pr
       args: [vaultAddress],
     }) as Promise<bigint>,
   ]);
-  const idleUsdValue = Number(idleUsdt) * 1e-6 + Number(idleWeth) * 1e-18 * ethPriceNow;
+  const idleUsdValue = Number(idleUsdt) * 10 ** -chain.stableDecimals + Number(idleWeth) * 10 ** -chain.volatileDecimals * ethPriceNow;
   if (idleUsdValue >= DUST_SWEEP_MIN_USD) return { kind: "sweep" };
 
   return { kind: "none" };
+}
+
+/**
+ * Compound-only due-check for the scheduled/threshold fee auto-claim. No
+ * on-chain enforcement exists for either knob (see checkVault's own comment
+ * at the call site) — this is the entire decision. Threshold is measured as
+ * accrued-but-uncollected fees (Uniswap's own `tokensOwed0`/`tokensOwed1` on
+ * the position, already fetched by the caller — no extra RPC round-trip)
+ * against the position's CURRENT value, per the confirmed design (% of
+ * position value, not an absolute amount). `tokensOwed0/1` undercounts fees
+ * accrued since the position's last "poke" (any mint/burn/collect touching
+ * it) — the standard, well-understood Uniswap V3 caveat, self-correcting on
+ * the next cycle that pokes the position (a rebalance, another claim) —
+ * acceptable imprecision for a threshold trigger, same tolerance swapMath.ts
+ * already accepts for its own sizing.
+ */
+async function checkFeeClaimDue(
+  vault: ReturnType<typeof vaultContract>,
+  params: {
+    liquidity: bigint;
+    tokensOwed0: bigint;
+    tokensOwed1: bigint;
+    currentTick: number;
+    tickLower: number;
+    tickUpper: number;
+    ethPriceNow: number;
+    stableIsToken0: boolean;
+    stableDecimals: number;
+    volatileDecimals: number;
+    now: bigint;
+  },
+): Promise<boolean> {
+  const [autoCompoundFees, feeClaimThresholdBps, feeClaimIntervalSeconds, lastFeeClaimTimestamp] = await Promise.all([
+    vault.read.autoCompoundFees() as Promise<boolean>,
+    // .catch fallback: a vault could in principle be read before
+    // configureTarget() ever ran (feeClaimThresholdBps/feeClaimIntervalSeconds
+    // default to 0 either way, same effect as the fallback), kept for the
+    // same defensive-consistency reason recenterMarginBps's own read uses one.
+    (vault.read.feeClaimThresholdBps() as Promise<bigint>).catch(() => 0n),
+    (vault.read.feeClaimIntervalSeconds() as Promise<bigint>).catch(() => 0n),
+    vault.read.lastFeeClaimTimestamp() as Promise<bigint>,
+  ]);
+
+  if (!autoCompoundFees) return false;
+
+  const intervalDue = feeClaimIntervalSeconds > 0n && params.now >= lastFeeClaimTimestamp + feeClaimIntervalSeconds;
+  if (intervalDue) return true;
+
+  if (feeClaimThresholdBps === 0n) return false;
+  if (params.liquidity === 0n) return false;
+
+  const positionValueUsd = estimatePositionValueUsd({
+    liquidity: params.liquidity,
+    currentTick: params.currentTick,
+    tickLower: params.tickLower,
+    tickUpper: params.tickUpper,
+    ethPriceUsd: params.ethPriceNow,
+    stableIsToken0: params.stableIsToken0,
+    stableDecimals: params.stableDecimals,
+    volatileDecimals: params.volatileDecimals,
+  });
+  if (positionValueUsd <= 0) return false;
+
+  const accruedStableRaw = params.stableIsToken0 ? params.tokensOwed0 : params.tokensOwed1;
+  const accruedVolatileRaw = params.stableIsToken0 ? params.tokensOwed1 : params.tokensOwed0;
+  const accruedValueUsd =
+    Number(accruedStableRaw) * 10 ** -params.stableDecimals + Number(accruedVolatileRaw) * 10 ** -params.volatileDecimals * params.ethPriceNow;
+
+  const accruedBps = (accruedValueUsd / positionValueUsd) * 10_000;
+  return accruedBps >= Number(feeClaimThresholdBps);
 }

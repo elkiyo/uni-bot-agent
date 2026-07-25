@@ -3,6 +3,8 @@ import RangeVaultAbi from "./abi/RangeVault.json";
 import VaultFactoryAbi from "./abi/VaultFactory.json";
 import RangeVaultArbAbi from "./abi/RangeVaultArb.json";
 import VaultFactoryArbAbi from "./abi/VaultFactoryArb.json";
+import RangeVaultArbCompoundAbi from "./abi/RangeVaultArbCompound.json";
+import VaultFactoryArbCompoundAbi from "./abi/VaultFactoryArbCompound.json";
 import PlatformConfigAbi from "./abi/PlatformConfig.json";
 
 // Cast through Abi (rather than leaving the plain JSON-inferred type) so wagmi's
@@ -18,6 +20,13 @@ export const rangeVaultAbi = RangeVaultAbi as Abi;
 export const vaultFactoryAbi = VaultFactoryAbi as Abi;
 export const rangeVaultArbAbi = RangeVaultArbAbi as Abi;
 export const vaultFactoryArbAbi = VaultFactoryArbAbi as Abi;
+// rangeVaultArbCompoundAbi/vaultFactoryArbCompoundAbi are the interest-compounding
+// fork of RangeVaultArb.sol/VaultFactoryArb.sol — Arbitrum only, see
+// contracts/src/compound/RangeVaultArbCompound.sol's class docstring. A vault built
+// from this ABI is a compound vault forever; there's no shared code path with the
+// plain Arbitrum ABI above beyond both targeting the same USDC/WETH pool.
+export const rangeVaultArbCompoundAbi = RangeVaultArbCompoundAbi as Abi;
+export const vaultFactoryArbCompoundAbi = VaultFactoryArbCompoundAbi as Abi;
 export const platformConfigAbi = PlatformConfigAbi as Abi;
 
 export const uniswapV3PoolAbi = [
@@ -199,7 +208,11 @@ export const positionManagerAbi = [
   },
 ] as const;
 
-// ERC20 fragment big enough for the deposit flow (approve + balanceOf + decimals).
+// ERC20 fragment big enough for the deposit flow (approve + balanceOf) plus
+// decimals/symbol — the two calls that let a vault's pair be resolved live
+// from token0()/token1()/stableIsToken0() alone, with no separate per-pair
+// registry needed for reading an already-deployed vault (see
+// lib/keeper/pairInfo.ts).
 export const erc20Abi = [
   {
     type: "function",
@@ -227,5 +240,19 @@ export const erc20Abi = [
     stateMutability: "view",
     inputs: [{ name: "account", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+  {
+    type: "function",
+    name: "symbol",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
   },
 ] as const;

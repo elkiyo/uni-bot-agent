@@ -27,6 +27,15 @@
 
 const Q = 1.0001;
 
+// Every pair this platform has ever supported (USDT/WETH on Celo, USDC/WETH
+// on Arbitrum) happens to share these decimals, which is why every function
+// below used to hardcode them. Kept as defaults (not removed) so every
+// existing call site keeps working unchanged — multi-pair support is opt-in
+// per call via the new stableDecimals/volatileDecimals params, sourced from
+// the vault's own resolved pair (see lib/keeper/pairInfo.ts), not the chain.
+const DEFAULT_STABLE_DECIMALS = 6;
+const DEFAULT_VOLATILE_DECIMALS = 18;
+
 function sqrtPriceAtTick(tick: number): number {
   return Math.sqrt(Q ** tick);
 }
@@ -40,6 +49,11 @@ export interface SwapSizingInput {
   /** Live WETH price in USD, e.g. from the pool's own slot0 — used only to convert
    * the raw token1/token0 ratio into a USD value ratio. */
   ethPriceUsd: number;
+  /** Decimals of this vault's own stable/volatile legs — defaults to 6/18
+   * (every pair this platform supported before multi-pair). Pass the
+   * resolved pair's real decimals for anything else. */
+  stableDecimals?: number;
+  volatileDecimals?: number;
 }
 
 export interface SwapSizingResult {
@@ -85,11 +99,15 @@ export function estimatePositionAmounts(
 /** Estimated USD value of a Uniswap V3 position from its liquidity + range, using
  * the same standard formulas as sizeInitialSwap. Used only to size uni-lab.xyz API
  * calls (A1/B1 in /rc-rlp-rebalance) — not consulted by the contract. */
-export function estimatePositionValueUsd(input: PositionValueInput & { stableIsToken0: boolean }): number {
+export function estimatePositionValueUsd(
+  input: PositionValueInput & { stableIsToken0: boolean; stableDecimals?: number; volatileDecimals?: number },
+): number {
   const { amount0Raw, amount1Raw } = estimatePositionAmounts(input);
   const stableRaw = input.stableIsToken0 ? amount0Raw : amount1Raw;
   const volatileRaw = input.stableIsToken0 ? amount1Raw : amount0Raw;
-  return stableRaw * 1e-6 + volatileRaw * 1e-18 * input.ethPriceUsd;
+  const stableDecimals = input.stableDecimals ?? DEFAULT_STABLE_DECIMALS;
+  const volatileDecimals = input.volatileDecimals ?? DEFAULT_VOLATILE_DECIMALS;
+  return stableRaw * 10 ** -stableDecimals + volatileRaw * 10 ** -volatileDecimals * input.ethPriceUsd;
 }
 
 /** Target fraction of TOTAL VALUE that should end up as the stable leg, for a
@@ -104,8 +122,12 @@ function targetStableFraction(input: {
   tickUpper: number;
   ethPriceUsd: number;
   stableIsToken0: boolean;
+  stableDecimals?: number;
+  volatileDecimals?: number;
 }): number {
   const { currentTick, tickLower, tickUpper, ethPriceUsd, stableIsToken0 } = input;
+  const stableDecimals = input.stableDecimals ?? DEFAULT_STABLE_DECIMALS;
+  const volatileDecimals = input.volatileDecimals ?? DEFAULT_VOLATILE_DECIMALS;
   let fraction0: number; // fraction of value that should be real-token0
   if (currentTick <= tickLower) {
     fraction0 = 1;
@@ -116,7 +138,7 @@ function targetStableFraction(input: {
     const sqrtPa = sqrtPriceAtTick(tickLower);
     const sqrtPb = sqrtPriceAtTick(tickUpper);
     const rawRatio = ((sqrtP - sqrtPa) * sqrtP * sqrtPb) / (sqrtPb - sqrtP); // amount1_raw / amount0_raw
-    const decimalsExp = stableIsToken0 ? 6 - 18 : 18 - 6;
+    const decimalsExp = stableIsToken0 ? stableDecimals - volatileDecimals : volatileDecimals - stableDecimals;
     const price0 = stableIsToken0 ? 1 : ethPriceUsd;
     const price1 = stableIsToken0 ? ethPriceUsd : 1;
     const valueRatio = rawRatio * 10 ** decimalsExp * (price1 / price0); // value1Usd / value0Usd
@@ -145,8 +167,17 @@ export function targetRawRatio(input: { currentTick: number; tickLower: number; 
 }
 
 export function sizeInitialSwap(input: SwapSizingInput & { stableIsToken0: boolean }): SwapSizingResult {
-  const { currentTick, tickLower, tickUpper, availableStableRaw, ethPriceUsd, stableIsToken0 } = input;
-  const targetStable = targetStableFraction({ currentTick, tickLower, tickUpper, ethPriceUsd, stableIsToken0 });
+  const { currentTick, tickLower, tickUpper, availableStableRaw, ethPriceUsd, stableIsToken0, stableDecimals, volatileDecimals } =
+    input;
+  const targetStable = targetStableFraction({
+    currentTick,
+    tickLower,
+    tickUpper,
+    ethPriceUsd,
+    stableIsToken0,
+    stableDecimals,
+    volatileDecimals,
+  });
   // Starting 100% stable — swap away whatever fraction shouldn't end up stable.
   const amountIn = BigInt(Math.floor(Number(availableStableRaw) * (1 - targetStable)));
   return { sellStable: true, amountIn };
@@ -165,6 +196,9 @@ export interface RebalanceSwapInput {
   availableVolatileRaw: bigint;
   ethPriceUsd: number;
   stableIsToken0: boolean;
+  /** Decimals of this vault's own stable/volatile legs — defaults to 6/18. */
+  stableDecimals?: number;
+  volatileDecimals?: number;
 }
 
 export interface RebalanceSwapResult {
@@ -186,11 +220,20 @@ export interface RebalanceSwapResult {
  * recovered WETH unused.
  */
 export function sizeRebalanceSwap(input: RebalanceSwapInput): RebalanceSwapResult {
-  const { currentTick, newTickLower, newTickUpper, availableStableRaw, availableVolatileRaw, ethPriceUsd, stableIsToken0 } =
-    input;
+  const {
+    currentTick,
+    newTickLower,
+    newTickUpper,
+    availableStableRaw,
+    availableVolatileRaw,
+    ethPriceUsd,
+    stableIsToken0,
+  } = input;
+  const stableDecimals = input.stableDecimals ?? DEFAULT_STABLE_DECIMALS;
+  const volatileDecimals = input.volatileDecimals ?? DEFAULT_VOLATILE_DECIMALS;
 
-  const valueStableUsd = Number(availableStableRaw) * 1e-6;
-  const valueVolatileUsd = Number(availableVolatileRaw) * 1e-18 * ethPriceUsd;
+  const valueStableUsd = Number(availableStableRaw) * 10 ** -stableDecimals;
+  const valueVolatileUsd = Number(availableVolatileRaw) * 10 ** -volatileDecimals * ethPriceUsd;
   const totalUsd = valueStableUsd + valueVolatileUsd;
 
   const targetFractionStable = targetStableFraction({
@@ -199,6 +242,8 @@ export function sizeRebalanceSwap(input: RebalanceSwapInput): RebalanceSwapResul
     tickUpper: newTickUpper,
     ethPriceUsd,
     stableIsToken0,
+    stableDecimals,
+    volatileDecimals,
   });
 
   const targetValueStableUsd = totalUsd * targetFractionStable;
@@ -210,10 +255,10 @@ export function sizeRebalanceSwap(input: RebalanceSwapInput): RebalanceSwapResul
   }
 
   if (deltaStableUsd > 0) {
-    const amountIn = BigInt(Math.floor(deltaStableUsd * 1e6));
+    const amountIn = BigInt(Math.floor(deltaStableUsd * 10 ** stableDecimals));
     return { sellStable: true, amountIn };
   }
-  const amountIn = BigInt(Math.floor((-deltaStableUsd / ethPriceUsd) * 1e18));
+  const amountIn = BigInt(Math.floor((-deltaStableUsd / ethPriceUsd) * 10 ** volatileDecimals));
   return { sellStable: false, amountIn };
 }
 
@@ -235,6 +280,8 @@ export function ensureFeeCoverage(
   availableStableRaw: bigint,
   feeRaw: bigint,
   ethPriceUsd: number,
+  stableDecimals: number = DEFAULT_STABLE_DECIMALS,
+  volatileDecimals: number = DEFAULT_VOLATILE_DECIMALS,
 ): RebalanceSwapResult {
   if (feeRaw === 0n) return swap;
 
@@ -249,10 +296,10 @@ export function ensureFeeCoverage(
   // This swap ADDS stable (converting volatile) — only bump it if the
   // resulting balance would still fall short, which only happens when
   // availableStableRaw alone is already thinner than the fee.
-  const approxOutputRaw = BigInt(Math.floor(Number(swap.amountIn) * ethPriceUsd * 1e-12));
+  const approxOutputRaw = BigInt(Math.floor(Number(swap.amountIn) * ethPriceUsd * 10 ** (stableDecimals - volatileDecimals)));
   const remaining = availableStableRaw + approxOutputRaw;
   if (remaining >= feeRaw) return swap;
-  const shortfallUsd = Number(feeRaw - remaining) * 1e-6;
-  const extraVolatileRaw = BigInt(Math.ceil((shortfallUsd / ethPriceUsd) * 1e18));
+  const shortfallUsd = Number(feeRaw - remaining) * 10 ** -stableDecimals;
+  const extraVolatileRaw = BigInt(Math.ceil((shortfallUsd / ethPriceUsd) * 10 ** volatileDecimals));
   return { ...swap, amountIn: swap.amountIn + extraVolatileRaw };
 }

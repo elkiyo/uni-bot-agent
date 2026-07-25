@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   useAccount,
@@ -24,6 +25,7 @@ import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { useVaultCreatedAt } from "@/lib/useVaultCreatedAt";
+import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
 import { useSelectedChain } from "@/lib/useSelectedChain";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
@@ -62,13 +64,59 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const { switchChainAsync } = useSwitchChain();
   const { t } = useTranslation();
 
+  // Which contract this specific vault actually runs — fixed forever at
+  // creation time. The fast path is the URL, stamped by create/page.tsx's own
+  // redirect (?kind=compound); `chain.compoundVaultAbi` being present too
+  // guards against a stale/copy-pasted ?kind=compound link on a chain that
+  // never deployed VaultFactoryArbCompound (Celo).
+  //
+  // Fallback probe for every other case (bare/bookmarked link missing the
+  // param, or a share that dropped the query string) — without this, a real
+  // compound vault opened without ?kind=compound would silently read/write
+  // with the standard ABI: shared-signature reads (owner, positionTokenId,
+  // ...) still work since the selectors match, but compound-only writes
+  // (collectFees's new 3-arg signature, setAutoCompoundFees, configureTarget's
+  // 2 extra params) would revert on-chain — safe (mismatched selector, no
+  // fund risk) but a confusing dead end for the owner. `autoCompoundFees()`
+  // only exists on the compound ABI, so probing it here is a cheap way to
+  // self-correct: succeeds → this address really is a compound vault,
+  // reverts/errors → genuinely standard. `retry: false` since a revert here
+  // is the expected, common outcome for every standard vault, not a transient
+  // failure worth retrying.
+  const searchParams = useSearchParams();
+  const kindParamSaysCompound = searchParams.get("kind") === "compound";
+  const { isSuccess: probedAsCompound } = useReadContract({
+    address,
+    abi: chain.compoundVaultAbi,
+    functionName: "autoCompoundFees",
+    chainId: chain.id,
+    query: { enabled: !kindParamSaysCompound && Boolean(chain.compoundVaultAbi), retry: false },
+  });
+  const isCompound = Boolean(chain.compoundVaultAbi) && (kindParamSaysCompound || probedAsCompound);
+  const vaultAbi = isCompound ? chain.compoundVaultAbi! : chain.vaultAbi;
+
+  // This vault's OWN pair (see lib/useVaultPairInfo.ts) — every vault already
+  // supported the chain's single default pair, this is what makes reading a
+  // DIFFERENT pair's vault correct too (wild-exploring-bumblebee.md's
+  // multi-pair Fase 3). Falls back to the chain's own default while the read
+  // is still loading — correct for every vault that exists today, since none
+  // are on a non-default pair yet.
+  const pairInfo = useVaultPairInfo(address, chain, vaultAbi);
+  const stableToken = pairInfo.data?.stableToken ?? chain.stableToken;
+  const volatileToken = pairInfo.data?.volatileToken ?? chain.volatileToken;
+  const stableIsToken0 = pairInfo.data?.stableIsToken0 ?? chain.stableIsToken0;
+  const stableDecimals = pairInfo.data?.stableDecimals ?? 6;
+  const volatileDecimals = pairInfo.data?.volatileDecimals ?? 18;
+  const stableSymbol = pairInfo.data?.stableSymbol ?? chain.stableSymbol;
+  const volatileSymbol = pairInfo.data?.volatileSymbol ?? chain.volatileSymbol;
+
   // 60s polling keeps the stats live while the keeper acts — the page is a demo
   // surface as much as a control panel. The keeper's own cycle is 5 min and a
   // vault's on-chain state only changes on a rebalance/deposit, so polling
   // much faster than this just re-fetches the same numbers (see
   // useVaultEventLogs.ts's own docstring for the same reasoning).
   const { data, refetch } = useReadContracts({
-    contracts: reads(address, chain.id, chain.vaultAbi),
+    contracts: reads(address, chain.id, vaultAbi),
     query: { refetchInterval: 60_000 },
   });
 
@@ -76,16 +124,20 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // no usable range) instead of letting a stuck rebalance fail silently in
   // server logs — see app/api/vault/[address]/alert. Clears itself once a
   // later call succeeds.
-  const { data: rebalanceAlert } = useQuery({
-    queryKey: ["vault-rebalance-alert", chain.id, address],
+  const { data: vaultAlerts } = useQuery({
+    queryKey: ["vault-alerts", chain.id, address],
     queryFn: async () => {
       const res = await fetch(`/api/vault/${address}/alert?chainId=${chain.id}`);
-      if (!res.ok) return null;
-      const body = (await res.json()) as { alert: { message: string; endpoint: string; createdAt: string } | null };
-      return body.alert;
+      if (!res.ok) return [];
+      const body = (await res.json()) as {
+        alerts: Array<{ type: "rebalanceFailed" | "gasReserveDepleted"; message: string; createdAt: string; endpoint?: string }>;
+      };
+      return body.alerts;
     },
     refetchInterval: 60_000,
   });
+  const rebalanceAlert = vaultAlerts?.find((a) => a.type === "rebalanceFailed");
+  const gasReserveAlert = vaultAlerts?.find((a) => a.type === "gasReserveDepleted");
   const [
     owner,
     operator,
@@ -152,12 +204,26 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // ABI (which lacks it entirely) would fail to encode, not just revert.
   const { data: gasReserveBalanceRaw } = useReadContract({
     address,
-    abi: chain.vaultAbi,
+    abi: vaultAbi,
     functionName: "gasReserveBalance",
     chainId: chain.id,
     query: { enabled: chain.supportsGasReserve, refetchInterval: 60_000 },
   });
   const gasReserveBalance = (gasReserveBalanceRaw as bigint) ?? 0n;
+
+  // Interest-compounding fields — same "separate read" treatment as
+  // gasReserveBalance above: only RangeVaultArbCompound has these at all,
+  // calling against the standard ABI would fail to encode. See
+  // RangeVaultArbCompound.sol for what each one gates.
+  const { data: compoundData } = useReadContracts({
+    contracts: (["autoCompoundFees", "feeClaimThresholdBps", "feeClaimIntervalSeconds", "lastFeeClaimTimestamp"] as const).map(
+      (functionName) => ({ address, abi: vaultAbi, functionName, chainId: chain.id }) as const,
+    ),
+    query: { enabled: isCompound, refetchInterval: 60_000 },
+  });
+  const [autoCompoundFeesRaw, feeClaimThresholdBps, feeClaimIntervalSeconds, lastFeeClaimTimestamp] =
+    compoundData?.map((d) => d.result) ?? [];
+  const autoCompoundFees = Boolean(autoCompoundFeesRaw);
 
   const { data: feesSummary } = useVaultFeesSummary(address, chain);
   const { data: depositSummary } = useVaultDepositSummary(address, chain);
@@ -171,17 +237,19 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
 
-  const feesUsdtStr = formatUnits(feesSummary?.totalUsdt ?? 0n, 6);
+  const feesUsdtStr = formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals);
   const feesWethRaw = feesSummary?.totalWeth ?? 0n;
-  const feesWethStr = Number(formatUnits(feesWethRaw, 18)).toFixed(6);
+  const feesWethStr = Number(formatUnits(feesWethRaw, volatileDecimals)).toFixed(6);
   const feesUsdTotal =
     currentTick !== undefined
-      ? Number(feesUsdtStr) + Number(formatUnits(feesWethRaw, 18)) * ethPriceFromTick(currentTick, chain.stableIsToken0)
+      ? Number(feesUsdtStr) +
+        Number(formatUnits(feesWethRaw, volatileDecimals)) *
+          ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
       : undefined;
 
   // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
   // vault — mismo cálculo simple que la tarjeta en /vaults, no anualizado.
-  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, 6));
+  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, stableDecimals));
   const rentLabel =
     feesUsdTotal !== undefined && initialInvestmentUsd > 0
       ? t("vaults.returnLabel", { pct: ((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2) })
@@ -192,8 +260,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   );
   const hasPosition = Boolean(positionTokenId && (positionTokenId as bigint) > 0n);
 
-  // Only needed to size increasePosition()'s swap — the position's OWN live
-  // range (not targetTickLower/Upper, which don't move on rebalance()).
+  // Needed to size increasePosition()'s swap (the position's OWN live range,
+  // not targetTickLower/Upper, which don't move on rebalance()) and, for
+  // compound vaults, the manual collectFees() reinject swap — tokensOwed0/1
+  // (indices 10/11) are the same accrued-but-uncollected fee amounts the
+  // keeper's own checkFeeClaimDue/runClaimFees use server-side.
   const { data: positionData } = useReadContract({
     address: chain.positionManager,
     abi: positionManagerAbi,
@@ -208,6 +279,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         tickUpper: Number((positionData as readonly unknown[])[6]),
       }
     : undefined;
+  const positionTokensOwed = positionData
+    ? {
+        tokensOwed0: (positionData as readonly bigint[])[10],
+        tokensOwed1: (positionData as readonly bigint[])[11],
+      }
+    : undefined;
 
   // Idle WETH the vault might already be holding (e.g. dust stranded by a
   // prior mis-sized swap) — increasePosition()'s own swap has to account for
@@ -218,7 +295,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // 0x0Bf394B3...5dEBCE5b8: $64.92 USDT left over after "Sumar a la
   // posición" ignored ~$190 of pre-existing idle WETH).
   const { data: idleWeth } = useReadContract({
-    address: chain.volatileToken,
+    address: volatileToken,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [address],
@@ -234,6 +311,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
   const [cfgRecenterMarginPct, setCfgRecenterMarginPct] = useState("");
   const [cfgExitTopCeilingMarginPct, setCfgExitTopCeilingMarginPct] = useState("");
+  const [cfgFeeClaimThresholdPct, setCfgFeeClaimThresholdPct] = useState("");
+  const [cfgFeeClaimIntervalHours, setCfgFeeClaimIntervalHours] = useState("");
   const [riskMaxSlippagePct, setRiskMaxSlippagePct] = useState("");
   const [riskMinCooldownHours, setRiskMinCooldownHours] = useState("");
   const [riskMaxRangeDeviationTicks, setRiskMaxRangeDeviationTicks] = useState("");
@@ -272,9 +351,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleDepositMore() {
-    const investable = parseUnits(depInvestable || "0", 6);
-    const reserve = parseUnits(depReserve || "0", 6);
-    const gasReserve = chain.supportsGasReserve ? parseUnits(depGasReserve || "0", 6) : 0n;
+    const investable = parseUnits(depInvestable || "0", stableDecimals);
+    const reserve = parseUnits(depReserve || "0", stableDecimals);
+    const gasReserve = chain.supportsGasReserve ? parseUnits(depGasReserve || "0", stableDecimals) : 0n;
     const total = investable + reserve + gasReserve;
     if (total === 0n) return;
 
@@ -289,10 +368,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       const room = maxDepositUsd > currentTotal ? maxDepositUsd - currentTotal : 0n;
       setCapAlert(
         t("vaultDetail.capAlertMsg", {
-          cap: formatUnits(maxDepositUsd, 6),
-          symbol: chain.stableSymbol,
-          current: formatUnits(currentTotal, 6),
-          room: formatUnits(room, 6),
+          cap: formatUnits(maxDepositUsd, stableDecimals),
+          symbol: stableSymbol,
+          current: formatUnits(currentTotal, stableDecimals),
+          room: formatUnits(room, stableDecimals),
         }),
       );
       return;
@@ -303,7 +382,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // on top, so the approval has to cover it too (see RangeVault.sol).
     await withTx(t("vaultDetail.txApproving"), () =>
       writeContractAsync({
-        address: chain.stableToken,
+        address: stableToken,
         abi: erc20Abi,
         functionName: "approve",
         args: [address, total + pendingCreationFee],
@@ -313,7 +392,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx(t("vaultDetail.txDepositing"), () =>
       writeContractAsync({
         address,
-        abi: chain.vaultAbi,
+        abi: vaultAbi,
         functionName: "deposit",
         args: chain.supportsGasReserve ? [reserve, investable, gasReserve] : [reserve, investable],
         chainId: chain.id,
@@ -335,14 +414,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx(t("vaultDetail.txReconfiguring"), () =>
       writeContractAsync({
         address,
-        abi: chain.vaultAbi,
+        abi: vaultAbi,
         functionName: "configureTarget",
         args: [
           (investableUsdt as bigint) ?? 0n,
           lo,
           hi,
           BigInt(cfgMaxRebalances || String(maxRebalances ?? 0)),
-          parseUnits(cfgReinjection || "0", 6),
+          parseUnits(cfgReinjection || "0", stableDecimals),
           BigInt(Math.round(Number(cfgPeriodicHours || "24") * 3600)),
           cfgRecenterMarginPct
             ? BigInt(Math.round(Number(cfgRecenterMarginPct) * 100))
@@ -350,11 +429,88 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           cfgExitTopCeilingMarginPct
             ? BigInt(Math.round(Number(cfgExitTopCeilingMarginPct) * 100))
             : ((exitTopCeilingMarginBps as bigint) ?? 300n),
+          // RangeVaultArbCompound-only trailing pair — the standard ABI's
+          // configureTarget() doesn't have these params at all, so they must
+          // never be sent on a standard vault (wrong arg count would fail to
+          // encode, not just revert).
+          ...(isCompound
+            ? [
+                cfgFeeClaimThresholdPct
+                  ? BigInt(Math.round(Number(cfgFeeClaimThresholdPct) * 100))
+                  : ((feeClaimThresholdBps as bigint) ?? 0n),
+                cfgFeeClaimIntervalHours
+                  ? BigInt(Math.round(Number(cfgFeeClaimIntervalHours) * 3600))
+                  : ((feeClaimIntervalSeconds as bigint) ?? 0n),
+              ]
+            : []),
         ],
         chainId: chain.id,
       }),
     );
+  }
 
+  async function handleToggleAutoCompound() {
+    await withTx(t("vaultDetail.txSettingAutoCompound"), () =>
+      writeContractAsync({
+        address,
+        abi: vaultAbi,
+        functionName: "setAutoCompoundFees",
+        args: [!autoCompoundFees],
+        chainId: chain.id,
+      }),
+    );
+  }
+
+  async function handleCollectFees() {
+    // Standard vaults: unchanged, no-arg collectFees() straight to the owner.
+    if (!isCompound) {
+      await withTx(t("vaultDetail.txCollectingFees"), () =>
+        writeContractAsync({ address, abi: vaultAbi, functionName: "collectFees", args: [], chainId: chain.id }),
+      );
+      return;
+    }
+
+    // Compound vault: collectFees() now always takes (swapIx, amount0Min,
+    // amount1Min) — with autoCompoundFees off it behaves exactly like the
+    // standard call above (empty swapIx, _executeSwap no-ops on amountIn=0).
+    // With it on, the accrued tokensOwed0/1 (both legs — Uniswap accrues fees
+    // in both at once) need the same mixed-balance correction swap the
+    // keeper's own runClaimFees sizes server-side, via sizeRebalanceSwap
+    // toward the position's own live ratio — see RangeVaultArbCompound.sol's
+    // _reinjectFees docstring for why sizeRebalanceSwap, not sizeInitialSwap.
+    let swapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
+    if (autoCompoundFees && positionTicks && positionTokensOwed && currentTick !== undefined) {
+      const ethPrice = ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals);
+      const accruedStableRaw = stableIsToken0 ? positionTokensOwed.tokensOwed0 : positionTokensOwed.tokensOwed1;
+      const accruedVolatileRaw = stableIsToken0 ? positionTokensOwed.tokensOwed1 : positionTokensOwed.tokensOwed0;
+      const swap = sizeRebalanceSwap({
+        currentTick,
+        newTickLower: positionTicks.tickLower,
+        newTickUpper: positionTicks.tickUpper,
+        availableStableRaw: accruedStableRaw,
+        availableVolatileRaw: accruedVolatileRaw,
+        ethPriceUsd: ethPrice,
+        stableIsToken0: stableIsToken0,
+        stableDecimals,
+        volatileDecimals,
+      });
+      swapIx = {
+        token0ToToken1: swap.sellStable === stableIsToken0,
+        amountIn: swap.amountIn,
+        amountOutMinimum: 0n,
+        fee: feeTier,
+      };
+    }
+
+    await withTx(t("vaultDetail.txCollectingFees"), () =>
+      writeContractAsync({
+        address,
+        abi: vaultAbi,
+        functionName: "collectFees",
+        args: [swapIx, 0n, 0n],
+        chainId: chain.id,
+      }),
+    );
   }
 
   async function handleUpdateRiskParams() {
@@ -371,7 +527,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx(t("vaultDetail.txSettingRisk"), () =>
       writeContractAsync({
         address,
-        abi: chain.vaultAbi,
+        abi: vaultAbi,
         functionName: "setRiskParams",
         args: [newMaxSlippageBps, newMinRebalanceInterval, newMaxRangeDeviationBps],
         chainId: chain.id,
@@ -380,7 +536,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleIncreasePosition() {
-    const usdtAmount = parseUnits(increaseAmount || "0", 6);
+    const usdtAmount = parseUnits(increaseAmount || "0", stableDecimals);
     if (usdtAmount === 0n) return;
     if (!positionTicks || currentTick === undefined) {
       setError(t("vaultDetail.errNoRange"));
@@ -398,7 +554,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // (vault 0x0Bf394B3...5dEBCE5b8). The stable side is still capped to
     // usdtAmount to match increasePosition()'s own cap — old investableUsdt
     // dust stays untouched.
-    const ethPrice = ethPriceFromTick(currentTick, chain.stableIsToken0);
+    const ethPrice = ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals);
     const swap = sizeRebalanceSwap({
       currentTick,
       newTickLower: positionTicks.tickLower,
@@ -406,12 +562,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       availableStableRaw: usdtAmount,
       availableVolatileRaw: (idleWeth as bigint) ?? 0n,
       ethPriceUsd: ethPrice,
-      stableIsToken0: chain.stableIsToken0,
+      stableIsToken0: stableIsToken0,
+      stableDecimals,
+      volatileDecimals,
     });
 
     await withTx(t("vaultDetail.txApproving"), () =>
       writeContractAsync({
-        address: chain.stableToken,
+        address: stableToken,
         abi: erc20Abi,
         functionName: "approve",
         args: [address, usdtAmount],
@@ -421,11 +579,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx(t("vaultDetail.txIncreasing"), () =>
       writeContractAsync({
         address,
-        abi: chain.vaultAbi,
+        abi: vaultAbi,
         functionName: "increasePosition",
         args: [
           {
-            token0ToToken1: swap.sellStable === chain.stableIsToken0,
+            token0ToToken1: swap.sellStable === stableIsToken0,
             amountIn: swap.amountIn,
             amountOutMinimum: 0n,
             fee: feeTier,
@@ -451,7 +609,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     await withTx(t("vaultDetail.txWithdrawing"), () =>
       writeContractAsync({
         address,
-        abi: chain.vaultAbi,
+        abi: vaultAbi,
         functionName: "withdraw",
         args: [positionShareBps, fundsShareBps],
         chainId: chain.id,
@@ -471,7 +629,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         <div className="flex flex-wrap items-center gap-3">
           <span className="eyebrow">
             {t("vaultDetail.eyebrow", {
-              pair: `${chain.stableSymbol}/${chain.volatileSymbol}`,
+              pair: `${stableSymbol}/${volatileSymbol}`,
               fee: feeTier / 10_000,
             })}
           </span>
@@ -479,6 +637,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <span className="eyebrow !border-negative/40 !text-negative">{t("vaultDetail.paused")}</span>
           ) : (
             <span className="eyebrow !border-positive/40 !text-positive">{t("vaultDetail.active")}</span>
+          )}
+          {isCompound && (
+            <span className="eyebrow !border-accent/40 !text-accent">
+              {autoCompoundFees ? t("vaultDetail.compoundBadgeOn") : t("vaultDetail.compoundBadgeOff")}
+            </span>
           )}
           {hasPosition ? (
             <span className="eyebrow !border-accent/40 !text-accent">
@@ -504,6 +667,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           </div>
         )}
 
+        {gasReserveAlert && (
+          <div className="glass mt-6 rounded-2xl border-negative/40 bg-negative/[0.06] p-5">
+            <p className="text-sm font-medium text-negative">{t("vaultDetail.gasReserveDepletedTitle")}</p>
+            <p className="mt-1 text-xs text-negative/80">{t("vaultDetail.gasReserveDepletedBody")}</p>
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-negative/60">
+              {t("vaultDetail.gasReserveDepletedSince", { date: new Date(gasReserveAlert.createdAt).toLocaleString() })}
+            </p>
+          </div>
+        )}
+
         {!data && (
           <div className="glass mt-10 rounded-2xl p-10 text-center">
             <p className="text-muted">{t("vaultDetail.loading")}</p>
@@ -517,15 +690,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <VaultAgeStat createdAt={createdAt} />
               <Stat
                 label={t("vaultDetail.statInvestable")}
-                value={`${formatUnits((investableUsdt as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
+                value={`${formatUnits((investableUsdt as bigint) ?? 0n, stableDecimals)} ${stableSymbol}`}
                 hint={
                   (idleWeth as bigint | undefined) && (idleWeth as bigint) > 0n
                     ? t("vaultDetail.idleWethHint", {
-                        amount: Number(formatUnits(idleWeth as bigint, 18)).toFixed(6),
-                        symbol: chain.volatileSymbol,
+                        amount: Number(formatUnits(idleWeth as bigint, volatileDecimals)).toFixed(6),
+                        symbol: volatileSymbol,
                         usdSuffix:
                           currentTick !== undefined
-                            ? ` (~$${(Number(idleWeth as bigint) * 1e-18 * ethPriceFromTick(currentTick, chain.stableIsToken0)).toFixed(2)})`
+                            ? ` (~$${(Number(idleWeth as bigint) * 10 ** -volatileDecimals * ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)).toFixed(2)})`
                             : "",
                       })
                     : undefined
@@ -533,16 +706,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
               <Stat
                 label={t("vaultDetail.statReserve")}
-                value={`${formatUnits((reserveBalance as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
+                value={`${formatUnits((reserveBalance as bigint) ?? 0n, stableDecimals)} ${stableSymbol}`}
                 hint={t("vaultDetail.reserveHint", {
-                  amount: formatUnits((reinjectionAmount as bigint) ?? 0n, 6),
-                  symbol: chain.stableSymbol,
+                  amount: formatUnits((reinjectionAmount as bigint) ?? 0n, stableDecimals),
+                  symbol: stableSymbol,
                 })}
               />
               {chain.supportsGasReserve && (
                 <Stat
                   label={t("vaultDetail.statGasBudget")}
-                  value={`${formatUnits(gasReserveBalance, 6)} ${chain.stableSymbol}`}
+                  value={`${formatUnits(gasReserveBalance, stableDecimals)} ${stableSymbol}`}
                   hint={t("vaultDetail.gasBudgetHint")}
                 />
               )}
@@ -554,12 +727,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <Stat
                 label={t("vaultDetail.statFees")}
                 value={
-                  feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} ${chain.stableSymbol}`
+                  feesUsdTotal !== undefined ? `$${feesUsdTotal.toFixed(2)}` : `${feesUsdtStr} ${stableSymbol}`
                 }
                 hint={
                   feesWethRaw > 0n
-                    ? `${feesUsdtStr} ${chain.stableSymbol} + ${feesWethStr} ${chain.volatileSymbol}`
-                    : `${feesUsdtStr} ${chain.stableSymbol}`
+                    ? `${feesUsdtStr} ${stableSymbol} + ${feesWethStr} ${volatileSymbol}`
+                    : `${feesUsdtStr} ${stableSymbol}`
                 }
                 hint2={rentLabel}
                 accent
@@ -579,8 +752,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       {(() => {
                         const lo = Number(targetTickLower);
                         const hi = Number(targetTickUpper);
-                        const priceA = ethPriceFromTick(lo, chain.stableIsToken0);
-                        const priceB = ethPriceFromTick(hi, chain.stableIsToken0);
+                        const priceA = ethPriceFromTick(lo, stableIsToken0, stableDecimals, volatileDecimals);
+                        const priceB = ethPriceFromTick(hi, stableIsToken0, stableDecimals, volatileDecimals);
                         const low = Math.min(priceA, priceB);
                         const high = Math.max(priceA, priceB);
                         return `$${low.toFixed(2)} – $${high.toFixed(2)}`;
@@ -627,7 +800,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
                 <ConfigRow
                   k={t("vaultDetail.configReinjection")}
-                  v={`${formatUnits((reinjectionAmount as bigint) ?? 0n, 6)} ${chain.stableSymbol}`}
+                  v={`${formatUnits((reinjectionAmount as bigint) ?? 0n, stableDecimals)} ${stableSymbol}`}
                 />
                 <ConfigRow
                   k={t("vaultDetail.configPeriodic")}
@@ -653,6 +826,38 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   v={`${Number(exitTopCeilingMarginBps ?? 0n) / 100}%`}
                 />
                 <ConfigRow k={t("vaultDetail.configMaxRebalances")} v={`${maxRebalances ?? 0}`} />
+                {isCompound && (
+                  <>
+                    <ConfigRow
+                      k={t("vaultDetail.configAutoCompound")}
+                      v={autoCompoundFees ? t("vaultDetail.configOnValue") : t("vaultDetail.configOffValue")}
+                    />
+                    <ConfigRow
+                      k={t("vaultDetail.configFeeClaimThreshold")}
+                      v={
+                        feeClaimThresholdBps && (feeClaimThresholdBps as bigint) > 0n
+                          ? `${Number(feeClaimThresholdBps) / 100}%`
+                          : t("vaultDetail.configOff")
+                      }
+                    />
+                    <ConfigRow
+                      k={t("vaultDetail.configFeeClaimInterval")}
+                      v={
+                        feeClaimIntervalSeconds && (feeClaimIntervalSeconds as bigint) > 0n
+                          ? `${Number(feeClaimIntervalSeconds) / 3600}h`
+                          : t("vaultDetail.configOff")
+                      }
+                    />
+                    <ConfigRow
+                      k={t("vaultDetail.configLastFeeClaim")}
+                      v={
+                        lastFeeClaimTimestamp && (lastFeeClaimTimestamp as bigint) > 0n
+                          ? new Date(Number(lastFeeClaimTimestamp) * 1000).toLocaleString()
+                          : t("vaultDetail.configNever")
+                      }
+                    />
+                  </>
+                )}
               </dl>
             </div>
 
@@ -675,7 +880,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     <p className="mt-1 text-xs text-faint">{t("vaultDetail.increasePositionHint")}</p>
                     <div className="mt-2 flex flex-wrap items-end gap-3">
                       <MiniField
-                        label={t("vaultDetail.fieldAmountSymbol", { symbol: chain.stableSymbol })}
+                        label={t("vaultDetail.fieldAmountSymbol", { symbol: stableSymbol })}
                         value={increaseAmount}
                         onChange={setIncreaseAmount}
                       />
@@ -714,28 +919,28 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 <div className="mt-8">
                   <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
-                    {t("vaultDetail.depositLabel", { symbol: chain.stableSymbol })}
+                    {t("vaultDetail.depositLabel", { symbol: stableSymbol })}
                   </span>
                   {pendingCreationFee > 0n && (
                     <p className="mt-1 text-xs text-faint">
                       {t("vaultDetail.pendingFeeNote", {
-                        fee: formatUnits(pendingCreationFee, 6),
-                        symbol: chain.stableSymbol,
+                        fee: formatUnits(pendingCreationFee, stableDecimals),
+                        symbol: stableSymbol,
                       })}
                     </p>
                   )}
                   {maxDepositUsd > 0n && (
                     <p className="mt-1 text-xs text-faint">
                       {t("vaultDetail.platformCapNote", {
-                        cap: formatUnits(maxDepositUsd, 6),
-                        symbol: chain.stableSymbol,
+                        cap: formatUnits(maxDepositUsd, stableDecimals),
+                        symbol: stableSymbol,
                         room: formatUnits(
                           maxDepositUsd >
                             ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance
                             ? maxDepositUsd -
                                 (((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance)
                             : 0n,
-                          6,
+                          stableDecimals,
                         ),
                       })}
                     </p>
@@ -769,7 +974,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       onChange={setCfgMaxRebalances}
                     />
                     <MiniField
-                      label={t("vaultDetail.fieldReinjectionSymbol", { symbol: chain.stableSymbol })}
+                      label={t("vaultDetail.fieldReinjectionSymbol", { symbol: stableSymbol })}
                       value={cfgReinjection}
                       onChange={setCfgReinjection}
                     />
@@ -784,6 +989,24 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       value={cfgExitTopCeilingMarginPct}
                       onChange={setCfgExitTopCeilingMarginPct}
                     />
+                    {isCompound && (
+                      <>
+                        <MiniField
+                          label={t("vaultDetail.fieldFeeClaimThresholdToday", {
+                            n: Number(feeClaimThresholdBps ?? 0n) / 100,
+                          })}
+                          value={cfgFeeClaimThresholdPct}
+                          onChange={setCfgFeeClaimThresholdPct}
+                        />
+                        <MiniField
+                          label={t("vaultDetail.fieldFeeClaimIntervalToday", {
+                            n: Number(feeClaimIntervalSeconds ?? 0n) / 3600,
+                          })}
+                          value={cfgFeeClaimIntervalHours}
+                          onChange={setCfgFeeClaimIntervalHours}
+                        />
+                      </>
+                    )}
                     <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
                       {t("vaultDetail.update")}
                     </button>
@@ -837,33 +1060,35 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 <div className="mt-6 flex flex-wrap gap-3">
                   <button
-                    onClick={() =>
-                      withTx(t("vaultDetail.txCollectingFees"), () =>
-                        writeContractAsync({
-                          address,
-                          abi: chain.vaultAbi,
-                          functionName: "collectFees",
-                          args: [],
-                          chainId: chain.id,
-                        }),
-                      )
-                    }
+                    onClick={handleCollectFees}
                     disabled={Boolean(busy) || !hasPosition}
                     className="btn-secondary"
                     title={
-                      hasPosition
-                        ? t("vaultDetail.collectFeesTooltipEnabled")
-                        : t("vaultDetail.collectFeesTooltipDisabled")
+                      !hasPosition
+                        ? t("vaultDetail.collectFeesTooltipDisabled")
+                        : isCompound && autoCompoundFees
+                          ? t("vaultDetail.collectFeesTooltipCompoundOn")
+                          : t("vaultDetail.collectFeesTooltipEnabled")
                     }
                   >
                     {t("vaultDetail.collectFees")}
                   </button>
+                  {isCompound && (
+                    <button
+                      onClick={handleToggleAutoCompound}
+                      disabled={Boolean(busy)}
+                      className="btn-secondary"
+                      title={t("vaultDetail.autoCompoundToggleHint")}
+                    >
+                      {autoCompoundFees ? t("vaultDetail.autoCompoundToggleOff") : t("vaultDetail.autoCompoundToggleOn")}
+                    </button>
+                  )}
                   <button
                     onClick={() =>
                       withTx(t("vaultDetail.txWithdrawing"), () =>
                         writeContractAsync({
                           address,
-                          abi: chain.vaultAbi,
+                          abi: vaultAbi,
                           functionName: "withdrawAll",
                           args: [],
                           chainId: chain.id,
@@ -880,7 +1105,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx(paused ? t("vaultDetail.txResuming") : t("vaultDetail.txPausing"), () =>
                         writeContractAsync({
                           address,
-                          abi: chain.vaultAbi,
+                          abi: vaultAbi,
                           functionName: paused ? "unpause" : "pause",
                           args: [],
                           chainId: chain.id,
@@ -897,7 +1122,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx(t("vaultDetail.txRevoking"), () =>
                         writeContractAsync({
                           address,
-                          abi: chain.vaultAbi,
+                          abi: vaultAbi,
                           functionName: "setOperator",
                           args: ["0x0000000000000000000000000000000000000000"],
                           chainId: chain.id,
@@ -914,7 +1139,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       withTx(t("vaultDetail.txEmergency"), () =>
                         writeContractAsync({
                           address,
-                          abi: chain.vaultAbi,
+                          abi: vaultAbi,
                           functionName: "emergencyWithdrawPosition",
                           args: [],
                           chainId: chain.id,
@@ -932,7 +1157,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                         withTx(t("vaultDetail.txClosing"), () =>
                           writeContractAsync({
                             address,
-                            abi: chain.vaultAbi,
+                            abi: vaultAbi,
                             functionName: "closeVault",
                             args: [],
                             chainId: chain.id,
