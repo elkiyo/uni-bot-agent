@@ -401,7 +401,7 @@ function ReferrerDetail({
         ))}
       </div>
 
-      <h3 className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+      <h3 className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">
         {t("adminReferrals.liquidationHistory")}
       </h3>
       <div className="mt-3 flex flex-col gap-2">
@@ -426,7 +426,7 @@ function ReferrerDetail({
       </div>
 
       <div className="mt-8 border-t border-hairline pt-6">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+        <h3 className="font-mono text-sm uppercase tracking-[0.14em] text-white">
           {t("adminReferrals.newLiquidation")}
         </h3>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">

@@ -162,7 +162,7 @@ function ReferralsDashboard({
         {session && (
           <>
             <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+              <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
                 {t("referrals.yourLink")}
               </span>
               <div className="mt-3 flex flex-wrap items-center gap-3">

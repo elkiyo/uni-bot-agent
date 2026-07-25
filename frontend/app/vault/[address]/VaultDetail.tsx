@@ -620,7 +620,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
             {/* Vault configuration — what was set at create/reconfigure time */}
             <div className="glass mt-4 rounded-2xl p-5">
-              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+              <span className="font-mono text-sm uppercase tracking-[0.16em] text-white">
                 {t("vaultDetail.agentConfigPre")}
                 <span className="text-accent">{t("vaultDetail.agentConfigHighlight")}</span>
               </span>
@@ -669,7 +669,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                 {hasPosition && (
                   <div className="mt-6">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                    <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
                       {t("vaultDetail.increasePositionLabel")}
                     </span>
                     <p className="mt-1 text-xs text-faint">{t("vaultDetail.increasePositionHint")}</p>
@@ -691,7 +691,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 )}
 
                 <div className="mt-6">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                  <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
                     {t("vaultDetail.partialWithdrawLabel")}
                   </span>
                   <p className="mt-1 text-xs text-faint">{t("vaultDetail.partialWithdrawHint")}</p>
@@ -713,7 +713,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
 
                 <div className="mt-8">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                  <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
                     {t("vaultDetail.depositLabel", { symbol: chain.stableSymbol })}
                   </span>
                   {pendingCreationFee > 0n && (
@@ -753,7 +753,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
 
                 <div className="mt-8">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                  <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
                     {t("vaultDetail.reconfigureLabelPre")}
                     <span className="text-accent">{t("vaultDetail.reconfigureLabelHighlight")}</span>
                   </span>
@@ -795,7 +795,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     type="button"
                     onClick={() => setShowRiskLimits((v) => !v)}
                     aria-expanded={showRiskLimits}
-                    className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"
+                    className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.14em] text-white transition-colors hover:text-accent"
                   >
                     <svg
                       width="10"

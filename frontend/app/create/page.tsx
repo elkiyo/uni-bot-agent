@@ -647,7 +647,7 @@ export default function CreateVault() {
 
         {isConnected && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+            <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
               {t("create.choosePoolLabel")}
             </span>
             <p className="mt-1 text-xs text-faint">{t("create.choosePoolHint")}</p>
@@ -812,7 +812,7 @@ export default function CreateVault() {
                   type="button"
                   onClick={() => setShowAdvanced((v) => !v)}
                   aria-expanded={showAdvanced}
-                  className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted transition-colors hover:text-white"
+                  className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.16em] text-white transition-colors hover:text-accent"
                 >
                   <svg
                     width="10"

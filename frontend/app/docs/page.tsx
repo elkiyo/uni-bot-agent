@@ -121,7 +121,7 @@ export default function Docs() {
               </div>
 
               <div className="mt-6 rounded-2xl border border-hairline bg-white/[0.02] p-5">
-                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+                <p className="font-mono text-sm uppercase tracking-[0.14em] text-white">
                   {t("docs.trustBoxTitle")}
                 </p>
                 <ul className="mt-3 flex flex-col gap-2 text-sm text-muted">

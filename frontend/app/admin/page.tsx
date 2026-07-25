@@ -479,7 +479,7 @@ export default function Admin() {
               />
             </div>
 
-            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{t("admin.vaultsLabel")}</p>
+            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">{t("admin.vaultsLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat label={t("admin.statActive")} value={String(activeVaults.length)} accent />
               <Stat label={t("admin.statClosed")} value={String(closedVaultsCount)} />
@@ -492,7 +492,7 @@ export default function Admin() {
               <Stat label={t("admin.statTotalRebalances")} value={platformStats ? String(platformStats.totalRebalances) : "…"} />
             </div>
 
-            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{t("admin.operatorLabel")}</p>
+            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">{t("admin.operatorLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
                 label={t("admin.statGasLabel", { symbol: chain.viemChain.nativeCurrency.symbol, chain: chain.name })}
@@ -521,7 +521,7 @@ export default function Admin() {
               />
             </div>
 
-            <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{t("admin.configLabel")}</p>
+            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">{t("admin.configLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
                 label={t("admin.statCapPerVault")}
