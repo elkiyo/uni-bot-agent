@@ -510,6 +510,7 @@ const pt: Dictionary = {
     autoCompoundToggleOff: "Desativar juros compostos",
     autoCompoundToggleHint:
       "Com isso ativo, as comissões de cada rebalanceamento, do resgate manual e do auto-resgate programado são reinjetadas na posição em vez de pagas para sua carteira.",
+    compoundSectionLabel: "Juros compostos — resgate automático de comissões",
     withdrawAll: "Sacar tudo",
     resume: "Retomar",
     pause: "Pausar",

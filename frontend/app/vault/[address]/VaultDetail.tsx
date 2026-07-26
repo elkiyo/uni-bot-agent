@@ -638,11 +638,40 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           ) : (
             <span className="eyebrow !border-positive/40 !text-positive">{t("vaultDetail.active")}</span>
           )}
-          {isCompound && (
+          {isCompound && (isOwner ? (
+            <button
+              type="button"
+              onClick={handleToggleAutoCompound}
+              disabled={Boolean(busy)}
+              title={t("vaultDetail.autoCompoundToggleHint")}
+              className={
+                autoCompoundFees
+                  ? "flex items-center gap-2 rounded-full border border-accent bg-accent/15 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+                  : "flex items-center gap-2 rounded-full border border-hairline px-3 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
+              }
+            >
+              <span
+                className={
+                  autoCompoundFees
+                    ? "relative h-3.5 w-6 shrink-0 rounded-full bg-accent transition-colors"
+                    : "relative h-3.5 w-6 shrink-0 rounded-full bg-white/20 transition-colors"
+                }
+              >
+                <span
+                  className={
+                    autoCompoundFees
+                      ? "absolute top-0.5 left-[0.7rem] h-2.5 w-2.5 rounded-full bg-background transition-all"
+                      : "absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all"
+                  }
+                />
+              </span>
+              {autoCompoundFees ? t("vaultDetail.compoundBadgeOn") : t("vaultDetail.compoundBadgeOff")}
+            </button>
+          ) : (
             <span className="eyebrow !border-accent/40 !text-accent">
               {autoCompoundFees ? t("vaultDetail.compoundBadgeOn") : t("vaultDetail.compoundBadgeOff")}
             </span>
-          )}
+          ))}
           {hasPosition ? (
             <span className="eyebrow !border-accent/40 !text-accent">
               {t("vaultDetail.positionLabel", { id: String(positionTokenId) })}
@@ -991,8 +1020,17 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       value={cfgExitTopCeilingMarginPct}
                       onChange={setCfgExitTopCeilingMarginPct}
                     />
-                    {isCompound && (
-                      <>
+                    <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
+                      {t("vaultDetail.update")}
+                    </button>
+                  </div>
+
+                  {isCompound && (
+                    <div className="mt-6 rounded-xl border border-accent/25 bg-accent/[0.04] p-4">
+                      <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-accent">
+                        {t("vaultDetail.compoundSectionLabel")}
+                      </span>
+                      <div className="mt-2 flex flex-wrap items-end gap-3">
                         <MiniField
                           label={t("vaultDetail.fieldFeeClaimThresholdToday", {
                             n: Number(feeClaimThresholdBps ?? 0n) / 100,
@@ -1007,12 +1045,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                           value={cfgFeeClaimIntervalHours}
                           onChange={setCfgFeeClaimIntervalHours}
                         />
-                      </>
-                    )}
-                    <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
-                      {t("vaultDetail.update")}
-                    </button>
-                  </div>
+                        <button onClick={handleReconfigure} disabled={Boolean(busy)} className="btn-secondary !py-3">
+                          {t("vaultDetail.update")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-8">

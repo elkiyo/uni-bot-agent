@@ -508,6 +508,7 @@ const es = {
     autoCompoundToggleOff: "Desactivar interés compuesto",
     autoCompoundToggleHint:
       "Con esto activo, las comisiones de cada rebalanceo, del reclamo manual y del auto-reclamo programado se reinyectan en la posición en vez de pagarse a tu wallet.",
+    compoundSectionLabel: "Interés compuesto — reclamo automático de comisiones",
     withdrawAll: "Retirar todo",
     resume: "Reanudar",
     pause: "Pausar",

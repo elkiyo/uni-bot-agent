@@ -505,6 +505,7 @@ const zh: Dictionary = {
     autoCompoundToggleOn: "开启复利",
     autoCompoundToggleOff: "关闭复利",
     autoCompoundToggleHint: "开启后，每次再平衡、手动领取和自动领取产生的手续费都会重新注入头寸，而不是支付到你的钱包。",
+    compoundSectionLabel: "复利 — 自动领取手续费",
     withdrawAll: "全部提取",
     resume: "恢复",
     pause: "暂停",

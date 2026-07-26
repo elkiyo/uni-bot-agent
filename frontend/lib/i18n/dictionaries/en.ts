@@ -510,6 +510,7 @@ const en: Dictionary = {
     autoCompoundToggleOff: "Turn compounding off",
     autoCompoundToggleHint:
       "When on, fees from every rebalance, manual claim, and scheduled auto-claim get reinjected into the position instead of paid out to your wallet.",
+    compoundSectionLabel: "Compounding — automatic fee claim",
     withdrawAll: "Withdraw all",
     resume: "Resume",
     pause: "Pause",
