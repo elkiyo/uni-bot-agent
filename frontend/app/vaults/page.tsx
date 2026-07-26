@@ -13,6 +13,7 @@ import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
+import { isCompoundBetaWallet } from "@/lib/compoundBeta";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { fetchVaultCreationTimes } from "@/lib/useVaultCreationTimes";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
@@ -285,8 +286,13 @@ function VaultCard({
   const { setSelectedChainId } = useSelectedChain();
   const onNavigate = () => setSelectedChainId(chain.id);
   const { t } = useTranslation();
+  const { address: connected } = useAccount();
 
-  const vaultAbi = kind === "compound" ? chain.compoundVaultAbi! : chain.vaultAbi;
+  // Compounding is beta-gated to a single wallet for now (see
+  // lib/compoundBeta.ts) — a non-beta viewer sees this card as if it were a
+  // plain standard vault, same as VaultDetail.tsx's own gate.
+  const showAsCompound = kind === "compound" && isCompoundBetaWallet(connected);
+  const vaultAbi = showAsCompound ? chain.compoundVaultAbi! : chain.vaultAbi;
 
   // This vault's OWN pair (see lib/useVaultPairInfo.ts) — falls back to the
   // chain's default while loading, correct for every vault today since none
@@ -422,7 +428,7 @@ function VaultCard({
 
   return (
     <Link
-      href={kind === "compound" ? `/vault/${vaultAddress}?kind=compound` : `/vault/${vaultAddress}`}
+      href={showAsCompound ? `/vault/${vaultAddress}?kind=compound` : `/vault/${vaultAddress}`}
       onClick={onNavigate}
       className={`glass glass-hover group block overflow-hidden rounded-2xl ${isClosed ? "opacity-60" : ""}`}
     >
@@ -442,7 +448,7 @@ function VaultCard({
               <ChainIcon chainId={chain.id} size={13} />
               {chain.name}
             </span>
-            {kind === "compound" && (
+            {showAsCompound && (
               <span className="eyebrow !border-accent/40 !px-2.5 !py-0.5 !text-accent">
                 {t("vaults.compoundBadge")}
               </span>

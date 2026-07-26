@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { formatUnits } from "viem";
 import { positionManagerAbi, uniswapV3PoolAbi } from "@/lib/contracts";
@@ -15,7 +15,20 @@ import { useTranslation } from "@/lib/i18n/useTranslation";
  * base64 JSON — plus a composition breakdown styled after Uniswap's own
  * position page (value + volatile/stable split bar, fees-earned card).
  */
-export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: ChainDef; pool: `0x${string}` }) {
+export function PositionNFT({
+  tokenId,
+  chain,
+  pool,
+  belowUniswapLink,
+}: {
+  tokenId: bigint;
+  chain: ChainDef;
+  pool: `0x${string}`;
+  /** Rendered right after the "View on Uniswap" link, in the same left
+   * column — e.g. VaultDetail.tsx's compounding toggle, so it sits next to
+   * the position's own external links instead of up in the page header. */
+  belowUniswapLink?: ReactNode;
+}) {
   const { t } = useTranslation();
   const { data: uri } = useReadContract({
     address: chain.positionManager,
@@ -222,6 +235,7 @@ export function PositionNFT({ tokenId, chain, pool }: { tokenId: bigint; chain: 
           >
             {t("positionNft.viewOnUniswap")}
           </a>
+          {belowUniswapLink}
         </div>
 
         {/* Uniswap-style breakdown */}

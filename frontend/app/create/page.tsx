@@ -21,6 +21,7 @@ import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/pr
 import { sizeInitialSwap } from "@/lib/keeper/swapMath";
 import { usePoolMetrics } from "@/lib/usePoolMetrics";
 import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
+import { isCompoundBetaWallet } from "@/lib/compoundBeta";
 import { formatUsdCompact } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
@@ -238,7 +239,7 @@ export default function CreateVault() {
     setSelectedFee(chain.feeTier);
     if (vaultKind !== "standard") setVaultKind("standard");
   }
-  const compoundAvailable = Boolean(chain.compoundFactoryAddress);
+  const compoundAvailable = Boolean(chain.compoundFactoryAddress) && isCompoundBetaWallet(address);
   const isCompound = compoundAvailable && vaultKind === "compound";
 
   const SIGNATURE_STEPS = isSafeApp

@@ -27,6 +27,7 @@ import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { useVaultCreatedAt } from "@/lib/useVaultCreatedAt";
 import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
 import { useSelectedChain } from "@/lib/useSelectedChain";
+import { isCompoundBetaWallet } from "@/lib/compoundBeta";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
 const reads = (address: `0x${string}`, chainId: number, vaultAbi: ChainDef["vaultAbi"]) =>
@@ -92,7 +93,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     chainId: chain.id,
     query: { enabled: !kindParamSaysCompound && Boolean(chain.compoundVaultAbi), retry: false },
   });
-  const isCompound = Boolean(chain.compoundVaultAbi) && (kindParamSaysCompound || probedAsCompound);
+  const isCompound =
+    Boolean(chain.compoundVaultAbi) && (kindParamSaysCompound || probedAsCompound) && isCompoundBetaWallet(connected);
   const vaultAbi = isCompound ? chain.compoundVaultAbi! : chain.vaultAbi;
 
   // This vault's OWN pair (see lib/useVaultPairInfo.ts) — every vault already
@@ -619,6 +621,42 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     setWithdrawFundsPct("0");
   }
 
+  // Owner-only switch — sits right under the "view on Uniswap" link in
+  // PositionNFT's own card instead of up in the page header, so it's next to
+  // the position's own external links rather than competing with status
+  // badges. Non-owners still get the plain read-only badge up in the eyebrow
+  // row (see isCompound && !isOwner above) — never this interactive control.
+  const compoundToggle = isCompound && isOwner && (
+    <button
+      type="button"
+      onClick={handleToggleAutoCompound}
+      disabled={Boolean(busy)}
+      title={t("vaultDetail.autoCompoundToggleHint")}
+      className={
+        autoCompoundFees
+          ? "mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-accent bg-accent/15 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+          : "mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-hairline px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
+      }
+    >
+      <span
+        className={
+          autoCompoundFees
+            ? "relative h-3.5 w-6 shrink-0 rounded-full bg-accent transition-colors"
+            : "relative h-3.5 w-6 shrink-0 rounded-full bg-white/20 transition-colors"
+        }
+      >
+        <span
+          className={
+            autoCompoundFees
+              ? "absolute top-0.5 left-[0.7rem] h-2.5 w-2.5 rounded-full bg-background transition-all"
+              : "absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all"
+          }
+        />
+      </span>
+      {autoCompoundFees ? t("vaultDetail.compoundBadgeOn") : t("vaultDetail.compoundBadgeOff")}
+    </button>
+  );
+
   return (
     <>
       {capAlert && (
@@ -638,40 +676,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           ) : (
             <span className="eyebrow !border-positive/40 !text-positive">{t("vaultDetail.active")}</span>
           )}
-          {isCompound && (isOwner ? (
-            <button
-              type="button"
-              onClick={handleToggleAutoCompound}
-              disabled={Boolean(busy)}
-              title={t("vaultDetail.autoCompoundToggleHint")}
-              className={
-                autoCompoundFees
-                  ? "flex items-center gap-2 rounded-full border border-accent bg-accent/15 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
-                  : "flex items-center gap-2 rounded-full border border-hairline px-3 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
-              }
-            >
-              <span
-                className={
-                  autoCompoundFees
-                    ? "relative h-3.5 w-6 shrink-0 rounded-full bg-accent transition-colors"
-                    : "relative h-3.5 w-6 shrink-0 rounded-full bg-white/20 transition-colors"
-                }
-              >
-                <span
-                  className={
-                    autoCompoundFees
-                      ? "absolute top-0.5 left-[0.7rem] h-2.5 w-2.5 rounded-full bg-background transition-all"
-                      : "absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all"
-                  }
-                />
-              </span>
-              {autoCompoundFees ? t("vaultDetail.compoundBadgeOn") : t("vaultDetail.compoundBadgeOff")}
-            </button>
-          ) : (
+          {isCompound && !isOwner && (
             <span className="eyebrow !border-accent/40 !text-accent">
               {autoCompoundFees ? t("vaultDetail.compoundBadgeOn") : t("vaultDetail.compoundBadgeOff")}
             </span>
-          ))}
+          )}
           {hasPosition ? (
             <span className="eyebrow !border-accent/40 !text-accent">
               {t("vaultDetail.positionLabel", { id: String(positionTokenId) })}
@@ -770,7 +779,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
             </div>
 
-            {hasPosition && <PositionNFT tokenId={positionTokenId as bigint} chain={chain} pool={poolAddress} />}
+            {hasPosition && (
+              <PositionNFT
+                tokenId={positionTokenId as bigint}
+                chain={chain}
+                pool={poolAddress}
+                belowUniswapLink={compoundToggle}
+              />
+            )}
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="glass rounded-2xl p-5">
