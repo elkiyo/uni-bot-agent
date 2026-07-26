@@ -214,7 +214,10 @@ const ARBITRUM: ChainDef = {
   compoundFactoryAddress: (process.env.NEXT_PUBLIC_COMPOUND_FACTORY_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   compoundVaultAbi: rangeVaultArbCompoundAbi,
   compoundFactoryAbi: vaultFactoryArbCompoundAbi,
-  compoundFactoryDeployBlock: 485000685n, // placeholder — update to DeployArbCompound.s.sol's real deploy block once it runs
+  // VaultFactoryArbCompound deployed 2026-07-26 at 0x1f03Ea1C82ce4D44355D5d02C730620Fa6038B22
+  // (tx 0x6e3b92463f0349e449516dde2441303f059dbdd8a051afc4476c9a6237e04238), reusing the
+  // already-live PlatformConfig above — see DeployArbCompound.s.sol.
+  compoundFactoryDeployBlock: 487963866n,
 };
 
 export const CHAINS: Record<number, ChainDef> = {
