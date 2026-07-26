@@ -634,22 +634,22 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       title={t("vaultDetail.autoCompoundToggleHint")}
       className={
         autoCompoundFees
-          ? "mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-accent bg-accent/15 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
-          : "mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-hairline px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
+          ? "mt-3 flex w-full items-center justify-center gap-3 rounded-full bg-accent px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-background shadow-[0_0_20px_-4px_var(--accent)] transition-transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+          : "mt-3 flex w-full items-center justify-center gap-3 rounded-full border-2 border-white/25 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-white/80 transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
       }
     >
       <span
         className={
           autoCompoundFees
-            ? "relative h-3.5 w-6 shrink-0 rounded-full bg-accent transition-colors"
-            : "relative h-3.5 w-6 shrink-0 rounded-full bg-white/20 transition-colors"
+            ? "relative h-6 w-11 shrink-0 rounded-full bg-background/30 transition-colors"
+            : "relative h-6 w-11 shrink-0 rounded-full bg-white/15 transition-colors"
         }
       >
         <span
           className={
             autoCompoundFees
-              ? "absolute top-0.5 left-[0.7rem] h-2.5 w-2.5 rounded-full bg-background transition-all"
-              : "absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all"
+              ? "absolute top-0.5 left-[1.4rem] h-5 w-5 rounded-full bg-background transition-all"
+              : "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-all"
           }
         />
       </span>
