@@ -112,11 +112,12 @@ const es = {
   },
   create: {
     stepIdle: "Crear vault",
-    stepCreating: "1/5 · Creando vault…",
-    stepApproving: "2/5 · Aprobando {{symbol}}…",
-    stepConfiguring: "3/5 · Configurando objetivo…",
-    stepRisk: "4/5 · Fijando límites de riesgo…",
-    stepDepositing: "5/5 · Depositando…",
+    stepCreating: "{{n}}/{{total}} · Creando vault…",
+    stepApproving: "{{n}}/{{total}} · Aprobando {{symbol}}…",
+    stepConfiguring: "{{n}}/{{total}} · Configurando objetivo…",
+    stepRisk: "{{n}}/{{total}} · Fijando límites de riesgo…",
+    stepDepositing: "{{n}}/{{total}} · Depositando…",
+    stepActivatingCompound: "{{n}}/{{total}} · Activando interés compuesto…",
     stepBatching: "2/2 · Agrupando y proponiendo a Safe…",
     stepDone: "Listo ✓",
     stepError: "Reintentar",
@@ -131,6 +132,8 @@ const es = {
     sig4Desc: "Slippage máximo y cuánto puede desviarse el rango que proponga el agente del precio de mercado.",
     sig5Title: "Depositar",
     sig5Desc: "Transfiere el {{symbol}} real al vault, repartido entre las reservas que configuraste arriba.",
+    sig6Title: "Activar interés compuesto",
+    sig6Desc: "Prende la reinyección automática de comisiones — nace activado, en vez de tener que activarlo después desde la configuración del vault.",
     sigSafeBatchTitle: "Configurar, fijar riesgos y depositar (agrupado)",
     sigSafeBatchDesc:
       "Aprobar {{symbol}}, configurar el objetivo, fijar límites de riesgo y depositar, todo en una sola transacción de Safe.",
@@ -213,7 +216,7 @@ const es = {
 
     insufficientBalanceMsg:
       "Te faltan {{missing}} {{symbol}} — tenés {{balance}} {{symbol}} y este vault necesita {{total}} {{symbol}} (incluye {{fee}} {{symbol}} de fee de creación, una sola vez).",
-    signEach: "Firmá cada transacción en tu wallet — son 5 en total",
+    signEach: "Firmá cada transacción en tu wallet — son {{count}} en total",
 
     summaryTitle: "Resumen",
     summaryPoolChosen: "Pool elegida",
@@ -239,7 +242,7 @@ const es = {
       "El agente cobra el fee de la plataforma por cada rebalanceo exitoso, hasta el tope que definas. Podés pausar, revocar al operador o retirar todo en cualquier momento.",
     connectWallet: "Conectá tu wallet para crear un vault.",
 
-    requiredSignatures: "Firmas necesarias (5)",
+    requiredSignatures: "Firmas necesarias ({{count}})",
     failedHere: "Falló acá — revisá el error abajo y reintentá.",
   },
   vaults: {

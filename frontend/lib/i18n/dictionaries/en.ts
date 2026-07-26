@@ -114,11 +114,12 @@ const en: Dictionary = {
   },
   create: {
     stepIdle: "Create vault",
-    stepCreating: "1/5 · Creating vault…",
-    stepApproving: "2/5 · Approving {{symbol}}…",
-    stepConfiguring: "3/5 · Configuring target…",
-    stepRisk: "4/5 · Setting risk limits…",
-    stepDepositing: "5/5 · Depositing…",
+    stepCreating: "{{n}}/{{total}} · Creating vault…",
+    stepApproving: "{{n}}/{{total}} · Approving {{symbol}}…",
+    stepConfiguring: "{{n}}/{{total}} · Configuring target…",
+    stepRisk: "{{n}}/{{total}} · Setting risk limits…",
+    stepDepositing: "{{n}}/{{total}} · Depositing…",
+    stepActivatingCompound: "{{n}}/{{total}} · Activating compounding…",
     stepBatching: "2/2 · Batching and proposing to Safe…",
     stepDone: "Done ✓",
     stepError: "Retry",
@@ -133,6 +134,8 @@ const en: Dictionary = {
     sig4Desc: "Maximum slippage and how far the range proposed by the agent can deviate from the market price.",
     sig5Title: "Deposit",
     sig5Desc: "Transfers the real {{symbol}} to the vault, split across the reserves you configured above.",
+    sig6Title: "Activate compounding",
+    sig6Desc: "Turns on automatic fee reinjection — born active instead of having to turn it on later from the vault's settings.",
     sigSafeBatchTitle: "Configure, set risk limits and deposit (batched)",
     sigSafeBatchDesc:
       "Approving {{symbol}}, configuring the target, setting risk limits, and depositing — all in a single Safe transaction.",
@@ -215,7 +218,7 @@ const en: Dictionary = {
 
     insufficientBalanceMsg:
       "You're short {{missing}} {{symbol}} — you have {{balance}} {{symbol}} and this vault needs {{total}} {{symbol}} (including {{fee}} {{symbol}} creation fee, one-time).",
-    signEach: "Sign each transaction in your wallet — there are 5 in total",
+    signEach: "Sign each transaction in your wallet — there are {{count}} in total",
 
     summaryTitle: "Summary",
     summaryPoolChosen: "Chosen pool",
@@ -241,7 +244,7 @@ const en: Dictionary = {
       "The agent charges the platform fee on each successful rebalance, up to the cap you define. You can pause, revoke the operator, or withdraw everything at any time.",
     connectWallet: "Connect your wallet to create a vault.",
 
-    requiredSignatures: "Required signatures (5)",
+    requiredSignatures: "Required signatures ({{count}})",
     failedHere: "Failed here — check the error below and retry.",
   },
   vaults: {

@@ -114,11 +114,12 @@ const pt: Dictionary = {
   },
   create: {
     stepIdle: "Criar vault",
-    stepCreating: "1/5 · Criando vault…",
-    stepApproving: "2/5 · Aprovando {{symbol}}…",
-    stepConfiguring: "3/5 · Configurando objetivo…",
-    stepRisk: "4/5 · Definindo limites de risco…",
-    stepDepositing: "5/5 · Depositando…",
+    stepCreating: "{{n}}/{{total}} · Criando vault…",
+    stepApproving: "{{n}}/{{total}} · Aprovando {{symbol}}…",
+    stepConfiguring: "{{n}}/{{total}} · Configurando objetivo…",
+    stepRisk: "{{n}}/{{total}} · Definindo limites de risco…",
+    stepDepositing: "{{n}}/{{total}} · Depositando…",
+    stepActivatingCompound: "{{n}}/{{total}} · Ativando juros compostos…",
     stepBatching: "2/2 · Agrupando e propondo ao Safe…",
     stepDone: "Concluído ✓",
     stepError: "Tentar novamente",
@@ -133,6 +134,8 @@ const pt: Dictionary = {
     sig4Desc: "Slippage máximo e quanto a faixa proposta pelo agente pode se desviar do preço de mercado.",
     sig5Title: "Depositar",
     sig5Desc: "Transfere o {{symbol}} real para o vault, distribuído entre as reservas que você configurou acima.",
+    sig6Title: "Ativar juros compostos",
+    sig6Desc: "Liga a reinjeção automática de comissões — já nasce ativado, em vez de precisar ativá-lo depois nas configurações do vault.",
     sigSafeBatchTitle: "Configurar, definir limites de risco e depositar (agrupado)",
     sigSafeBatchDesc:
       "Aprovar {{symbol}}, configurar o alvo, definir limites de risco e depositar — tudo em uma única transação do Safe.",
@@ -215,7 +218,7 @@ const pt: Dictionary = {
 
     insufficientBalanceMsg:
       "Faltam {{missing}} {{symbol}} — você tem {{balance}} {{symbol}} e este vault precisa de {{total}} {{symbol}} (inclui {{fee}} {{symbol}} de taxa de criação, uma única vez).",
-    signEach: "Assine cada transação na sua carteira — são 5 no total",
+    signEach: "Assine cada transação na sua carteira — são {{count}} no total",
 
     summaryTitle: "Resumo",
     summaryPoolChosen: "Pool escolhido",
@@ -241,7 +244,7 @@ const pt: Dictionary = {
       "O agente cobra a taxa da plataforma a cada rebalanceamento bem-sucedido, até o teto que você definir. Você pode pausar, revogar o operador ou sacar tudo a qualquer momento.",
     connectWallet: "Conecte sua carteira para criar um vault.",
 
-    requiredSignatures: "Assinaturas necessárias (5)",
+    requiredSignatures: "Assinaturas necessárias ({{count}})",
     failedHere: "Falhou aqui — revise o erro abaixo e tente novamente.",
   },
   vaults: {

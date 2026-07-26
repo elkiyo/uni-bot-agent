@@ -114,11 +114,12 @@ const zh: Dictionary = {
   },
   create: {
     stepIdle: "创建金库",
-    stepCreating: "1/5 · 正在创建金库…",
-    stepApproving: "2/5 · 正在授权 {{symbol}}…",
-    stepConfiguring: "3/5 · 正在配置目标…",
-    stepRisk: "4/5 · 正在设置风险限制…",
-    stepDepositing: "5/5 · 正在存款…",
+    stepCreating: "{{n}}/{{total}} · 正在创建金库…",
+    stepApproving: "{{n}}/{{total}} · 正在授权 {{symbol}}…",
+    stepConfiguring: "{{n}}/{{total}} · 正在配置目标…",
+    stepRisk: "{{n}}/{{total}} · 正在设置风险限制…",
+    stepDepositing: "{{n}}/{{total}} · 正在存款…",
+    stepActivatingCompound: "{{n}}/{{total}} · 正在开启复利…",
     stepBatching: "2/2 · 正在打包并提交给 Safe…",
     stepDone: "完成 ✓",
     stepError: "重试",
@@ -133,6 +134,8 @@ const zh: Dictionary = {
     sig4Desc: "设置最大滑点，以及智能体提议的区间可偏离市场价格的幅度。",
     sig5Title: "存款",
     sig5Desc: "将实际的 {{symbol}} 转入金库，并按你上面设置的比例分配至各储备。",
+    sig6Title: "开启复利",
+    sig6Desc: "开启手续费自动再投入——一开始就是激活状态，无需之后再到金库设置里手动打开。",
     sigSafeBatchTitle: "配置、设置风险限制并存款（打包）",
     sigSafeBatchDesc: "将授权 {{symbol}}、配置目标、设置风险限制和存款合并为一笔 Safe 交易。",
 
@@ -211,7 +214,7 @@ const zh: Dictionary = {
 
     insufficientBalanceMsg:
       "你还差 {{missing}} {{symbol}}——当前持有 {{balance}} {{symbol}}，而该金库需要 {{total}} {{symbol}}（含一次性创建费 {{fee}} {{symbol}}）。",
-    signEach: "请在钱包中依次签署每笔交易——共计 5 笔",
+    signEach: "请在钱包中依次签署每笔交易——共计 {{count}} 笔",
 
     summaryTitle: "摘要",
     summaryPoolChosen: "已选资金池",
@@ -237,7 +240,7 @@ const zh: Dictionary = {
       "每次成功执行再平衡后，智能体都会收取平台费用，直至达到你设定的上限。你可以随时暂停、撤销运营方权限或提取全部资金。",
     connectWallet: "请连接钱包以创建金库。",
 
-    requiredSignatures: "所需签名（5 笔）",
+    requiredSignatures: "所需签名（{{count}} 笔）",
     failedHere: "此步骤失败——请查看下方错误信息并重试。",
   },
   vaults: {

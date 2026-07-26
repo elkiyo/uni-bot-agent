@@ -25,9 +25,22 @@ import { formatUsdCompact } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
 // "batching" only ever happens on the Safe App path (see isSafeApp below) —
-// approve/configureTarget/setRiskParams/deposit collapsed into one Safe
-// transaction instead of 4 separate signature rounds.
-type Step = "idle" | "creating" | "approving" | "configuring" | "risk" | "depositing" | "batching" | "done" | "error";
+// approve/configureTarget/setRiskParams/deposit(/setAutoCompoundFees) collapsed
+// into one Safe transaction instead of several separate signature rounds.
+// "activatingCompound" only happens for a compound vault on a plain EOA —
+// setAutoCompoundFees(true) right after creation, so it's born already
+// compounding instead of requiring a separate manual toggle later.
+type Step =
+  | "idle"
+  | "creating"
+  | "approving"
+  | "configuring"
+  | "risk"
+  | "depositing"
+  | "activatingCompound"
+  | "batching"
+  | "done"
+  | "error";
 type T = ReturnType<typeof useTranslation>["t"];
 
 /**
@@ -63,26 +76,31 @@ function confirmationsFrom(details: GatewayTransactionDetails): { submitted: num
   return { submitted: info.confirmations.length, required: info.confirmationsRequired };
 }
 
-function stepLabelFor(t: T, stableSymbol: string): Record<Step, string> {
+function stepLabelFor(t: T, stableSymbol: string, totalSteps: number): Record<Step, string> {
+  const total = String(totalSteps);
   return {
     idle: t("create.stepIdle"),
-    creating: t("create.stepCreating"),
-    approving: t("create.stepApproving", { symbol: stableSymbol }),
-    configuring: t("create.stepConfiguring"),
-    risk: t("create.stepRisk"),
-    depositing: t("create.stepDepositing"),
+    creating: t("create.stepCreating", { n: "1", total }),
+    approving: t("create.stepApproving", { n: "2", total, symbol: stableSymbol }),
+    configuring: t("create.stepConfiguring", { n: "3", total }),
+    risk: t("create.stepRisk", { n: "4", total }),
+    depositing: t("create.stepDepositing", { n: "5", total }),
+    activatingCompound: t("create.stepActivatingCompound", { n: "6", total }),
     batching: t("create.stepBatching"),
     done: t("create.stepDone"),
     error: t("create.stepError"),
   };
 }
 
-// The 5 signatures the wallet is going to ask for, in order — shown as a
+// The signatures the wallet is going to ask for, in order — shown as a
 // checklist so the user knows what each one actually does before signing,
-// not just a changing "3/5…" label on the button mid-flow.
+// not just a changing "3/5…" label on the button mid-flow. 5 for a standard
+// vault; 6 for compound (the extra setAutoCompoundFees(true) call — see its
+// own call site's docstring on why this isn't folded into configureTarget).
 function signatureStepsFor(
   t: T,
   stableSymbol: string,
+  isCompound: boolean,
 ): { key: Exclude<Step, "idle" | "done" | "error">; title: string; desc: string }[] {
   return [
     {
@@ -110,6 +128,15 @@ function signatureStepsFor(
       title: t("create.sig5Title"),
       desc: t("create.sig5Desc", { symbol: stableSymbol }),
     },
+    ...(isCompound
+      ? [
+          {
+            key: "activatingCompound" as const,
+            title: t("create.sig6Title"),
+            desc: t("create.sig6Desc"),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -150,12 +177,6 @@ export default function CreateVault() {
   const isSafeApp = connector?.id === "safe";
   const safeSdk = useMemo(() => (isSafeApp ? new SafeAppsSDK() : null), [isSafeApp]);
   const [safeConfirmations, setSafeConfirmations] = useState<{ submitted: number; required: number } | null>(null);
-
-  const stepLabel = stepLabelFor(t, chain.stableSymbol);
-  const SIGNATURE_STEPS = isSafeApp
-    ? safeSignatureStepsFor(t, chain.stableSymbol)
-    : signatureStepsFor(t, chain.stableSymbol);
-  const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
 
   // Resumability: under a Safe with threshold > 1, createVault() only ever
   // gets PROPOSED the moment you sign it — it doesn't execute until the
@@ -219,6 +240,16 @@ export default function CreateVault() {
   }
   const compoundAvailable = Boolean(chain.compoundFactoryAddress);
   const isCompound = compoundAvailable && vaultKind === "compound";
+
+  const SIGNATURE_STEPS = isSafeApp
+    ? safeSignatureStepsFor(t, chain.stableSymbol)
+    : signatureStepsFor(t, chain.stableSymbol, isCompound);
+  const SIGNATURE_KEYS = SIGNATURE_STEPS.map((s) => s.key);
+  // Non-Safe step counter labels ("1/5 · Creando…") need the REAL total —
+  // 6 instead of 5 for a compound vault (the extra setAutoCompoundFees
+  // call) — otherwise "5/5" would show right before a 6th step still ran.
+  const stepLabel = stepLabelFor(t, chain.stableSymbol, isCompound ? 6 : 5);
+
   const effectiveFactoryAddress = isCompound ? chain.compoundFactoryAddress! : chain.factoryAddress;
   const effectiveFactoryAbi = isCompound ? chain.compoundFactoryAbi! : chain.factoryAbi;
   const effectiveVaultAbi = isCompound ? chain.compoundVaultAbi! : chain.vaultAbi;
@@ -554,10 +585,11 @@ export default function CreateVault() {
       // RangeVaultArbCompound's configureTarget() takes 2 extra trailing args
       // (feeClaimThresholdBps/feeClaimIntervalSeconds — the scheduled/threshold
       // fee-auto-claim knobs) that RangeVault.sol/RangeVaultArb.sol don't have.
-      // Left at 0 here (interés compuesto starts OFF, autoCompoundFees defaults
-      // false) — the owner turns compounding on and tunes these later from the
-      // vault's own "Reconfigurar agente" panel, same as every other advanced
-      // knob this form doesn't ask about upfront.
+      // Left at 0 here — autoCompoundFees itself gets turned on right after
+      // (see the setAutoCompoundFees call site below), but these two
+      // scheduling knobs stay off by default; the owner tunes them later from
+      // the vault's own "Reconfigurar agente" panel, same as every other
+      // advanced knob this form doesn't ask about upfront.
       const configureTargetArgs: readonly (bigint | number)[] = [
         parseUnits(investAmount, 6),
         targetTickLower,
@@ -612,6 +644,17 @@ export default function CreateVault() {
             value: "0",
             data: encodeFunctionData({ abi: effectiveVaultAbi, functionName: "deposit", args: depositArgs }),
           },
+          // Same reasoning as the non-Safe path below: born already
+          // compounding instead of requiring a separate manual toggle later.
+          ...(isCompound
+            ? [
+                {
+                  to: vaultAddress,
+                  value: "0",
+                  data: encodeFunctionData({ abi: effectiveVaultAbi, functionName: "setAutoCompoundFees", args: [true] }),
+                },
+              ]
+            : []),
         ];
 
         const { safeTxHash } = await safeSdk.txs.send({ txs });
@@ -691,6 +734,28 @@ export default function CreateVault() {
           chainId: chain.id,
         });
         await publicClient.waitForTransactionReceipt({ hash: depositHash });
+
+        // Compounding starts OFF at the contract level (autoCompoundFees
+        // defaults false) — a compound vault the owner picked here should be
+        // born already compounding, not require a separate manual toggle
+        // from the vault's own panel afterward. Kept as its own call (not
+        // folded into configureTarget's args) since setAutoCompoundFees is a
+        // pre-existing, independently-toggleable knob the vault detail page
+        // also uses — reusing it here instead of adding a redundant
+        // constructor-time flag keeps there being exactly one code path that
+        // flips this bit.
+        if (isCompound) {
+          currentPhase = "activatingCompound";
+          setStep(currentPhase);
+          const activateHash = await writeContractAsync({
+            address: vaultAddress,
+            abi: effectiveVaultAbi,
+            functionName: "setAutoCompoundFees",
+            args: [true],
+            chainId: chain.id,
+          });
+          await publicClient.waitForTransactionReceipt({ hash: activateHash });
+        }
       }
 
       setStep("done");
@@ -1045,7 +1110,7 @@ export default function CreateVault() {
               )}
               {busy && !(isSafeApp && safeConfirmations) && (
                 <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-                  {t("create.signEach")}
+                  {t("create.signEach", { count: String(SIGNATURE_STEPS.length) })}
                 </p>
               )}
               {error && <p className="mt-4 break-all text-sm text-negative">{error}</p>}
@@ -1367,7 +1432,7 @@ function SignatureStepper({
   return (
     <div className="glass rounded-2xl p-5">
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-        {t("create.requiredSignatures")}
+        {t("create.requiredSignatures", { count: String(steps.length) })}
       </span>
       <ol className="mt-4 flex flex-col gap-4">
         {steps.map((s, i) => {
