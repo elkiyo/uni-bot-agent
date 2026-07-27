@@ -479,7 +479,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // feeGrowthGlobal calc PositionNFT.tsx uses — good enough for an
   // estimate, not a money-moving computation, same tolerance already
   // accepted elsewhere in this file (see handleReconfigure).
-  const [manageModal, setManageModal] = useState<"add" | "remove" | "collect" | null>(null);
+  const [manageModal, setManageModal] = useState<"add" | "remove" | "collect" | "deposit" | null>(null);
   const [manageStep, setManageStep] = useState<"input" | "review">("input");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -953,7 +953,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   ? t("vaultDetail.addLiquidityTitle")
                   : manageModal === "remove"
                     ? t("vaultDetail.removeLiquidityTitle")
-                    : t("vaultDetail.collectFeesTitle")}
+                    : manageModal === "collect"
+                      ? t("vaultDetail.collectFeesTitle")
+                      : t("vaultDetail.deposit")}
               </h3>
               <button
                 onClick={() => setManageModal(null)}
@@ -1149,6 +1151,130 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
               </>
             )}
+
+            {/* ---- Depositar (invertible / reserva / gas), single step —
+                same fields/validation the inline card used to have, now
+                just relocated behind a button. */}
+            {manageModal === "deposit" && (
+              <>
+                <p className="mt-1 text-sm text-black/60">
+                  {t("vaultDetail.depositLabel", { symbol: stableSymbol })}
+                </p>
+                {pendingCreationFee > 0n && (
+                  <p className="mt-1 text-xs text-black/50">
+                    {t("vaultDetail.pendingFeeNote", {
+                      fee: formatUnits(pendingCreationFee, stableDecimals),
+                      symbol: stableSymbol,
+                    })}
+                  </p>
+                )}
+                {maxDepositUsd > 0n && (
+                  <p className="mt-1 text-xs text-black/50">
+                    {t("vaultDetail.platformCapNote", {
+                      cap: formatUnits(maxDepositUsd, stableDecimals),
+                      symbol: stableSymbol,
+                      room: formatUnits(
+                        maxDepositUsd >
+                          ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance
+                          ? maxDepositUsd -
+                              (((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance)
+                          : 0n,
+                        stableDecimals,
+                      ),
+                    })}
+                  </p>
+                )}
+                {isCompound && <span className="mt-3 block text-xs text-black/60">{t("vaultDetail.depositTokenLabel")}</span>}
+                <div className="mt-2 flex flex-col gap-4">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestable")}</span>
+                    {isCompound && (
+                      <DepositTokenSelector
+                        size="mini"
+                        variant="light"
+                        tokens={depositTokenOptions}
+                        selected={investDepositToken}
+                        onSelect={setInvestDepositToken}
+                        balances={depositTokenBalancesUsd}
+                      />
+                    )}
+                    <input
+                      className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                      value={depInvestable}
+                      onChange={(e) => setDepInvestable(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-black/60">{t("vaultDetail.fieldReserve")}</span>
+                    {isCompound && (
+                      <DepositTokenSelector
+                        size="mini"
+                        variant="light"
+                        tokens={depositTokenOptions}
+                        selected={reserveDepositToken}
+                        onSelect={setReserveDepositToken}
+                        balances={depositTokenBalancesUsd}
+                      />
+                    )}
+                    <input
+                      className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                      value={depReserve}
+                      onChange={(e) => setDepReserve(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+                  {chain.supportsGasReserve && (
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs text-black/60">{t("vaultDetail.fieldGasBudget")}</span>
+                      {isCompound && (
+                        <DepositTokenSelector
+                          size="mini"
+                          variant="light"
+                          tokens={depositTokenOptions}
+                          selected={gasReserveDepositToken}
+                          onSelect={setGasReserveDepositToken}
+                          balances={depositTokenBalancesUsd}
+                        />
+                      )}
+                      <input
+                        className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                        value={depGasReserve}
+                        onChange={(e) => setDepGasReserve(e.target.value)}
+                        inputMode="decimal"
+                      />
+                    </label>
+                  )}
+                </div>
+                {depositInsufficientDetails.map((d) => (
+                  <p key={d.symbol} className="mt-2 text-sm text-red-700">
+                    {t("vaultDetail.insufficientBalanceMsg", {
+                      symbol: d.symbol,
+                      total: d.needed.toFixed(2),
+                      balance: d.balance.toFixed(2),
+                    })}
+                  </p>
+                ))}
+                {!depositInsufficientBalance && depositQuoteLoading && (
+                  <p className="mt-2 text-sm text-black/50">{t("vaultDetail.quoteLoadingMsg")}</p>
+                )}
+                {!depositInsufficientBalance && depositQuoteErrored && (
+                  <p className="mt-2 text-sm text-red-700">
+                    {t("vaultDetail.quoteErrorMsg", { symbol: depositQuoteErrored.meta.displaySymbol })}
+                  </p>
+                )}
+                <button
+                  onClick={() => {
+                    setManageModal(null);
+                    handleDepositMore();
+                  }}
+                  disabled={Boolean(busy) || depositInsufficientBalance || depositQuoteLoading || Boolean(depositQuoteErrored)}
+                  className="mt-6 w-full rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {t("vaultDetail.deposit")}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1302,40 +1428,54 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 range card (PositionNFT above already shows "Rango de precio")
                 — each opens its own modal (input, then review) instead of
                 living inline in the page. Owner-only, same gating every
-                write action in this file already uses. */}
-            {hasPosition && isOwner && (
+                write action in this file already uses. "Depositar" doesn't
+                need an open position (it's how a vault gets its first one),
+                so it's always shown for the owner while add/remove/collect
+                stay gated on hasPosition. */}
+            {isOwner && (
               <div className="mt-4 flex flex-wrap justify-center gap-3">
+                {hasPosition && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setManageModal("add");
+                        setManageStep("input");
+                      }}
+                      disabled={Boolean(busy)}
+                      className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                    >
+                      {t("vaultDetail.addLiquidityTitle")}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setManageModal("remove");
+                        setManageStep("input");
+                      }}
+                      disabled={Boolean(busy)}
+                      className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                    >
+                      {t("vaultDetail.removeLiquidityTitle")}
+                    </button>
+                    <button
+                      onClick={() => setManageModal("collect")}
+                      disabled={Boolean(busy)}
+                      className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                      title={
+                        isCompound && autoCompoundFees
+                          ? t("vaultDetail.collectFeesTooltipCompoundOn")
+                          : t("vaultDetail.collectFeesTooltipEnabled")
+                      }
+                    >
+                      {t("vaultDetail.collectFeesTitle")}
+                    </button>
+                  </>
+                )}
                 <button
-                  onClick={() => {
-                    setManageModal("add");
-                    setManageStep("input");
-                  }}
+                  onClick={() => setManageModal("deposit")}
                   disabled={Boolean(busy)}
                   className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
                 >
-                  {t("vaultDetail.addLiquidityTitle")}
-                </button>
-                <button
-                  onClick={() => {
-                    setManageModal("remove");
-                    setManageStep("input");
-                  }}
-                  disabled={Boolean(busy)}
-                  className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
-                >
-                  {t("vaultDetail.removeLiquidityTitle")}
-                </button>
-                <button
-                  onClick={() => setManageModal("collect")}
-                  disabled={Boolean(busy)}
-                  className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
-                  title={
-                    isCompound && autoCompoundFees
-                      ? t("vaultDetail.collectFeesTooltipCompoundOn")
-                      : t("vaultDetail.collectFeesTooltipEnabled")
-                  }
-                >
-                  {t("vaultDetail.collectFeesTitle")}
+                  {t("vaultDetail.deposit")}
                 </button>
               </div>
             )}
@@ -1448,112 +1588,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </h2>
                 <p className="mt-1 text-sm text-muted">{t("vaultDetail.managementSubtitle")}</p>
 
-                <div className="mt-8">
-                  <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
-                    {t("vaultDetail.depositLabel", { symbol: stableSymbol })}
-                  </span>
-                  {pendingCreationFee > 0n && (
-                    <p className="mt-1 text-xs text-faint">
-                      {t("vaultDetail.pendingFeeNote", {
-                        fee: formatUnits(pendingCreationFee, stableDecimals),
-                        symbol: stableSymbol,
-                      })}
-                    </p>
-                  )}
-                  {maxDepositUsd > 0n && (
-                    <p className="mt-1 text-xs text-faint">
-                      {t("vaultDetail.platformCapNote", {
-                        cap: formatUnits(maxDepositUsd, stableDecimals),
-                        symbol: stableSymbol,
-                        room: formatUnits(
-                          maxDepositUsd >
-                            ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance
-                            ? maxDepositUsd -
-                                (((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance)
-                            : 0n,
-                          stableDecimals,
-                        ),
-                      })}
-                    </p>
-                  )}
-                  {isCompound && <span className="mt-2 block text-xs text-faint">{t("vaultDetail.depositTokenLabel")}</span>}
-                  <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <MiniField
-                      label={t("vaultDetail.fieldInvestable")}
-                      value={depInvestable}
-                      onChange={setDepInvestable}
-                      topSlot={
-                        isCompound ? (
-                          <DepositTokenSelector
-                            size="mini"
-                            tokens={depositTokenOptions}
-                            selected={investDepositToken}
-                            onSelect={setInvestDepositToken}
-                            balances={depositTokenBalancesUsd}
-                          />
-                        ) : undefined
-                      }
-                    />
-                    <MiniField
-                      label={t("vaultDetail.fieldReserve")}
-                      value={depReserve}
-                      onChange={setDepReserve}
-                      topSlot={
-                        isCompound ? (
-                          <DepositTokenSelector
-                            size="mini"
-                            tokens={depositTokenOptions}
-                            selected={reserveDepositToken}
-                            onSelect={setReserveDepositToken}
-                            balances={depositTokenBalancesUsd}
-                          />
-                        ) : undefined
-                      }
-                    />
-                    {chain.supportsGasReserve && (
-                      <MiniField
-                        label={t("vaultDetail.fieldGasBudget")}
-                        value={depGasReserve}
-                        onChange={setDepGasReserve}
-                        topSlot={
-                          isCompound ? (
-                            <DepositTokenSelector
-                              size="mini"
-                              tokens={depositTokenOptions}
-                              selected={gasReserveDepositToken}
-                              onSelect={setGasReserveDepositToken}
-                              balances={depositTokenBalancesUsd}
-                            />
-                          ) : undefined
-                        }
-                      />
-                    )}
-                    <button
-                      onClick={handleDepositMore}
-                      disabled={Boolean(busy) || depositInsufficientBalance || depositQuoteLoading || Boolean(depositQuoteErrored)}
-                      className="btn-primary !py-3"
-                    >
-                      {t("vaultDetail.deposit")}
-                    </button>
-                  </div>
-                  {depositInsufficientDetails.map((d) => (
-                    <p key={d.symbol} className="mt-2 text-sm text-negative">
-                      {t("vaultDetail.insufficientBalanceMsg", {
-                        symbol: d.symbol,
-                        total: d.needed.toFixed(2),
-                        balance: d.balance.toFixed(2),
-                      })}
-                    </p>
-                  ))}
-                  {!depositInsufficientBalance && depositQuoteLoading && (
-                    <p className="mt-2 text-sm text-faint">{t("vaultDetail.quoteLoadingMsg")}</p>
-                  )}
-                  {!depositInsufficientBalance && depositQuoteErrored && (
-                    <p className="mt-2 text-sm text-negative">
-                      {t("vaultDetail.quoteErrorMsg", { symbol: depositQuoteErrored.meta.displaySymbol })}
-                    </p>
-                  )}
-                </div>
+                {/* Depositar (invertible/reserva/gas) moved to its own
+                    button + modal above (see manageModal === "deposit"),
+                    right next to Agregar/Eliminar liquidez and Cobrar
+                    comisiones. */}
 
                 <div className="mt-8">
                   <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">

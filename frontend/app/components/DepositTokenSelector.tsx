@@ -22,12 +22,16 @@ export function DepositTokenSelector({
   onSelect,
   balances,
   size = "field",
+  variant = "dark",
 }: {
   tokens: DepositTokenOption[];
   selected: `0x${string}`;
   onSelect: (address: `0x${string}`) => void;
   balances: (number | undefined)[]; // same order as tokens
   size?: "field" | "mini";
+  // "light" renders dark-on-light — for use inside the accent-soft modals,
+  // whose background is the inverse of this component's usual dark page.
+  variant?: "dark" | "light";
 }) {
   const iconSize = size === "field" ? 22 : 18;
   return (
@@ -42,13 +46,21 @@ export function DepositTokenSelector({
             aria-pressed={isSelected}
             onClick={() => onSelect(token.address)}
             className={`flex items-center gap-1.5 rounded-full border px-2 py-1 transition ${
-              isSelected ? "border-accent bg-accent/[0.1] text-white" : "border-hairline text-faint hover:border-accent/50"
+              variant === "light"
+                ? isSelected
+                  ? "border-black bg-black/[0.06] text-[#050505]"
+                  : "border-black/15 text-black/50 hover:border-black/40"
+                : isSelected
+                  ? "border-accent bg-accent/[0.1] text-white"
+                  : "border-hairline text-faint hover:border-accent/50"
             } ${size === "field" ? "text-xs" : "text-[11px]"}`}
           >
             <TokenIcon symbol={token.displaySymbol} size={iconSize} />
             <span className="flex flex-col items-start leading-tight">
               <span className="font-semibold">{token.displaySymbol}</span>
-              <span className="font-mono text-[10px] text-faint">{balance !== undefined ? balance.toFixed(2) : "—"}</span>
+              <span className={`font-mono text-[10px] ${variant === "light" ? "text-black/40" : "text-faint"}`}>
+                {balance !== undefined ? balance.toFixed(2) : "—"}
+              </span>
             </span>
           </button>
         );
