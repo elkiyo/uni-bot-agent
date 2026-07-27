@@ -11,6 +11,7 @@ import { PairIcon } from "../components/TokenIcon";
 import { uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
+import { uncollectedFeesRaw } from "@/lib/positionMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
 import { isCompoundBetaWallet } from "@/lib/compoundBeta";
@@ -339,6 +340,29 @@ function VaultCard({
     query: { enabled: hasPosition, refetchInterval: 60_000 },
   });
 
+  const rawTickLower = hasPosition ? (positionData as readonly unknown[] | undefined)?.[5] as number | undefined : undefined;
+  const rawTickUpper = hasPosition ? (positionData as readonly unknown[] | undefined)?.[6] as number | undefined : undefined;
+
+  // Same two-stage read PositionNFT.tsx uses to compute uncollected fees
+  // LIVE (via feeGrowthGlobal deltas) instead of trusting the position's own
+  // tokensOwed0/1 — that field only gets checkpointed on a mint/burn/collect
+  // call and otherwise sits frozen, often at zero, between rebalances even
+  // while the pool is actively trading through the range (confirmed here:
+  // this exact staleness made this card show $0.00/0.00% while the same
+  // vault's own detail page correctly showed real accrued fees). Costs 4
+  // extra reads per card with an open position — accepted since correctness
+  // (and matching the detail page's own number) matters more here than
+  // shaving a few RPC calls off a list that isn't large yet.
+  const { data: feeReads } = useReadContracts({
+    contracts: [
+      { address: poolAddress, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128", chainId: chain.id },
+      { address: poolAddress, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128", chainId: chain.id },
+      { address: poolAddress, abi: uniswapV3PoolAbi, functionName: "ticks", args: [rawTickLower ?? 0], chainId: chain.id },
+      { address: poolAddress, abi: uniswapV3PoolAbi, functionName: "ticks", args: [rawTickUpper ?? 0], chainId: chain.id },
+    ],
+    query: { enabled: Boolean(positionData), refetchInterval: 60_000 },
+  });
+
   const ethPrice =
     currentTick !== undefined ? ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals) : undefined;
 
@@ -350,38 +374,48 @@ function VaultCard({
   // position's own current value. Deliberately the SAME formula (not the
   // mark-to-market total-value-vs-initial-investment this card used to show
   // under "rentabilidad flotante", a genuinely different number that
-  // confused users into thinking the two pages disagreed) — this card uses
-  // the position's own tokensOwed0/1 (already fetched by the SAME positions()
-  // read below, no extra RPC call) instead of PositionNFT's live
-  // feeGrowthGlobal reads, since a list of many cards can't afford 2+ extra
-  // reads per card the way a single vault's detail page can — same
-  // "undercounts fees since the position's last poke" tolerance already
-  // accepted elsewhere for this exact reason.
+  // confused users into thinking the two pages disagreed).
   let feeYieldPct: number | undefined;
   let unclaimedFeesUsd = 0;
   if (positionData && currentTick !== undefined && ethPrice !== undefined) {
-    const [, , , , , tickLower, tickUpper, liquidity, , , tokensOwed0, tokensOwed1] = positionData as readonly [
-      bigint,
-      string,
-      string,
-      string,
-      number,
-      number,
-      number,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-    ];
+    const [, , , , , tickLower, tickUpper, liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128, tokensOwed0, tokensOwed1] =
+      positionData as readonly [bigint, string, string, string, number, number, number, bigint, bigint, bigint, bigint, bigint];
     const { amount0Raw, amount1Raw } = estimatePositionAmounts({ liquidity, currentTick, tickLower, tickUpper });
     const stableRaw = stableIsToken0 ? amount0Raw : amount1Raw;
     const volatileRaw = stableIsToken0 ? amount1Raw : amount0Raw;
     positionValueUsd = stableRaw * 10 ** -stableDecimals + volatileRaw * 10 ** -volatileDecimals * ethPrice;
 
-    const owedStable = stableIsToken0 ? tokensOwed0 : tokensOwed1;
-    const owedVolatile = stableIsToken0 ? tokensOwed1 : tokensOwed0;
-    unclaimedFeesUsd = Number(owedStable) * 10 ** -stableDecimals + Number(owedVolatile) * 10 ** -volatileDecimals * ethPrice;
+    const feeGrowthGlobal0X128 = feeReads?.[0]?.result as bigint | undefined;
+    const feeGrowthGlobal1X128 = feeReads?.[1]?.result as bigint | undefined;
+    const tickLowerData = feeReads?.[2]?.result as readonly [bigint, bigint, bigint, bigint, ...unknown[]] | undefined;
+    const tickUpperData = feeReads?.[3]?.result as readonly [bigint, bigint, bigint, bigint, ...unknown[]] | undefined;
+
+    let owedStableRaw = stableIsToken0 ? tokensOwed0 : tokensOwed1;
+    let owedVolatileRaw = stableIsToken0 ? tokensOwed1 : tokensOwed0;
+    if (feeGrowthGlobal0X128 !== undefined && feeGrowthGlobal1X128 !== undefined && tickLowerData && tickUpperData) {
+      const live = uncollectedFeesRaw({
+        liquidity,
+        tokensOwed0,
+        tokensOwed1,
+        feeGrowthInside0LastX128,
+        feeGrowthInside1LastX128,
+        feeGrowthGlobal0X128,
+        feeGrowthGlobal1X128,
+        tickLowerOutside0X128: tickLowerData[2],
+        tickLowerOutside1X128: tickLowerData[3],
+        tickUpperOutside0X128: tickUpperData[2],
+        tickUpperOutside1X128: tickUpperData[3],
+        currentTick,
+        tickLower,
+        tickUpper,
+      });
+      const fees0Raw = BigInt(Math.max(0, Math.floor(live.fees0Raw)));
+      const fees1Raw = BigInt(Math.max(0, Math.floor(live.fees1Raw)));
+      owedStableRaw = stableIsToken0 ? fees0Raw : fees1Raw;
+      owedVolatileRaw = stableIsToken0 ? fees1Raw : fees0Raw;
+    }
+    unclaimedFeesUsd =
+      Number(owedStableRaw) * 10 ** -stableDecimals + Number(owedVolatileRaw) * 10 ** -volatileDecimals * ethPrice;
     feeYieldPct = positionValueUsd > 0 ? (unclaimedFeesUsd / positionValueUsd) * 100 : 0;
 
     const priceA = ethPriceFromTick(tickLower, stableIsToken0, stableDecimals, volatileDecimals);
