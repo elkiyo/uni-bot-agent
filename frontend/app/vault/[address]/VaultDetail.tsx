@@ -817,36 +817,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
             )}
 
+            {/* "Rango objetivo" (targetTickLower/targetTickUpper) used to have its
+                own card here — removed as redundant now that PositionNFT above
+                already shows the position's real, live range. targetConfigured/
+                targetTickLower/targetTickUpper are still read and used elsewhere
+                (the reconfigure form, the inverted-ticks repair check), just no
+                longer displayed as their own stat card. */}
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="glass rounded-2xl p-5">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
-                  {t("vaultDetail.targetRange")}
-                </span>
-                {targetConfigured ? (
-                  <>
-                    <p className="mt-2 text-sm font-medium text-white/90">
-                      {(() => {
-                        const lo = Number(targetTickLower);
-                        const hi = Number(targetTickUpper);
-                        const priceA = ethPriceFromTick(lo, stableIsToken0, stableDecimals, volatileDecimals);
-                        const priceB = ethPriceFromTick(hi, stableIsToken0, stableDecimals, volatileDecimals);
-                        const low = Math.min(priceA, priceB);
-                        const high = Math.max(priceA, priceB);
-                        return `$${low.toFixed(2)} – $${high.toFixed(2)}`;
-                      })()}
-                    </p>
-                    {Number(targetTickLower) > Number(targetTickUpper) && (
-                      <p className="mt-1 text-xs text-negative">{t("vaultDetail.invertedTicksWarning")}</p>
-                    )}
-                    <p className="mt-1.5 font-mono text-[11px] text-faint">
-                      ticks [{String(targetTickLower)}, {String(targetTickUpper)}]
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-white/90">{t("vaultDetail.notConfigured")}</p>
-                )}
-              </div>
-
               <RebalanceCountdown
                 lastRebalanceTimestamp={(lastRebalanceTimestamp as bigint) ?? 0n}
                 periodicRebalanceInterval={(periodicRebalanceInterval as bigint) ?? 0n}
