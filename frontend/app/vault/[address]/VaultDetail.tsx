@@ -25,6 +25,7 @@ import { RebalanceCountdown } from "./RebalanceCountdown";
 import { erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
 import type { ChainDef } from "@/lib/chains";
 import { ethPriceFromTick } from "@/lib/priceMath";
+import { uncollectedFeesRaw } from "@/lib/positionMath";
 import { sizeRebalanceSwap, estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
@@ -295,12 +296,86 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       }
     : undefined;
   const positionLiquidity = positionData ? (positionData as readonly bigint[])[7] : undefined;
+  const positionFeeGrowthInsideLast = positionData
+    ? {
+        feeGrowthInside0LastX128: (positionData as readonly bigint[])[8],
+        feeGrowthInside1LastX128: (positionData as readonly bigint[])[9],
+      }
+    : undefined;
   const positionTokensOwed = positionData
     ? {
         tokensOwed0: (positionData as readonly bigint[])[10],
         tokensOwed1: (positionData as readonly bigint[])[11],
       }
     : undefined;
+
+  // tokensOwed0/1 above only gets checkpointed on a mint/burn/collect call —
+  // between rebalances it sits frozen, often at literally zero, even while
+  // the position is actively earning (same staleness PositionNFT.tsx's own
+  // fee card already works around). Recompute the LIVE accrued amount the
+  // same way Uniswap's own app does (see positionMath.ts's uncollectedFeesRaw
+  // docstring) so the "Cobrar comisiones" preview and the reinject-swap
+  // sizing in handleCollectFees below don't show/act on a stale zero.
+  const { data: feeGrowthReads } = useReadContracts({
+    contracts: [
+      { address: poolAddress, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128", chainId: chain.id },
+      { address: poolAddress, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128", chainId: chain.id },
+      {
+        address: poolAddress,
+        abi: uniswapV3PoolAbi,
+        functionName: "ticks",
+        args: [positionTicks?.tickLower ?? 0],
+        chainId: chain.id,
+      },
+      {
+        address: poolAddress,
+        abi: uniswapV3PoolAbi,
+        functionName: "ticks",
+        args: [positionTicks?.tickUpper ?? 0],
+        chainId: chain.id,
+      },
+    ],
+    query: { enabled: Boolean(positionTicks), refetchInterval: 60_000 },
+  });
+  const positionTokensOwedLive = (() => {
+    if (!positionTokensOwed) return undefined;
+    const feeGrowthGlobal0X128 = feeGrowthReads?.[0]?.result as bigint | undefined;
+    const feeGrowthGlobal1X128 = feeGrowthReads?.[1]?.result as bigint | undefined;
+    const tickLowerData = feeGrowthReads?.[2]?.result as readonly [bigint, bigint, bigint, bigint, ...unknown[]] | undefined;
+    const tickUpperData = feeGrowthReads?.[3]?.result as readonly [bigint, bigint, bigint, bigint, ...unknown[]] | undefined;
+    if (
+      !positionTicks ||
+      !positionFeeGrowthInsideLast ||
+      positionLiquidity === undefined ||
+      currentTick === undefined ||
+      feeGrowthGlobal0X128 === undefined ||
+      feeGrowthGlobal1X128 === undefined ||
+      !tickLowerData ||
+      !tickUpperData
+    ) {
+      return positionTokensOwed;
+    }
+    const live = uncollectedFeesRaw({
+      liquidity: positionLiquidity,
+      tokensOwed0: positionTokensOwed.tokensOwed0,
+      tokensOwed1: positionTokensOwed.tokensOwed1,
+      feeGrowthInside0LastX128: positionFeeGrowthInsideLast.feeGrowthInside0LastX128,
+      feeGrowthInside1LastX128: positionFeeGrowthInsideLast.feeGrowthInside1LastX128,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      tickLowerOutside0X128: tickLowerData[2],
+      tickLowerOutside1X128: tickLowerData[3],
+      tickUpperOutside0X128: tickUpperData[2],
+      tickUpperOutside1X128: tickUpperData[3],
+      currentTick,
+      tickLower: positionTicks.tickLower,
+      tickUpper: positionTicks.tickUpper,
+    });
+    return {
+      tokensOwed0: BigInt(Math.max(0, Math.floor(live.fees0Raw))),
+      tokensOwed1: BigInt(Math.max(0, Math.floor(live.fees1Raw))),
+    };
+  })();
 
   // Idle WETH the vault might already be holding (e.g. dust stranded by a
   // prior mis-sized swap) — increasePosition()'s own swap has to account for
@@ -716,10 +791,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // toward the position's own live ratio — see RangeVaultArbCompound.sol's
     // _reinjectFees docstring for why sizeRebalanceSwap, not sizeInitialSwap.
     let swapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
-    if (autoCompoundFees && positionTicks && positionTokensOwed && currentTick !== undefined) {
+    if (autoCompoundFees && positionTicks && positionTokensOwedLive && currentTick !== undefined) {
       const ethPrice = ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals);
-      const accruedStableRaw = stableIsToken0 ? positionTokensOwed.tokensOwed0 : positionTokensOwed.tokensOwed1;
-      const accruedVolatileRaw = stableIsToken0 ? positionTokensOwed.tokensOwed1 : positionTokensOwed.tokensOwed0;
+      const accruedStableRaw = stableIsToken0 ? positionTokensOwedLive.tokensOwed0 : positionTokensOwedLive.tokensOwed1;
+      const accruedVolatileRaw = stableIsToken0 ? positionTokensOwedLive.tokensOwed1 : positionTokensOwedLive.tokensOwed0;
       const swap = sizeRebalanceSwap({
         currentTick,
         newTickLower: positionTicks.tickLower,
@@ -892,13 +967,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     </button>
   );
 
-  // Estimated withdrawal preview — see withdrawReviewOpen's own docstring on
-  // why this is tokensOwed-based (a real but small approximation) rather
-  // than the fully precise live fee calc.
+  // Estimated withdrawal preview — uses the LIVE accrued-fee estimate
+  // (positionTokensOwedLive) rather than the position's own possibly-stale
+  // tokensOwed0/1, same reasoning as collectPreview below.
   const withdrawPositionShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawPositionPct) || 0) * 100)));
   const withdrawFundsShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawFundsPct) || 0) * 100)));
   const withdrawPreview =
-    positionTicks && positionLiquidity !== undefined && positionTokensOwed && currentTick !== undefined
+    positionTicks && positionLiquidity !== undefined && positionTokensOwedLive && currentTick !== undefined
       ? (() => {
           const { amount0Raw, amount1Raw } = estimatePositionAmounts({
             liquidity: positionLiquidity,
@@ -906,8 +981,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             tickLower: positionTicks.tickLower,
             tickUpper: positionTicks.tickUpper,
           });
-          const total0 = amount0Raw + Number(positionTokensOwed.tokensOwed0);
-          const total1 = amount1Raw + Number(positionTokensOwed.tokensOwed1);
+          const total0 = amount0Raw + Number(positionTokensOwedLive.tokensOwed0);
+          const total1 = amount1Raw + Number(positionTokensOwedLive.tokensOwed1);
           const shareFraction = withdrawPositionShareBps / 10_000;
           const positionStableRaw = (stableIsToken0 ? total0 : total1) * shareFraction;
           const positionVolatileRaw = (stableIsToken0 ? total1 : total0) * shareFraction;
@@ -921,14 +996,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         })()
       : undefined;
 
-  // Currently accrued, uncollected fees — same tokensOwed0/1-based estimate
-  // as withdrawPreview above, shown in the "Cobrar comisiones" review step.
-  const collectPreview = positionTokensOwed
+  // Currently accrued, uncollected fees — same live estimate as withdrawPreview
+  // above, shown in the "Cobrar comisiones" review step.
+  const collectPreview = positionTokensOwedLive
     ? {
         stable:
-          Number(stableIsToken0 ? positionTokensOwed.tokensOwed0 : positionTokensOwed.tokensOwed1) * 10 ** -stableDecimals,
+          Number(stableIsToken0 ? positionTokensOwedLive.tokensOwed0 : positionTokensOwedLive.tokensOwed1) *
+          10 ** -stableDecimals,
         volatile:
-          Number(stableIsToken0 ? positionTokensOwed.tokensOwed1 : positionTokensOwed.tokensOwed0) * 10 ** -volatileDecimals,
+          Number(stableIsToken0 ? positionTokensOwedLive.tokensOwed1 : positionTokensOwedLive.tokensOwed0) *
+          10 ** -volatileDecimals,
       }
     : undefined;
 
