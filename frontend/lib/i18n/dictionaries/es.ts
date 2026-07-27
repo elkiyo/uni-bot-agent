@@ -504,30 +504,35 @@ const es = {
     fieldCooldownToday: "Cooldown mín. horas (hoy: {{n}})",
     fieldMaxDeviationToday: "Desviación máx. ticks (hoy: {{n}})",
 
-    increasePositionLabel: "Sumar a la posición abierta",
     increasePositionHint:
       "Entra a la posición actual al instante, sin esperar al próximo rebalanceo del agente — se calcula acá mismo el swap necesario para respetar el rango vigente.",
     fieldAmountSymbol: "Monto ({{symbol}})",
-    addToPosition: "Sumar a la posición",
 
-    partialWithdrawLabel: "Retiro parcial",
     partialWithdrawHint:
       "Independiente entre sí — retirá un % de la posición activa, un % de los fondos idle (invertible + reserva), o ambos, sin cerrar el vault.",
     fieldPositionPct: "% de la posición",
     fieldIdleFundsPct: "% de fondos idle",
-    partialWithdraw: "Retirar parcial",
     pctMax: "Máx.",
-    withdrawReviewTitle: "Revisar retiro",
     withdrawReviewPosition: "De la posición ({{pct}}%)",
     withdrawReviewFunds: "De fondos idle ({{pct}}%)",
     withdrawReviewFeesNote: "Incluye las comisiones sin cobrar. Montos estimados — el contrato calcula el monto real al ejecutar.",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",
 
-    collectFees: "Reclamar comisiones",
+    // Uniswap-style liquidity-action modals — one button each (Agregar/
+    // Eliminar liquidez, Cobrar comisiones) right under the position's own
+    // range card, opening an input step (add/remove) then a review step.
+    addLiquidityTitle: "Agregar liquidez",
+    removeLiquidityTitle: "Eliminar liquidez",
+    collectFeesTitle: "Cobrar comisiones",
+    reviewButton: "Revisar",
+    backButton: "Atrás",
+    addLiquidityAmount: "Vas a agregar",
+    addLiquidityNote: "El agente ajusta automáticamente la proporción para calzar con el rango actual de la posición.",
+    collectFeesReviewLabel: "Comisiones acumuladas sin reclamar",
+
     collectFeesTooltipEnabled:
       "Cobra solo las comisiones de trading acumuladas — la posición sigue abierta, sin tocar el principal",
-    collectFeesTooltipDisabled: "No hay posición abierta todavía",
     collectFeesTooltipCompoundOn: "El interés compuesto está activo — las comisiones reclamadas se reinyectan en la posición en vez de pagarse a tu wallet",
     autoCompoundToggleOn: "Activar interés compuesto",
     autoCompoundToggleOff: "Desactivar interés compuesto",

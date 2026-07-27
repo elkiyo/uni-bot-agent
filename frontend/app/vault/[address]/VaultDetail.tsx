@@ -469,16 +469,18 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [increaseAmount, setIncreaseAmount] = useState("0");
   const [withdrawPositionPct, setWithdrawPositionPct] = useState("0");
   const [withdrawFundsPct, setWithdrawFundsPct] = useState("0");
-  // Uniswap-style two-step withdraw: pick a % (quick chips or free-typed,
-  // decimals included — e.g. 2.5), then review the ACTUAL estimated amounts
-  // before the wallet ever opens, instead of sending the tx straight off a
-  // bare percentage. Only a preview — the contract computes the real amounts
-  // itself at execution time; this reuses tokensOwed0/1 (already fetched
-  // above for the reinject-swap sizing elsewhere in this file) rather than
-  // the fully precise live feeGrowthGlobal calc PositionNFT.tsx uses, same
-  // "good enough for an estimate, not a money-moving computation" tolerance
-  // already accepted elsewhere in this file (see handleReconfigure).
-  const [withdrawReviewOpen, setWithdrawReviewOpen] = useState(false);
+  // Uniswap-style liquidity actions — "Agregar liquidez"/"Eliminar
+  // liquidez"/"Cobrar comisiones" each open their own modal (input step,
+  // then a review step before the wallet ever opens) instead of living as
+  // inline fields in the page, matching Uniswap's own position-management
+  // UX. Preview math (both here and in withdrawPreview below) reuses
+  // tokensOwed0/1 (already fetched above for the reinject-swap sizing
+  // elsewhere in this file) rather than the fully precise live
+  // feeGrowthGlobal calc PositionNFT.tsx uses — good enough for an
+  // estimate, not a money-moving computation, same tolerance already
+  // accepted elsewhere in this file (see handleReconfigure).
+  const [manageModal, setManageModal] = useState<"add" | "remove" | "collect" | null>(null);
+  const [manageStep, setManageStep] = useState<"input" | "review">("input");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showRiskLimits, setShowRiskLimits] = useState(false);
@@ -919,71 +921,234 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         })()
       : undefined;
 
+  // Currently accrued, uncollected fees — same tokensOwed0/1-based estimate
+  // as withdrawPreview above, shown in the "Cobrar comisiones" review step.
+  const collectPreview = positionTokensOwed
+    ? {
+        stable:
+          Number(stableIsToken0 ? positionTokensOwed.tokensOwed0 : positionTokensOwed.tokensOwed1) * 10 ** -stableDecimals,
+        volatile:
+          Number(stableIsToken0 ? positionTokensOwed.tokensOwed1 : positionTokensOwed.tokensOwed0) * 10 ** -volatileDecimals,
+      }
+    : undefined;
+
   return (
     <>
       {capAlert && (
         <AlertModal title={t("vaultDetail.capAlertTitle")} message={capAlert} onClose={() => setCapAlert(null)} />
       )}
-      {withdrawReviewOpen && (
+      {manageModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
           {/* Solid, LIGHT background (the palette's accent-soft pale yellow,
-              #fff7a8 — already defined in globals.css, never used until now)
-              with dark text throughout, rather than another dark panel —
-              two stacked dark surfaces (this modal + the dark page behind
-              it) were hard to tell apart even with a solid fill. Every
-              class below is a deliberate dark-on-light override of this
-              file's usual light-on-dark ones (text-white -> near-black,
-              text-faint -> black/muted, .btn-primary/.btn-secondary ->
-              custom, since both are tuned for the dark page and would
-              vanish or clash against pale yellow). */}
+              #fff7a8 — already defined in globals.css) with dark text
+              throughout, rather than a dark panel — two stacked dark
+              surfaces (this modal + the dark page behind it) were hard to
+              tell apart even fully opaque. Every class below is a
+              deliberate dark-on-light override of this file's usual
+              light-on-dark ones. */}
           <div className="w-full max-w-md rounded-2xl bg-accent-soft p-6 shadow-2xl shadow-black/60 sm:p-8">
-            <h3 className="text-xl font-semibold tracking-tight text-[#050505]" style={{ fontFamily: "var(--font-display)" }}>
-              {t("vaultDetail.withdrawReviewTitle")}
-            </h3>
-            <div className="mt-5 flex flex-col gap-4 text-sm">
-              {withdrawPositionShareBps > 0 && (
-                <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xl font-semibold tracking-tight text-[#050505]" style={{ fontFamily: "var(--font-display)" }}>
+                {manageModal === "add"
+                  ? t("vaultDetail.addLiquidityTitle")
+                  : manageModal === "remove"
+                    ? t("vaultDetail.removeLiquidityTitle")
+                    : t("vaultDetail.collectFeesTitle")}
+              </h3>
+              <button
+                onClick={() => setManageModal(null)}
+                aria-label={t("vaultDetail.withdrawReviewCancel")}
+                className="rounded-full p-1 text-black/50 transition-colors hover:bg-black/10 hover:text-black"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* ---- Agregar liquidez ---- */}
+            {manageModal === "add" && manageStep === "input" && (
+              <>
+                <p className="mt-1 text-sm text-black/60">{t("vaultDetail.increasePositionHint")}</p>
+                <div className="mt-5">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-black/60">{t("vaultDetail.fieldAmountSymbol", { symbol: stableSymbol })}</span>
+                    <input
+                      className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                      value={increaseAmount}
+                      onChange={(e) => setIncreaseAmount(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
+                <button
+                  onClick={() => setManageStep("review")}
+                  disabled={(Number(increaseAmount) || 0) <= 0}
+                  className="mt-6 w-full rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {t("vaultDetail.reviewButton")}
+                </button>
+              </>
+            )}
+            {manageModal === "add" && manageStep === "review" && (
+              <>
+                <div className="mt-5 rounded-xl border border-black/10 bg-black/5 p-4 text-sm">
                   <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
-                    {t("vaultDetail.withdrawReviewPosition", { pct: withdrawPositionPct })}
+                    {t("vaultDetail.addLiquidityAmount")}
                   </p>
                   <p className="mt-1 text-lg font-semibold text-[#050505]">
-                    {withdrawPreview ? withdrawPreview.positionVolatile.toFixed(6) : "—"} {volatileSymbol}
+                    {increaseAmount} {stableSymbol}
+                  </p>
+                  <p className="mt-2 text-xs text-black/60">{t("vaultDetail.addLiquidityNote")}</p>
+                </div>
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={() => setManageStep("input")}
+                    className="flex-1 rounded-full border border-black/25 py-2.5 font-medium text-[#050505] transition-colors hover:bg-black/5"
+                  >
+                    {t("vaultDetail.backButton")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setManageModal(null);
+                      handleIncreasePosition();
+                    }}
+                    disabled={Boolean(busy)}
+                    className="flex-1 rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {t("vaultDetail.withdrawReviewConfirm")}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ---- Eliminar liquidez ---- */}
+            {manageModal === "remove" && manageStep === "input" && (
+              <>
+                <p className="mt-1 text-sm text-black/60">{t("vaultDetail.partialWithdrawHint")}</p>
+                <div className="mt-5 flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs text-black/60">{t("vaultDetail.fieldPositionPct")}</span>
+                    <input
+                      className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                      value={withdrawPositionPct}
+                      onChange={(e) => setWithdrawPositionPct(e.target.value)}
+                      inputMode="decimal"
+                    />
+                    <LightPctQuickButtons onPick={setWithdrawPositionPct} />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs text-black/60">{t("vaultDetail.fieldIdleFundsPct")}</span>
+                    <input
+                      className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                      value={withdrawFundsPct}
+                      onChange={(e) => setWithdrawFundsPct(e.target.value)}
+                      inputMode="decimal"
+                    />
+                    <LightPctQuickButtons onPick={setWithdrawFundsPct} />
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (withdrawPositionShareBps === 0 && withdrawFundsShareBps === 0) return;
+                    if ((Number(withdrawPositionPct) || 0) > 100 || (Number(withdrawFundsPct) || 0) > 100) {
+                      setError(t("vaultDetail.errPctOver100"));
+                      return;
+                    }
+                    setManageStep("review");
+                  }}
+                  className="mt-6 w-full rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {t("vaultDetail.reviewButton")}
+                </button>
+              </>
+            )}
+            {manageModal === "remove" && manageStep === "review" && (
+              <>
+                <div className="mt-5 flex flex-col gap-4 text-sm">
+                  {withdrawPositionShareBps > 0 && (
+                    <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                        {t("vaultDetail.withdrawReviewPosition", { pct: withdrawPositionPct })}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-[#050505]">
+                        {withdrawPreview ? withdrawPreview.positionVolatile.toFixed(6) : "—"} {volatileSymbol}
+                      </p>
+                      <p className="text-lg font-semibold text-[#050505]">
+                        {withdrawPreview ? withdrawPreview.positionStable.toFixed(2) : "—"} {stableSymbol}
+                      </p>
+                      <p className="mt-2 text-xs text-black/60">{t("vaultDetail.withdrawReviewFeesNote")}</p>
+                    </div>
+                  )}
+                  {withdrawFundsShareBps > 0 && (
+                    <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                        {t("vaultDetail.withdrawReviewFunds", { pct: withdrawFundsPct })}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-[#050505]">
+                        {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={() => setManageStep("input")}
+                    className="flex-1 rounded-full border border-black/25 py-2.5 font-medium text-[#050505] transition-colors hover:bg-black/5"
+                  >
+                    {t("vaultDetail.backButton")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setManageModal(null);
+                      handlePartialWithdraw();
+                    }}
+                    disabled={Boolean(busy)}
+                    className="flex-1 rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {t("vaultDetail.withdrawReviewConfirm")}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ---- Cobrar comisiones (review only, nothing to input) ---- */}
+            {manageModal === "collect" && (
+              <>
+                <div className="mt-5 rounded-xl border border-black/10 bg-black/5 p-4 text-sm">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                    {t("vaultDetail.collectFeesReviewLabel")}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-[#050505]">
+                    {collectPreview ? collectPreview.volatile.toFixed(6) : "—"} {volatileSymbol}
                   </p>
                   <p className="text-lg font-semibold text-[#050505]">
-                    {withdrawPreview ? withdrawPreview.positionStable.toFixed(2) : "—"} {stableSymbol}
+                    {collectPreview ? collectPreview.stable.toFixed(2) : "—"} {stableSymbol}
                   </p>
-                  <p className="mt-2 text-xs text-black/60">{t("vaultDetail.withdrawReviewFeesNote")}</p>
-                </div>
-              )}
-              {withdrawFundsShareBps > 0 && (
-                <div className="rounded-xl border border-black/10 bg-black/5 p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
-                    {t("vaultDetail.withdrawReviewFunds", { pct: withdrawFundsPct })}
-                  </p>
-                  <p className="mt-1 text-lg font-semibold text-[#050505]">
-                    {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
+                  <p className="mt-2 text-xs text-black/60">
+                    {isCompound && autoCompoundFees
+                      ? t("vaultDetail.collectFeesTooltipCompoundOn")
+                      : t("vaultDetail.withdrawReviewFeesNote")}
                   </p>
                 </div>
-              )}
-            </div>
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => setWithdrawReviewOpen(false)}
-                className="flex-1 rounded-full border border-black/25 py-2.5 font-medium text-[#050505] transition-colors hover:bg-black/5"
-              >
-                {t("vaultDetail.withdrawReviewCancel")}
-              </button>
-              <button
-                onClick={() => {
-                  setWithdrawReviewOpen(false);
-                  handlePartialWithdraw();
-                }}
-                disabled={Boolean(busy)}
-                className="flex-1 rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
-              >
-                {t("vaultDetail.withdrawReviewConfirm")}
-              </button>
-            </div>
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={() => setManageModal(null)}
+                    className="flex-1 rounded-full border border-black/25 py-2.5 font-medium text-[#050505] transition-colors hover:bg-black/5"
+                  >
+                    {t("vaultDetail.withdrawReviewCancel")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setManageModal(null);
+                      handleCollectFees();
+                    }}
+                    disabled={Boolean(busy)}
+                    className="flex-1 rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {t("vaultDetail.withdrawReviewConfirm")}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1133,6 +1298,48 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
             )}
 
+            {/* Uniswap-style liquidity actions, right under the position's own
+                range card (PositionNFT above already shows "Rango de precio")
+                — each opens its own modal (input, then review) instead of
+                living inline in the page. Owner-only, same gating every
+                write action in this file already uses. */}
+            {hasPosition && isOwner && (
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  onClick={() => {
+                    setManageModal("add");
+                    setManageStep("input");
+                  }}
+                  disabled={Boolean(busy)}
+                  className="btn-secondary"
+                >
+                  {t("vaultDetail.addLiquidityTitle")}
+                </button>
+                <button
+                  onClick={() => {
+                    setManageModal("remove");
+                    setManageStep("input");
+                  }}
+                  disabled={Boolean(busy)}
+                  className="btn-secondary"
+                >
+                  {t("vaultDetail.removeLiquidityTitle")}
+                </button>
+                <button
+                  onClick={() => setManageModal("collect")}
+                  disabled={Boolean(busy)}
+                  className="btn-secondary"
+                  title={
+                    isCompound && autoCompoundFees
+                      ? t("vaultDetail.collectFeesTooltipCompoundOn")
+                      : t("vaultDetail.collectFeesTooltipEnabled")
+                  }
+                >
+                  {t("vaultDetail.collectFeesTitle")}
+                </button>
+              </div>
+            )}
+
             {/* "Rango objetivo" (targetTickLower/targetTickUpper) used to have its
                 own card here — removed as redundant now that PositionNFT above
                 already shows the position's real, live range. targetConfigured/
@@ -1240,64 +1447,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   {t("vaultDetail.managementTitle")}
                 </h2>
                 <p className="mt-1 text-sm text-muted">{t("vaultDetail.managementSubtitle")}</p>
-
-                {hasPosition && (
-                  <div className="mt-6">
-                    <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
-                      {t("vaultDetail.increasePositionLabel")}
-                    </span>
-                    <p className="mt-1 text-xs text-faint">{t("vaultDetail.increasePositionHint")}</p>
-                    <div className="mt-2 flex flex-wrap items-end gap-3">
-                      <MiniField
-                        label={t("vaultDetail.fieldAmountSymbol", { symbol: stableSymbol })}
-                        value={increaseAmount}
-                        onChange={setIncreaseAmount}
-                      />
-                      <button
-                        onClick={handleIncreasePosition}
-                        disabled={Boolean(busy)}
-                        className="btn-secondary !py-3"
-                      >
-                        {t("vaultDetail.addToPosition")}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-6">
-                  <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
-                    {t("vaultDetail.partialWithdrawLabel")}
-                  </span>
-                  <p className="mt-1 text-xs text-faint">{t("vaultDetail.partialWithdrawHint")}</p>
-                  <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <div className="flex min-w-36 flex-1 flex-col gap-1.5">
-                      <MiniField
-                        label={t("vaultDetail.fieldPositionPct")}
-                        value={withdrawPositionPct}
-                        onChange={setWithdrawPositionPct}
-                      />
-                      <PctQuickButtons onPick={setWithdrawPositionPct} />
-                    </div>
-                    <div className="flex min-w-36 flex-1 flex-col gap-1.5">
-                      <MiniField label={t("vaultDetail.fieldIdleFundsPct")} value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
-                      <PctQuickButtons onPick={setWithdrawFundsPct} />
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (withdrawPositionShareBps === 0 && withdrawFundsShareBps === 0) return;
-                        if ((Number(withdrawPositionPct) || 0) > 100 || (Number(withdrawFundsPct) || 0) > 100) {
-                          setError(t("vaultDetail.errPctOver100"));
-                          return;
-                        }
-                        setWithdrawReviewOpen(true);
-                      }}
-                      disabled={Boolean(busy)}
-                      className="btn-secondary !py-3"
-                    >
-                      {t("vaultDetail.partialWithdraw")}
-                    </button>
-                  </div>
-                </div>
 
                 <div className="mt-8">
                   <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
@@ -1517,20 +1666,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <button
-                    onClick={handleCollectFees}
-                    disabled={Boolean(busy) || !hasPosition}
-                    className="btn-secondary"
-                    title={
-                      !hasPosition
-                        ? t("vaultDetail.collectFeesTooltipDisabled")
-                        : isCompound && autoCompoundFees
-                          ? t("vaultDetail.collectFeesTooltipCompoundOn")
-                          : t("vaultDetail.collectFeesTooltipEnabled")
-                    }
-                  >
-                    {t("vaultDetail.collectFees")}
-                  </button>
+                  {/* Reclamar comisiones moved to its own modal, opened via
+                      the "Cobrar comisiones" button right under the
+                      position's own price-range card — see manageModal. */}
                   {isCompound && (
                     <button
                       onClick={handleToggleAutoCompound}
@@ -1668,7 +1806,10 @@ function ConfigRow({ k, v }: { k: string; v: string }) {
 // still lets the user type any other value directly in the field itself,
 // decimals included (e.g. 2.5), since this only ever calls onPick with a
 // plain string the same way typing would.
-function PctQuickButtons({ onPick }: { onPick: (pct: string) => void }) {
+// Same quick-pick chips as create/page.tsx's DepositTokenSelector-adjacent
+// pattern, but dark-on-light — lives inside the pale-yellow manage modal,
+// where the usual dark-page-tuned border-hairline/text-faint would vanish.
+function LightPctQuickButtons({ onPick }: { onPick: (pct: string) => void }) {
   const { t } = useTranslation();
   return (
     <div className="flex gap-1.5">
@@ -1677,7 +1818,7 @@ function PctQuickButtons({ onPick }: { onPick: (pct: string) => void }) {
           key={pct}
           type="button"
           onClick={() => onPick(String(pct))}
-          className="flex-1 rounded-full border border-hairline py-1 font-mono text-[11px] text-faint transition-colors hover:border-accent/50 hover:text-white"
+          className="flex-1 rounded-full border border-black/15 py-1 font-mono text-[11px] text-black/60 transition-colors hover:border-black/40 hover:text-black"
         >
           {pct}%
         </button>
@@ -1685,7 +1826,7 @@ function PctQuickButtons({ onPick }: { onPick: (pct: string) => void }) {
       <button
         type="button"
         onClick={() => onPick("100")}
-        className="flex-1 rounded-full border border-hairline py-1 font-mono text-[11px] text-faint transition-colors hover:border-accent/50 hover:text-white"
+        className="flex-1 rounded-full border border-black/15 py-1 font-mono text-[11px] text-black/60 transition-colors hover:border-black/40 hover:text-black"
       >
         {t("vaultDetail.pctMax")}
       </button>

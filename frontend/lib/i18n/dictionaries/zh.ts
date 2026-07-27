@@ -501,30 +501,32 @@ const zh: Dictionary = {
     fieldCooldownToday: "最短冷却时间（小时）（当前：{{n}}）",
     fieldMaxDeviationToday: "最大偏离（tick）（当前：{{n}}）",
 
-    increasePositionLabel: "向已开仓位追加资金",
     increasePositionHint:
       "立即计入当前仓位，无需等待智能体下一次再平衡——所需的兑换会在此处直接计算，以符合当前区间。",
     fieldAmountSymbol: "金额（{{symbol}}）",
-    addToPosition: "追加至仓位",
 
-    partialWithdrawLabel: "部分提取",
     partialWithdrawHint:
       "两者相互独立——可提取当前仓位的一定比例、闲置资金（可投资本金 + 储备金）的一定比例，或两者兼有，且无需关闭金库。",
     fieldPositionPct: "仓位提取比例 %",
     fieldIdleFundsPct: "闲置资金提取比例 %",
-    partialWithdraw: "部分提取",
     pctMax: "最大",
-    withdrawReviewTitle: "确认提取",
     withdrawReviewPosition: "来自仓位（{{pct}}%）",
     withdrawReviewFunds: "来自闲置资金（{{pct}}%）",
     withdrawReviewFeesNote: "包含未领取的手续费。为估算金额——实际金额以合约执行时计算为准。",
     withdrawReviewCancel: "取消",
     withdrawReviewConfirm: "确认",
 
-    collectFees: "领取手续费",
+    addLiquidityTitle: "增加流动性",
+    removeLiquidityTitle: "移除流动性",
+    collectFeesTitle: "领取手续费",
+    reviewButton: "查看",
+    backButton: "返回",
+    addLiquidityAmount: "你将追加",
+    addLiquidityNote: "智能体会自动调整比例，以匹配仓位当前的区间。",
+    collectFeesReviewLabel: "已累计、未领取的手续费",
+
     collectFeesTooltipEnabled:
       "仅领取已累计的交易手续费——仓位保持开启，不动用本金",
-    collectFeesTooltipDisabled: "目前尚无已开仓位",
     collectFeesTooltipCompoundOn: "复利已开启——领取的手续费会重新注入头寸，而不是支付到你的钱包",
     autoCompoundToggleOn: "开启复利",
     autoCompoundToggleOff: "关闭复利",

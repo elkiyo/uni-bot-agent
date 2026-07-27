@@ -505,30 +505,32 @@ const en: Dictionary = {
     fieldCooldownToday: "Min. cooldown hours (today: {{n}})",
     fieldMaxDeviationToday: "Max. deviation ticks (today: {{n}})",
 
-    increasePositionLabel: "Add to the open position",
     increasePositionHint:
       "Enters the current position instantly, without waiting for the agent's next rebalance — the required swap to respect the current range is calculated right here.",
     fieldAmountSymbol: "Amount ({{symbol}})",
-    addToPosition: "Add to position",
 
-    partialWithdrawLabel: "Partial withdrawal",
     partialWithdrawHint:
       "Independent of each other — withdraw a % of the active position, a % of idle funds (investable + reserve), or both, without closing the vault.",
     fieldPositionPct: "% of the position",
     fieldIdleFundsPct: "% of idle funds",
-    partialWithdraw: "Withdraw partial",
     pctMax: "Max.",
-    withdrawReviewTitle: "Review withdrawal",
     withdrawReviewPosition: "From the position ({{pct}}%)",
     withdrawReviewFunds: "From idle funds ({{pct}}%)",
     withdrawReviewFeesNote: "Includes uncollected fees. Estimated amounts — the contract computes the real amount at execution.",
     withdrawReviewCancel: "Cancel",
     withdrawReviewConfirm: "Confirm",
 
-    collectFees: "Claim fees",
+    addLiquidityTitle: "Add liquidity",
+    removeLiquidityTitle: "Remove liquidity",
+    collectFeesTitle: "Collect fees",
+    reviewButton: "Review",
+    backButton: "Back",
+    addLiquidityAmount: "You'll add",
+    addLiquidityNote: "The agent automatically adjusts the ratio to fit the position's current range.",
+    collectFeesReviewLabel: "Accrued, uncollected fees",
+
     collectFeesTooltipEnabled:
       "Collects only the accrued trading fees — the position stays open, without touching the principal",
-    collectFeesTooltipDisabled: "There's no open position yet",
     collectFeesTooltipCompoundOn: "Compounding is on — claimed fees get reinjected into the position instead of paid out to your wallet",
     autoCompoundToggleOn: "Turn compounding on",
     autoCompoundToggleOff: "Turn compounding off",

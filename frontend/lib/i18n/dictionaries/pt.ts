@@ -505,30 +505,32 @@ const pt: Dictionary = {
     fieldCooldownToday: "Cooldown mín. horas (hoje: {{n}})",
     fieldMaxDeviationToday: "Desvio máx. ticks (hoje: {{n}})",
 
-    increasePositionLabel: "Somar à posição aberta",
     increasePositionHint:
       "Entra na posição atual na hora, sem esperar o próximo rebalanceamento do agente — o swap necessário para respeitar a faixa vigente é calculado aqui mesmo.",
     fieldAmountSymbol: "Valor ({{symbol}})",
-    addToPosition: "Somar à posição",
 
-    partialWithdrawLabel: "Saque parcial",
     partialWithdrawHint:
       "Independentes entre si — saque um % da posição ativa, um % dos fundos ociosos (investível + reserva), ou ambos, sem fechar o vault.",
     fieldPositionPct: "% da posição",
     fieldIdleFundsPct: "% de fundos ociosos",
-    partialWithdraw: "Sacar parcial",
     pctMax: "Máx.",
-    withdrawReviewTitle: "Revisar saque",
     withdrawReviewPosition: "Da posição ({{pct}}%)",
     withdrawReviewFunds: "De fundos ociosos ({{pct}}%)",
     withdrawReviewFeesNote: "Inclui as comissões não coletadas. Valores estimados — o contrato calcula o valor real na execução.",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",
 
-    collectFees: "Resgatar comissões",
+    addLiquidityTitle: "Adicionar liquidez",
+    removeLiquidityTitle: "Remover liquidez",
+    collectFeesTitle: "Resgatar comissões",
+    reviewButton: "Revisar",
+    backButton: "Voltar",
+    addLiquidityAmount: "Você vai adicionar",
+    addLiquidityNote: "O agente ajusta automaticamente a proporção para se encaixar na faixa atual da posição.",
+    collectFeesReviewLabel: "Comissões acumuladas não resgatadas",
+
     collectFeesTooltipEnabled:
       "Cobra só as comissões de trading acumuladas — a posição continua aberta, sem tocar no principal",
-    collectFeesTooltipDisabled: "Ainda não há posição aberta",
     collectFeesTooltipCompoundOn: "Os juros compostos estão ativos — as comissões resgatadas são reinjetadas na posição em vez de pagas para sua carteira",
     autoCompoundToggleOn: "Ativar juros compostos",
     autoCompoundToggleOff: "Desativar juros compostos",
