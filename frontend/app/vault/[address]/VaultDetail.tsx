@@ -1501,6 +1501,28 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               />
             )}
 
+            {/* TEMP DIAG — remove before final commit */}
+            <pre id="diagtmp" style={{ color: "#0f0", fontSize: 10, whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(
+                {
+                  hasPosition,
+                  currentTick,
+                  positionTicks,
+                  positionLiquidity: positionLiquidity?.toString(),
+                  positionTokensOwed: positionTokensOwed
+                    ? { t0: positionTokensOwed.tokensOwed0.toString(), t1: positionTokensOwed.tokensOwed1.toString() }
+                    : null,
+                  feeGrowthReadsStatus: feeGrowthReads?.map((r) => r.status),
+                  positionTokensOwedLive: positionTokensOwedLive
+                    ? { t0: positionTokensOwedLive.tokensOwed0.toString(), t1: positionTokensOwedLive.tokensOwed1.toString() }
+                    : null,
+                  collectPreview,
+                },
+                null,
+                2,
+              )}
+            </pre>
+
             {/* Uniswap-style liquidity actions, right under the position's own
                 range card (PositionNFT above already shows "Rango de precio")
                 — each opens its own modal (input, then review) instead of
