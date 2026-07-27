@@ -5,6 +5,7 @@ import { Store, acquireTickLock, releaseTickLock } from "./store";
 import { discoverAndRegisterVaults } from "./discovery";
 import { checkVault } from "./monitor";
 import { runInitPosition, runRebalance, maybeSweepIdleDust, runClaimFees } from "./rebalancer";
+import { vaultContract } from "./serverContracts";
 import { logEvent } from "./logger";
 import { deployedChains } from "../chains";
 
@@ -86,6 +87,25 @@ export async function runTick(): Promise<TickSummary[]> {
         // call below instead of re-deriving it each time.
         const abi: Abi = record.kind === "compound" ? (chainDef.compoundVaultAbi as Abi) : chainDef.vaultAbi;
         try {
+          // gas_reserve_empty_since only gets CLEARED as a side effect of
+          // hasEnoughOperatorGas() in rebalancer.ts, which only runs when
+          // checkVault() below decides this vault needs an actual operator
+          // action (init/rebalance/claimFees/sweep). A healthy vault that
+          // sits in-range needing none of those never re-evaluates the flag,
+          // so an owner who tops up gasReserveBalance after being flagged
+          // stays stuck showing "se agotó" indefinitely even though the
+          // on-chain balance the vault-detail page reads live is positive
+          // again (confirmed live 2026-07-27). Re-check independently of
+          // whether an action is due, but only for vaults already flagged —
+          // no need to spend an extra RPC read per healthy vault every tick.
+          if (record.gasReserveEmptySince) {
+            const gasReserveBalance = await (vaultContract(chain, record.address as Address, abi).read
+              .gasReserveBalance() as Promise<bigint>).catch(() => undefined);
+            if (gasReserveBalance !== undefined && gasReserveBalance > 0n) {
+              await store.setGasReserveDepleted(record.address, false);
+            }
+          }
+
           const action = await checkVault(chain, record, store);
           if (action.kind === "init") {
             await runInitPosition(chain, record.address as Address, store, abi);
