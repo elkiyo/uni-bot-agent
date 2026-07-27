@@ -516,6 +516,13 @@ const es = {
     fieldPositionPct: "% de la posición",
     fieldIdleFundsPct: "% de fondos idle",
     partialWithdraw: "Retirar parcial",
+    pctMax: "Máx.",
+    withdrawReviewTitle: "Revisar retiro",
+    withdrawReviewPosition: "De la posición ({{pct}}%)",
+    withdrawReviewFunds: "De fondos idle ({{pct}}%)",
+    withdrawReviewFeesNote: "Incluye las comisiones sin cobrar. Montos estimados — el contrato calcula el monto real al ejecutar.",
+    withdrawReviewCancel: "Cancelar",
+    withdrawReviewConfirm: "Confirmar",
 
     collectFees: "Reclamar comisiones",
     collectFeesTooltipEnabled:

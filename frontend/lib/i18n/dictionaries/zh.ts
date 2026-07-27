@@ -513,6 +513,13 @@ const zh: Dictionary = {
     fieldPositionPct: "仓位提取比例 %",
     fieldIdleFundsPct: "闲置资金提取比例 %",
     partialWithdraw: "部分提取",
+    pctMax: "最大",
+    withdrawReviewTitle: "确认提取",
+    withdrawReviewPosition: "来自仓位（{{pct}}%）",
+    withdrawReviewFunds: "来自闲置资金（{{pct}}%）",
+    withdrawReviewFeesNote: "包含未领取的手续费。为估算金额——实际金额以合约执行时计算为准。",
+    withdrawReviewCancel: "取消",
+    withdrawReviewConfirm: "确认",
 
     collectFees: "领取手续费",
     collectFeesTooltipEnabled:

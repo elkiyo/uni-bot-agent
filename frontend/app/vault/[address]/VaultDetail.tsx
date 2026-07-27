@@ -25,7 +25,7 @@ import { RebalanceCountdown } from "./RebalanceCountdown";
 import { erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
 import type { ChainDef } from "@/lib/chains";
 import { ethPriceFromTick } from "@/lib/priceMath";
-import { sizeRebalanceSwap } from "@/lib/keeper/swapMath";
+import { sizeRebalanceSwap, estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { useVaultCreatedAt } from "@/lib/useVaultCreatedAt";
@@ -294,6 +294,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         tickUpper: Number((positionData as readonly unknown[])[6]),
       }
     : undefined;
+  const positionLiquidity = positionData ? (positionData as readonly bigint[])[7] : undefined;
   const positionTokensOwed = positionData
     ? {
         tokensOwed0: (positionData as readonly bigint[])[10],
@@ -468,6 +469,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [increaseAmount, setIncreaseAmount] = useState("0");
   const [withdrawPositionPct, setWithdrawPositionPct] = useState("0");
   const [withdrawFundsPct, setWithdrawFundsPct] = useState("0");
+  // Uniswap-style two-step withdraw: pick a % (quick chips or free-typed,
+  // decimals included — e.g. 2.5), then review the ACTUAL estimated amounts
+  // before the wallet ever opens, instead of sending the tx straight off a
+  // bare percentage. Only a preview — the contract computes the real amounts
+  // itself at execution time; this reuses tokensOwed0/1 (already fetched
+  // above for the reinject-swap sizing elsewhere in this file) rather than
+  // the fully precise live feeGrowthGlobal calc PositionNFT.tsx uses, same
+  // "good enough for an estimate, not a money-moving computation" tolerance
+  // already accepted elsewhere in this file (see handleReconfigure).
+  const [withdrawReviewOpen, setWithdrawReviewOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showRiskLimits, setShowRiskLimits] = useState(false);
@@ -879,10 +890,89 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     </button>
   );
 
+  // Estimated withdrawal preview — see withdrawReviewOpen's own docstring on
+  // why this is tokensOwed-based (a real but small approximation) rather
+  // than the fully precise live fee calc.
+  const withdrawPositionShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawPositionPct) || 0) * 100)));
+  const withdrawFundsShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawFundsPct) || 0) * 100)));
+  const withdrawPreview =
+    positionTicks && positionLiquidity !== undefined && positionTokensOwed && currentTick !== undefined
+      ? (() => {
+          const { amount0Raw, amount1Raw } = estimatePositionAmounts({
+            liquidity: positionLiquidity,
+            currentTick,
+            tickLower: positionTicks.tickLower,
+            tickUpper: positionTicks.tickUpper,
+          });
+          const total0 = amount0Raw + Number(positionTokensOwed.tokensOwed0);
+          const total1 = amount1Raw + Number(positionTokensOwed.tokensOwed1);
+          const shareFraction = withdrawPositionShareBps / 10_000;
+          const positionStableRaw = (stableIsToken0 ? total0 : total1) * shareFraction;
+          const positionVolatileRaw = (stableIsToken0 ? total1 : total0) * shareFraction;
+          const fundsStableRaw =
+            (Number((investableUsdt as bigint) ?? 0n) + Number((reserveBalance as bigint) ?? 0n)) * (withdrawFundsShareBps / 10_000);
+          return {
+            positionStable: positionStableRaw * 10 ** -stableDecimals,
+            positionVolatile: positionVolatileRaw * 10 ** -volatileDecimals,
+            fundsStable: fundsStableRaw * 10 ** -stableDecimals,
+          };
+        })()
+      : undefined;
+
   return (
     <>
       {capAlert && (
         <AlertModal title={t("vaultDetail.capAlertTitle")} message={capAlert} onClose={() => setCapAlert(null)} />
+      )}
+      {withdrawReviewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="glass max-w-md rounded-2xl p-6 sm:p-8">
+            <h3 className="text-xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+              {t("vaultDetail.withdrawReviewTitle")}
+            </h3>
+            <div className="mt-5 flex flex-col gap-4 text-sm">
+              {withdrawPositionShareBps > 0 && (
+                <div className="rounded-xl border border-hairline p-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+                    {t("vaultDetail.withdrawReviewPosition", { pct: withdrawPositionPct })}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {withdrawPreview ? withdrawPreview.positionVolatile.toFixed(6) : "—"} {volatileSymbol}
+                  </p>
+                  <p className="text-lg font-semibold text-white">
+                    {withdrawPreview ? withdrawPreview.positionStable.toFixed(2) : "—"} {stableSymbol}
+                  </p>
+                  <p className="mt-2 text-xs text-faint">{t("vaultDetail.withdrawReviewFeesNote")}</p>
+                </div>
+              )}
+              {withdrawFundsShareBps > 0 && (
+                <div className="rounded-xl border border-hairline p-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+                    {t("vaultDetail.withdrawReviewFunds", { pct: withdrawFundsPct })}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setWithdrawReviewOpen(false)} className="btn-secondary flex-1 !py-2.5">
+                {t("vaultDetail.withdrawReviewCancel")}
+              </button>
+              <button
+                onClick={() => {
+                  setWithdrawReviewOpen(false);
+                  handlePartialWithdraw();
+                }}
+                disabled={Boolean(busy)}
+                className="btn-primary flex-1 !py-2.5"
+              >
+                {t("vaultDetail.withdrawReviewConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <Header />
       <main className="section flex-1 pb-24 pt-32">
@@ -1167,14 +1257,27 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   </span>
                   <p className="mt-1 text-xs text-faint">{t("vaultDetail.partialWithdrawHint")}</p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <MiniField
-                      label={t("vaultDetail.fieldPositionPct")}
-                      value={withdrawPositionPct}
-                      onChange={setWithdrawPositionPct}
-                    />
-                    <MiniField label={t("vaultDetail.fieldIdleFundsPct")} value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
+                    <div className="flex min-w-36 flex-1 flex-col gap-1.5">
+                      <MiniField
+                        label={t("vaultDetail.fieldPositionPct")}
+                        value={withdrawPositionPct}
+                        onChange={setWithdrawPositionPct}
+                      />
+                      <PctQuickButtons onPick={setWithdrawPositionPct} />
+                    </div>
+                    <div className="flex min-w-36 flex-1 flex-col gap-1.5">
+                      <MiniField label={t("vaultDetail.fieldIdleFundsPct")} value={withdrawFundsPct} onChange={setWithdrawFundsPct} />
+                      <PctQuickButtons onPick={setWithdrawFundsPct} />
+                    </div>
                     <button
-                      onClick={handlePartialWithdraw}
+                      onClick={() => {
+                        if (withdrawPositionShareBps === 0 && withdrawFundsShareBps === 0) return;
+                        if ((Number(withdrawPositionPct) || 0) > 100 || (Number(withdrawFundsPct) || 0) > 100) {
+                          setError(t("vaultDetail.errPctOver100"));
+                          return;
+                        }
+                        setWithdrawReviewOpen(true);
+                      }}
                       disabled={Boolean(busy)}
                       className="btn-secondary !py-3"
                     >
@@ -1544,6 +1647,35 @@ function ConfigRow({ k, v }: { k: string; v: string }) {
     <div>
       <dt className="text-xs text-faint">{k}</dt>
       <dd className="mt-0.5 font-medium text-white/90">{v}</dd>
+    </div>
+  );
+}
+
+// Uniswap-style quick-pick chips (25/50/75/Max) for a percentage field —
+// still lets the user type any other value directly in the field itself,
+// decimals included (e.g. 2.5), since this only ever calls onPick with a
+// plain string the same way typing would.
+function PctQuickButtons({ onPick }: { onPick: (pct: string) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex gap-1.5">
+      {[25, 50, 75].map((pct) => (
+        <button
+          key={pct}
+          type="button"
+          onClick={() => onPick(String(pct))}
+          className="flex-1 rounded-full border border-hairline py-1 font-mono text-[11px] text-faint transition-colors hover:border-accent/50 hover:text-white"
+        >
+          {pct}%
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={() => onPick("100")}
+        className="flex-1 rounded-full border border-hairline py-1 font-mono text-[11px] text-faint transition-colors hover:border-accent/50 hover:text-white"
+      >
+        {t("vaultDetail.pctMax")}
+      </button>
     </div>
   );
 }

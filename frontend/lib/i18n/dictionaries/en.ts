@@ -517,6 +517,13 @@ const en: Dictionary = {
     fieldPositionPct: "% of the position",
     fieldIdleFundsPct: "% of idle funds",
     partialWithdraw: "Withdraw partial",
+    pctMax: "Max.",
+    withdrawReviewTitle: "Review withdrawal",
+    withdrawReviewPosition: "From the position ({{pct}}%)",
+    withdrawReviewFunds: "From idle funds ({{pct}}%)",
+    withdrawReviewFeesNote: "Includes uncollected fees. Estimated amounts — the contract computes the real amount at execution.",
+    withdrawReviewCancel: "Cancel",
+    withdrawReviewConfirm: "Confirm",
 
     collectFees: "Claim fees",
     collectFeesTooltipEnabled:

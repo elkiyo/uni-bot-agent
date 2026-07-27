@@ -517,6 +517,13 @@ const pt: Dictionary = {
     fieldPositionPct: "% da posição",
     fieldIdleFundsPct: "% de fundos ociosos",
     partialWithdraw: "Sacar parcial",
+    pctMax: "Máx.",
+    withdrawReviewTitle: "Revisar saque",
+    withdrawReviewPosition: "Da posição ({{pct}}%)",
+    withdrawReviewFunds: "De fundos ociosos ({{pct}}%)",
+    withdrawReviewFeesNote: "Inclui as comissões não coletadas. Valores estimados — o contrato calcula o valor real na execução.",
+    withdrawReviewCancel: "Cancelar",
+    withdrawReviewConfirm: "Confirmar",
 
     collectFees: "Resgatar comissões",
     collectFeesTooltipEnabled:
