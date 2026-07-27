@@ -296,7 +296,7 @@ const en: Dictionary = {
     currentPrice: "Current price: ${{price}} · {{pair}}",
     currentPriceLabel: "Current price",
     rangeWidth: "Range width",
-    floatingYield: "floating yield",
+    floatingYield: "fee yield (current position)",
     belowRange: "Price is below range — not earning fees",
     aboveRange: "Price is above range — not earning fees",
   },

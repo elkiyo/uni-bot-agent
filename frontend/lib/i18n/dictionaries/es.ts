@@ -294,7 +294,7 @@ const es = {
     currentPrice: "Precio actual: ${{price}} · {{pair}}",
     currentPriceLabel: "Precio actual",
     rangeWidth: "Amplitud del rango",
-    floatingYield: "rentabilidad flotante",
+    floatingYield: "rendimiento de comisiones (posición actual)",
     belowRange: "Precio por debajo del rango — sin comisiones",
     aboveRange: "Precio por encima del rango — sin comisiones",
   },

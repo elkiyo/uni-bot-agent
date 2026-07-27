@@ -292,7 +292,7 @@ const zh: Dictionary = {
     currentPrice: "当前价格：${{price}} · {{pair}}",
     currentPriceLabel: "当前价格",
     rangeWidth: "区间宽度",
-    floatingYield: "浮动收益率",
+    floatingYield: "手续费收益率（当前仓位）",
     belowRange: "价格低于区间——未产生手续费",
     aboveRange: "价格高于区间——未产生手续费",
   },

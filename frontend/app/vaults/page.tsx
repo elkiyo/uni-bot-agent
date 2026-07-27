@@ -395,14 +395,17 @@ function VaultCard({
   const idleWethRaw = (idleWeth as bigint) ?? 0n;
   const idleWethUsd = ethPrice !== undefined ? Number(idleWethRaw) * 10 ** -volatileDecimals * ethPrice : undefined;
 
-  // Rentabilidad = comisiones acumuladas (convertidas a USD) sobre el monto
-  // depositado cuando se creó el vault — no el total histórico (top-ups
-  // posteriores no cuentan) ni el capital libre actual (que baja cada vez que
-  // se abre/reinyecta una posición), ni anualizado.
+  // Rentabilidad = comisiones acumuladas (reclamadas + reinyectadas,
+  // convertidas a USD) sobre el monto depositado cuando se creó el vault —
+  // no el total histórico (top-ups posteriores no cuentan) ni el capital
+  // libre actual (que baja cada vez que se abre/reinyecta una posición), ni
+  // anualizado. Debe coincidir con VaultDetail.tsx's feesUsdTotal — mismo
+  // vault, misma cuenta, en las dos pantallas.
   const { data: depositSummary } = useVaultDepositSummary(vaultAddress, chain, vaultAbi);
   const feesUsdEquivalent =
     Number(formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)) +
-    (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice : 0);
+    (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice : 0) +
+    Number(formatUnits(feesSummary?.reinjectedUsdRaw ?? 0n, stableDecimals));
   const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, stableDecimals));
   const rentLabel =
     initialInvestmentUsd > 0

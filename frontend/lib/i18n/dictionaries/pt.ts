@@ -296,7 +296,7 @@ const pt: Dictionary = {
     currentPrice: "Preço atual: ${{price}} · {{pair}}",
     currentPriceLabel: "Preço atual",
     rangeWidth: "Amplitude da faixa",
-    floatingYield: "rentabilidade flutuante",
+    floatingYield: "rendimento de comissões (posição atual)",
     belowRange: "Preço abaixo da faixa — sem gerar comissões",
     aboveRange: "Preço acima da faixa — sem gerar comissões",
   },
