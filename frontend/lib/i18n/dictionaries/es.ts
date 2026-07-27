@@ -366,6 +366,7 @@ const es = {
   reinjectionHistory: {
     title: "Historial de reinyecciones",
     subtitle: "Cada vez que el agente reinyectó comisiones a la posición en vez de pagarlas a tu wallet.",
+    positionLabel: "Posición #{{id}}",
     claimed: "Comisiones reclamadas",
     reinjected: "Reinyectado a la posición",
     tx: "tx: {{hash}} ↗",

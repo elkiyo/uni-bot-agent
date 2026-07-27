@@ -368,6 +368,7 @@ const en: Dictionary = {
   reinjectionHistory: {
     title: "Reinjection history",
     subtitle: "Every time the agent reinjected fees into the position instead of paying them to your wallet.",
+    positionLabel: "Position #{{id}}",
     claimed: "Fees claimed",
     reinjected: "Reinjected into position",
     tx: "tx: {{hash}} ↗",

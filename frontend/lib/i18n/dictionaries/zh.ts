@@ -364,6 +364,7 @@ const zh: Dictionary = {
   reinjectionHistory: {
     title: "再投入历史",
     subtitle: "每一次代理将手续费再投入仓位，而不是支付到你的钱包。",
+    positionLabel: "仓位 #{{id}}",
     claimed: "已领取手续费",
     reinjected: "已再投入仓位",
     tx: "交易：{{hash}} ↗",

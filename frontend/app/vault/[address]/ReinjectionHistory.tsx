@@ -33,6 +33,35 @@ export function ReinjectionHistory({
   const { t, locale } = useTranslation();
   const { data: eventLogs } = useVaultEventLogs(address, chain, vaultAbi);
 
+  // Which position (tokenId) was actually open at each reinjection — a
+  // rebalance's own fee (netFee0/netFee1) belongs to the POSITION THAT JUST
+  // CLOSED in that same tx, while the reinjection itself lands in the BRAND
+  // NEW position that tx just opened; a manual collectFees()/harvestFees()
+  // call, on the other hand, reinjects into whatever position was ALREADY
+  // open. Either way, tagging each entry with the position it landed in
+  // (found by the latest PositionInitialized/Rebalanced at or before this
+  // event's own block) avoids the confusing "why doesn't this match the
+  // closed position I was just looking at" read — a reinjection here is
+  // rarely about the position directly above it in Historial de posiciones,
+  // since that section shows the position that CLOSED, not the one a later,
+  // independent fee-collection cycle reinjected into.
+  const positionOpens = (eventLogs ?? [])
+    .filter((log) => log.eventName === "PositionInitialized" || log.eventName === "Rebalanced")
+    .map((log) => ({
+      blockNumber: log.blockNumber,
+      tokenId: (log.eventName === "PositionInitialized" ? log.args.tokenId : log.args.newTokenId) as bigint,
+    }))
+    .sort((a, b) => (a.blockNumber < b.blockNumber ? -1 : 1));
+
+  function positionAt(blockNumber: bigint): bigint | undefined {
+    let found: bigint | undefined;
+    for (const p of positionOpens) {
+      if (p.blockNumber <= blockNumber) found = p.tokenId;
+      else break;
+    }
+    return found;
+  }
+
   const reinjections = (eventLogs ?? [])
     .filter((log) => log.eventName === "FeesReinjected")
     .map((log) => {
@@ -51,6 +80,7 @@ export function ReinjectionHistory({
         claimedVolatile: chain.stableIsToken0 ? netFee1 : netFee0,
         reinjectedStable: chain.stableIsToken0 ? used0 : used1,
         reinjectedVolatile: chain.stableIsToken0 ? used1 : used0,
+        positionId: positionAt(log.blockNumber),
       };
     })
     .sort((a, b) => b.blockTimestamp - a.blockTimestamp); // newest first
@@ -73,7 +103,12 @@ export function ReinjectionHistory({
         {reinjections.map((r) => (
           <li key={`${r.txHash}`} className="rounded-xl border border-hairline p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-sm text-white/90">{fmtDate(r.blockTimestamp)}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-sm text-white/90">{fmtDate(r.blockTimestamp)}</span>
+                {r.positionId !== undefined && (
+                  <span className="eyebrow !px-3 !py-1">{t("reinjectionHistory.positionLabel", { id: r.positionId.toString() })}</span>
+                )}
+              </div>
               <span className="font-mono text-sm font-semibold text-positive">
                 ${Number(formatUnits(r.netFeeUsd, chain.stableDecimals)).toFixed(2)}
               </span>

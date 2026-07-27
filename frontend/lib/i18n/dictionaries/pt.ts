@@ -368,6 +368,7 @@ const pt: Dictionary = {
   reinjectionHistory: {
     title: "Histórico de reinjeções",
     subtitle: "Cada vez que o agente reinjetou comissões na posição em vez de pagá-las à sua carteira.",
+    positionLabel: "Posição #{{id}}",
     claimed: "Comissões reclamadas",
     reinjected: "Reinjetado na posição",
     tx: "tx: {{hash}} ↗",
