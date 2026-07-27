@@ -926,46 +926,51 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       )}
       {withdrawReviewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
-          {/* Solid background, not .glass — a translucent card here let the
-              busy page behind it (also full of light-colored text) bleed
-              through and become unreadable. Same solid-fill pattern
-              NetworkSelector's own dropdown already uses for the identical
-              reason. */}
-          <div
-            className="w-full max-w-md rounded-2xl border border-hairline p-6 shadow-2xl shadow-black/60 sm:p-8"
-            style={{ backgroundColor: "#0a0a0a" }}
-          >
-            <h3 className="text-xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          {/* Solid, LIGHT background (the palette's accent-soft pale yellow,
+              #fff7a8 — already defined in globals.css, never used until now)
+              with dark text throughout, rather than another dark panel —
+              two stacked dark surfaces (this modal + the dark page behind
+              it) were hard to tell apart even with a solid fill. Every
+              class below is a deliberate dark-on-light override of this
+              file's usual light-on-dark ones (text-white -> near-black,
+              text-faint -> black/muted, .btn-primary/.btn-secondary ->
+              custom, since both are tuned for the dark page and would
+              vanish or clash against pale yellow). */}
+          <div className="w-full max-w-md rounded-2xl bg-accent-soft p-6 shadow-2xl shadow-black/60 sm:p-8">
+            <h3 className="text-xl font-semibold tracking-tight text-[#050505]" style={{ fontFamily: "var(--font-display)" }}>
               {t("vaultDetail.withdrawReviewTitle")}
             </h3>
             <div className="mt-5 flex flex-col gap-4 text-sm">
               {withdrawPositionShareBps > 0 && (
-                <div className="rounded-xl border border-hairline bg-white/[0.03] p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+                <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
                     {t("vaultDetail.withdrawReviewPosition", { pct: withdrawPositionPct })}
                   </p>
-                  <p className="mt-1 text-lg font-semibold text-white">
+                  <p className="mt-1 text-lg font-semibold text-[#050505]">
                     {withdrawPreview ? withdrawPreview.positionVolatile.toFixed(6) : "—"} {volatileSymbol}
                   </p>
-                  <p className="text-lg font-semibold text-white">
+                  <p className="text-lg font-semibold text-[#050505]">
                     {withdrawPreview ? withdrawPreview.positionStable.toFixed(2) : "—"} {stableSymbol}
                   </p>
-                  <p className="mt-2 text-xs text-faint">{t("vaultDetail.withdrawReviewFeesNote")}</p>
+                  <p className="mt-2 text-xs text-black/60">{t("vaultDetail.withdrawReviewFeesNote")}</p>
                 </div>
               )}
               {withdrawFundsShareBps > 0 && (
-                <div className="rounded-xl border border-hairline bg-white/[0.03] p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+                <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
                     {t("vaultDetail.withdrawReviewFunds", { pct: withdrawFundsPct })}
                   </p>
-                  <p className="mt-1 text-lg font-semibold text-white">
+                  <p className="mt-1 text-lg font-semibold text-[#050505]">
                     {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
                   </p>
                 </div>
               )}
             </div>
             <div className="mt-6 flex gap-3">
-              <button onClick={() => setWithdrawReviewOpen(false)} className="btn-secondary flex-1 !py-2.5">
+              <button
+                onClick={() => setWithdrawReviewOpen(false)}
+                className="flex-1 rounded-full border border-black/25 py-2.5 font-medium text-[#050505] transition-colors hover:bg-black/5"
+              >
                 {t("vaultDetail.withdrawReviewCancel")}
               </button>
               <button
@@ -974,7 +979,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   handlePartialWithdraw();
                 }}
                 disabled={Boolean(busy)}
-                className="btn-primary flex-1 !py-2.5"
+                className="flex-1 rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {t("vaultDetail.withdrawReviewConfirm")}
               </button>
