@@ -1304,14 +1304,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 living inline in the page. Owner-only, same gating every
                 write action in this file already uses. */}
             {hasPosition && isOwner && (
-              <div className="mt-4 flex flex-wrap gap-3">
+              <div className="mt-4 flex flex-wrap justify-center gap-3">
                 <button
                   onClick={() => {
                     setManageModal("add");
                     setManageStep("input");
                   }}
                   disabled={Boolean(busy)}
-                  className="btn-secondary"
+                  className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
                 >
                   {t("vaultDetail.addLiquidityTitle")}
                 </button>
@@ -1321,14 +1321,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     setManageStep("input");
                   }}
                   disabled={Boolean(busy)}
-                  className="btn-secondary"
+                  className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
                 >
                   {t("vaultDetail.removeLiquidityTitle")}
                 </button>
                 <button
                   onClick={() => setManageModal("collect")}
                   disabled={Boolean(busy)}
-                  className="btn-secondary"
+                  className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
                   title={
                     isCompound && autoCompoundFees
                       ? t("vaultDetail.collectFeesTooltipCompoundOn")
