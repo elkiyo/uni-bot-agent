@@ -363,6 +363,13 @@ const es = {
     noReinjection: "sin reinyección",
     openingTx: "tx de apertura: {{hash}} ↗",
   },
+  reinjectionHistory: {
+    title: "Historial de reinyecciones",
+    subtitle: "Cada vez que el agente reinyectó comisiones a la posición en vez de pagarlas a tu wallet.",
+    claimed: "Comisiones reclamadas",
+    reinjected: "Reinyectado a la posición",
+    tx: "tx: {{hash}} ↗",
+  },
   rebalanceCountdown: {
     nextRebalance: "Próximo rebalanceo",
     pausedTitle: "Vault pausado",

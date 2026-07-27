@@ -361,6 +361,13 @@ const zh: Dictionary = {
     noReinjection: "无再注入",
     openingTx: "开仓交易：{{hash}} ↗",
   },
+  reinjectionHistory: {
+    title: "再投入历史",
+    subtitle: "每一次代理将手续费再投入仓位，而不是支付到你的钱包。",
+    claimed: "已领取手续费",
+    reinjected: "已再投入仓位",
+    tx: "交易：{{hash}} ↗",
+  },
   rebalanceCountdown: {
     nextRebalance: "下一次再平衡",
     pausedTitle: "金库已暂停",

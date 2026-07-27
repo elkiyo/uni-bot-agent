@@ -365,6 +365,13 @@ const en: Dictionary = {
     noReinjection: "no reinjection",
     openingTx: "opening tx: {{hash}} ↗",
   },
+  reinjectionHistory: {
+    title: "Reinjection history",
+    subtitle: "Every time the agent reinjected fees into the position instead of paying them to your wallet.",
+    claimed: "Fees claimed",
+    reinjected: "Reinjected into position",
+    tx: "tx: {{hash}} ↗",
+  },
   rebalanceCountdown: {
     nextRebalance: "Next rebalance",
     pausedTitle: "Vault paused",
