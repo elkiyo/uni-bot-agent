@@ -218,6 +218,8 @@ const pt: Dictionary = {
 
     insufficientBalanceMsg:
       "Faltam {{missing}} {{symbol}} — você tem {{balance}} {{symbol}} e este vault precisa de {{total}} {{symbol}} (inclui {{fee}} {{symbol}} de taxa de criação, uma única vez).",
+    quoteLoadingMsg: "Cotando o swap em tempo real…",
+    quoteErrorMsg: "Não foi possível cotar o swap de {{symbol}} agora — tente novamente em instantes.",
     signEach: "Assine cada transação na sua carteira — são {{count}} no total",
 
     summaryTitle: "Resumo",
@@ -466,6 +468,10 @@ const pt: Dictionary = {
     fieldReserve: "Reserva",
     fieldGasBudget: "Orçamento de gas",
     deposit: "Depositar",
+    depositTokenLabel: "Depositar em",
+    insufficientBalanceMsg: "Saldo insuficiente de {{symbol}} — você precisa de {{total}} {{symbol}} e sua carteira tem {{balance}} {{symbol}}.",
+    quoteLoadingMsg: "Cotando o swap em tempo real…",
+    quoteErrorMsg: "Não foi possível cotar o swap de {{symbol}} agora — tente novamente em instantes.",
 
     reconfigureLabelPre: "Reconfigurar ",
     reconfigureLabelHighlight: "agente",

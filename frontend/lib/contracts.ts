@@ -175,6 +175,43 @@ export const swapRouter02Abi = [
   },
 ] as const;
 
+// Uniswap V3 QuoterV2 — client-side only, for pre-deposit third-party-token
+// quotes (see lib/useThirdPartyDepositQuote.ts). Safe ONLY where
+// ChainDef.quoterV2Address is actually set (Arbitrum today) — Uniswap's real
+// Quoter reverts on Celo because its pools weren't deployed with the
+// canonical init-code hash the Quoter's offline CREATE2 lookup expects (see
+// swapRouter02Abi's own docstring above on why the KEEPER avoids the real
+// Quoter entirely). quoteExactInputSingle is technically non-view on-chain
+// (it deliberately reverts internally to extract a gas estimate) but is
+// always called via eth_call/readContract, exactly like swapRouter02Abi's
+// own (marked payable) exactInputSingle already is in this file.
+export const quoterV2Abi = [
+  {
+    type: "function",
+    name: "quoteExactInputSingle",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "amountIn", type: "uint256" },
+          { name: "fee", type: "uint24" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
+    ],
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
+] as const;
+
 // Uniswap V3 NonfungiblePositionManager — just the two views the vault detail
 // page needs: full position data, and the on-chain-generated NFT art (tokenURI
 // returns a base64 JSON whose `image` is a base64 SVG rendered by the contract).

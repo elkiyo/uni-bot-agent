@@ -214,6 +214,8 @@ const zh: Dictionary = {
 
     insufficientBalanceMsg:
       "你还差 {{missing}} {{symbol}}——当前持有 {{balance}} {{symbol}}，而该金库需要 {{total}} {{symbol}}（含一次性创建费 {{fee}} {{symbol}}）。",
+    quoteLoadingMsg: "正在实时获取兑换报价……",
+    quoteErrorMsg: "暂时无法获取 {{symbol}} 的兑换报价——请稍后再试。",
     signEach: "请在钱包中依次签署每笔交易——共计 {{count}} 笔",
 
     summaryTitle: "摘要",
@@ -462,6 +464,10 @@ const zh: Dictionary = {
     fieldReserve: "储备金",
     fieldGasBudget: "Gas 预算",
     deposit: "存款",
+    depositTokenLabel: "存入代币",
+    insufficientBalanceMsg: "{{symbol}} 余额不足——需要 {{total}} {{symbol}}，你的钱包只有 {{balance}} {{symbol}}。",
+    quoteLoadingMsg: "正在实时获取兑换报价……",
+    quoteErrorMsg: "暂时无法获取 {{symbol}} 的兑换报价——请稍后再试。",
 
     reconfigureLabelPre: "重新配置",
     reconfigureLabelHighlight: "智能体",

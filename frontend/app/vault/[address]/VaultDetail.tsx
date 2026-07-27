@@ -14,6 +14,9 @@ import { parseUnits, formatUnits } from "viem";
 import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { Header } from "../../components/Header";
 import { AlertModal } from "../../components/AlertModal";
+import { DepositTokenSelector, type DepositTokenOption } from "../../components/DepositTokenSelector";
+import { useMultiTokenBalances } from "@/lib/useMultiTokenBalances";
+import { useThirdPartyDepositQuote } from "@/lib/useThirdPartyDepositQuote";
 import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
@@ -317,6 +320,73 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [depInvestable, setDepInvestable] = useState("0");
   const [depReserve, setDepReserve] = useState("0");
   const [depGasReserve, setDepGasReserve] = useState("0");
+
+  // Which stablecoin the owner hands over for this top-up deposit — same
+  // capability/gating as create/page.tsx's selector (RangeVaultArbCompound's
+  // depositToken(), Arbitrum compound vaults only, see chains.ts's
+  // compoundDepositTokens docstring). Reset to the native stable during
+  // render whenever this vault stops being compound (same documented-React
+  // reset pattern create/page.tsx already uses).
+  const [selectedDepositToken, setSelectedDepositToken] = useState<`0x${string}`>(stableToken);
+  const [prevIsCompoundForToken, setPrevIsCompoundForToken] = useState(isCompound);
+  if (prevIsCompoundForToken !== isCompound) {
+    setPrevIsCompoundForToken(isCompound);
+    if (!isCompound) setSelectedDepositToken(stableToken);
+  }
+  const depositTokenOptions: DepositTokenOption[] = [
+    { address: stableToken, decimals: stableDecimals, displaySymbol: stableSymbol },
+    ...(isCompound ? (chain.compoundDepositTokens ?? []) : []),
+  ];
+  const isNativeDepositToken = selectedDepositToken.toLowerCase() === stableToken.toLowerCase();
+  const selectedDepositTokenMeta =
+    depositTokenOptions.find((tk) => tk.address.toLowerCase() === selectedDepositToken.toLowerCase()) ??
+    depositTokenOptions[0];
+  // The connected wallet's own balance of this vault's native stable — no
+  // pre-existing read for this in the file (unlike create/page.tsx, this
+  // page never validated deposit-more against wallet balance until now).
+  const { data: walletStableBalanceRaw } = useReadContract({
+    address: stableToken,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: connected ? [connected] : undefined,
+    chainId: chain.id,
+    query: { enabled: Boolean(connected), refetchInterval: 60_000 },
+  });
+  const walletStableBalanceUsd =
+    walletStableBalanceRaw !== undefined ? Number(formatUnits(walletStableBalanceRaw as bigint, stableDecimals)) : undefined;
+  const { balances: extraDepositTokenBalances } = useMultiTokenBalances(
+    chain,
+    isCompound ? (chain.compoundDepositTokens ?? []) : [],
+    connected,
+  );
+  const depositTokenBalancesUsd: (number | undefined)[] = [
+    walletStableBalanceUsd,
+    ...extraDepositTokenBalances.map((b) => b.formatted),
+  ];
+  const selectedDepositTokenBalanceUsd = isNativeDepositToken
+    ? walletStableBalanceUsd
+    : extraDepositTokenBalances.find((b) => b.address.toLowerCase() === selectedDepositToken.toLowerCase())?.formatted;
+
+  // Live pre-deposit quote for a third-party token — see
+  // useThirdPartyDepositQuote's own docstring on why this (not the raw typed
+  // amounts) has to drive the actual reserve/investable/gasReserve split.
+  const depositTotalTypedInSelectedToken =
+    (parseFloat(depInvestable) || 0) + (parseFloat(depReserve) || 0) + (chain.supportsGasReserve ? parseFloat(depGasReserve) || 0 : 0);
+  const thirdPartyDepositAmountInRaw = isNativeDepositToken
+    ? 0n
+    : parseUnits(depositTotalTypedInSelectedToken.toFixed(Math.min(selectedDepositTokenMeta.decimals, 18)), selectedDepositTokenMeta.decimals);
+  const depositQuote = useThirdPartyDepositQuote(
+    chain,
+    isNativeDepositToken
+      ? undefined
+      : (chain.compoundDepositTokens ?? []).find((tk) => tk.address.toLowerCase() === selectedDepositToken.toLowerCase()),
+    thirdPartyDepositAmountInRaw,
+    30n,
+  );
+  const depositInsufficientBalance =
+    depositTotalTypedInSelectedToken > 0 &&
+    selectedDepositTokenBalanceUsd !== undefined &&
+    depositTotalTypedInSelectedToken > selectedDepositTokenBalanceUsd;
   const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
   const [cfgReinjection, setCfgReinjection] = useState("");
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
@@ -362,18 +432,47 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleDepositMore() {
-    const investable = parseUnits(depInvestable || "0", stableDecimals);
-    const reserve = parseUnits(depReserve || "0", stableDecimals);
-    const gasReserve = chain.supportsGasReserve ? parseUnits(depGasReserve || "0", stableDecimals) : 0n;
+    // A third-party token needs its live quote resolved first — see
+    // useThirdPartyDepositQuote's own docstring on why the raw typed amounts
+    // can never be trusted directly for the ledger split below.
+    if (!isNativeDepositToken && (depositQuote.isLoading || depositQuote.isError || depositQuote.expectedStableOut === 0n)) {
+      setError(t("vaultDetail.quoteErrorMsg", { symbol: selectedDepositTokenMeta.displaySymbol }));
+      return;
+    }
+
+    const tokenInDecimals = selectedDepositTokenMeta.decimals;
+    const rawInvestable = parseUnits(depInvestable || "0", tokenInDecimals);
+    const rawReserve = parseUnits(depReserve || "0", tokenInDecimals);
+    const rawGasReserve = chain.supportsGasReserve ? parseUnits(depGasReserve || "0", tokenInDecimals) : 0n;
+    const rawTotal = rawInvestable + rawReserve + rawGasReserve;
+    if (rawTotal === 0n) return;
+
+    let investable: bigint;
+    let reserve: bigint;
+    let gasReserve: bigint;
+    if (isNativeDepositToken) {
+      investable = rawInvestable;
+      reserve = rawReserve;
+      gasReserve = rawGasReserve;
+    } else {
+      // Same bigint-ratio split as create/page.tsx's handleCreate — the
+      // tokenIn-side decimals cancel out since numerator/denominator are
+      // both in tokenIn's own raw units. gasReserve absorbs the rounding
+      // remainder so the three always sum to EXACTLY the quoted amount.
+      const expected = depositQuote.expectedStableOut;
+      investable = rawTotal > 0n ? (expected * rawInvestable) / rawTotal : 0n;
+      reserve = rawTotal > 0n ? (expected * rawReserve) / rawTotal : 0n;
+      gasReserve = expected - investable - reserve;
+    }
     const total = investable + reserve + gasReserve;
-    if (total === 0n) return;
 
     // Same check RangeVault.deposit() itself makes (reserveAmount +
     // investableAmount vs PlatformConfig.maxDepositUsd, fee excluded, on top
     // of whatever's already committed) — catch it here so the wallet never
     // even pops up for a deposit that's certain to revert on-chain.
     // Confirmed in production 2026-07-17: a user hit DepositExceedsPlatformCap
-    // with no explanation, just a raw revert.
+    // with no explanation, just a raw revert. Uses the FINAL (quoted, when
+    // applicable) amounts, never the raw typed third-party-token numbers.
     const currentTotal = ((investableUsdt as bigint) ?? 0n) + ((reserveBalance as bigint) ?? 0n) + gasReserveBalance;
     if (maxDepositUsd > 0n && currentTotal + total > maxDepositUsd) {
       const room = maxDepositUsd > currentTotal ? maxDepositUsd - currentTotal : 0n;
@@ -388,15 +487,19 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       return;
     }
 
-    // If this vault never had a successful deposit() yet, this call IS the
-    // first one — deposit() pulls PlatformConfig's one-time creationFeeUsdt
-    // on top, so the approval has to cover it too (see RangeVault.sol).
+    // Native stable: approve covers total + the one-time creation fee (if
+    // this vault never had a successful deposit() yet, this call IS the
+    // first one — see RangeVault.sol). Third-party token: approve only
+    // covers the swap input — depositToken() pays the fee out of the
+    // vault's POST-swap native-stable balance instead.
+    const approveTokenAddress = isNativeDepositToken ? stableToken : selectedDepositTokenMeta.address;
+    const approveAmount = isNativeDepositToken ? total + pendingCreationFee : rawTotal;
     await withTx(t("vaultDetail.txApproving"), () =>
       writeContractAsync({
-        address: stableToken,
+        address: approveTokenAddress,
         abi: erc20Abi,
         functionName: "approve",
-        args: [address, total + pendingCreationFee],
+        args: [address, approveAmount],
         chainId: chain.id,
       }),
     );
@@ -404,8 +507,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       writeContractAsync({
         address,
         abi: vaultAbi,
-        functionName: "deposit",
-        args: chain.supportsGasReserve ? [reserve, investable, gasReserve] : [reserve, investable],
+        functionName: isNativeDepositToken ? "deposit" : "depositToken",
+        args: isNativeDepositToken
+          ? chain.supportsGasReserve
+            ? [reserve, investable, gasReserve]
+            : [reserve, investable]
+          : [
+              selectedDepositTokenMeta.address,
+              rawTotal,
+              { token0ToToken1: false, amountIn: 0n, amountOutMinimum: 0n, fee: 0 },
+              depositQuote.feeTier,
+              depositQuote.thirdPartyAmountOutMinimum,
+              reserve,
+              investable,
+              gasReserve,
+            ],
         chainId: chain.id,
       }),
     );
@@ -998,16 +1114,50 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       })}
                     </p>
                   )}
+                  {isCompound && (
+                    <div className="mt-2">
+                      <span className="text-xs text-faint">{t("vaultDetail.depositTokenLabel")}</span>
+                      <DepositTokenSelector
+                        size="mini"
+                        tokens={depositTokenOptions}
+                        selected={selectedDepositToken}
+                        onSelect={setSelectedDepositToken}
+                        balances={depositTokenBalancesUsd}
+                      />
+                    </div>
+                  )}
                   <div className="mt-2 flex flex-wrap items-end gap-3">
                     <MiniField label={t("vaultDetail.fieldInvestable")} value={depInvestable} onChange={setDepInvestable} />
                     <MiniField label={t("vaultDetail.fieldReserve")} value={depReserve} onChange={setDepReserve} />
                     {chain.supportsGasReserve && (
                       <MiniField label={t("vaultDetail.fieldGasBudget")} value={depGasReserve} onChange={setDepGasReserve} />
                     )}
-                    <button onClick={handleDepositMore} disabled={Boolean(busy)} className="btn-primary !py-3">
+                    <button
+                      onClick={handleDepositMore}
+                      disabled={
+                        Boolean(busy) ||
+                        depositInsufficientBalance ||
+                        (!isNativeDepositToken &&
+                          depositTotalTypedInSelectedToken > 0 &&
+                          (depositQuote.isLoading || depositQuote.isError))
+                      }
+                      className="btn-primary !py-3"
+                    >
                       {t("vaultDetail.deposit")}
                     </button>
                   </div>
+                  {depositInsufficientBalance && (
+                    <p className="mt-2 text-sm text-negative">
+                      {t("vaultDetail.insufficientBalanceMsg", {
+                        symbol: selectedDepositTokenMeta.displaySymbol,
+                        total: depositTotalTypedInSelectedToken.toFixed(2),
+                        balance: (selectedDepositTokenBalanceUsd ?? 0).toFixed(2),
+                      })}
+                    </p>
+                  )}
+                  {!isNativeDepositToken && depositTotalTypedInSelectedToken > 0 && !depositInsufficientBalance && depositQuote.isLoading && (
+                    <p className="mt-2 text-sm text-faint">{t("vaultDetail.quoteLoadingMsg")}</p>
+                  )}
                 </div>
 
                 <div className="mt-8">

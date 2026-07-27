@@ -216,6 +216,8 @@ const es = {
 
     insufficientBalanceMsg:
       "Te faltan {{missing}} {{symbol}} — tenés {{balance}} {{symbol}} y este vault necesita {{total}} {{symbol}} (incluye {{fee}} {{symbol}} de fee de creación, una sola vez).",
+    quoteLoadingMsg: "Cotizando el swap en vivo…",
+    quoteErrorMsg: "No se pudo cotizar el swap de {{symbol}} ahora mismo — probá de nuevo en un momento.",
     signEach: "Firmá cada transacción en tu wallet — son {{count}} en total",
 
     summaryTitle: "Resumen",
@@ -464,6 +466,11 @@ const es = {
     fieldReserve: "Reserva",
     fieldGasBudget: "Presupuesto de gas",
     deposit: "Depositar",
+    depositTokenLabel: "Depositar en",
+    insufficientBalanceMsg:
+      "No tenés saldo suficiente de {{symbol}} — necesitás {{total}} {{symbol}} y tu wallet tiene {{balance}} {{symbol}}.",
+    quoteLoadingMsg: "Cotizando el swap en vivo…",
+    quoteErrorMsg: "No se pudo cotizar el swap de {{symbol}} ahora mismo — probá de nuevo en un momento.",
 
     reconfigureLabelPre: "Reconfigurar ",
     reconfigureLabelHighlight: "agente",

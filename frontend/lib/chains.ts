@@ -33,6 +33,22 @@ export interface SupportedPair {
   candidateSwapFeeTiers: readonly number[];
 }
 
+// An extra stablecoin a compound-vault OWNER may deposit as, on top of
+// chain.stableToken itself — swapped into chain.stableToken inside
+// RangeVaultArbCompound.sol's depositToken() before crediting the vault's
+// ledger. Only meaningful where depositToken() exists (Arbitrum compound
+// vaults today — see ChainDef.compoundDepositTokens). displaySymbol is
+// hardcoded rather than read from the token's own symbol() — Arbitrum's
+// USDT (0xFd08...Cbb9) now returns "USD₮0" on-chain after Tether's in-place
+// proxy upgrade to its omnichain standard, same address/liquidity as the
+// historical bridged USDT, but "USDT" is what users actually expect to see.
+export interface CompoundDepositToken {
+  address: `0x${string}`;
+  decimals: number;
+  displaySymbol: string;
+  candidateSwapFeeTiers: readonly number[];
+}
+
 export interface ChainDef {
   id: number;
   viemChain: Chain;
@@ -117,6 +133,19 @@ export interface ChainDef {
   compoundVaultAbi?: Abi;
   compoundFactoryAbi?: Abi;
   compoundFactoryDeployBlock?: bigint;
+  // Extra stablecoins a compound-vault owner may deposit as (see
+  // CompoundDepositToken's own docstring) — undefined on Celo, which has no
+  // depositToken()-equivalent at all. chain.stableToken itself is always the
+  // implicit default option and is never repeated in this array.
+  compoundDepositTokens?: CompoundDepositToken[];
+  // Uniswap's official QuoterV2 — canonical/correctly-deployed on Arbitrum
+  // (confirmed live 2026-07-27: a real quoteExactInputSingle call resolves
+  // correctly), unlike Celo where the real Quoter reverts because Celo's
+  // pools weren't deployed with the canonical init-code hash the Quoter's
+  // offline CREATE2 lookup expects (see lib/keeper/rebalancer.ts's own
+  // quoteExactInputSingle docstring on that). Only ever set where it's
+  // actually safe to call — undefined on Celo.
+  quoterV2Address?: `0x${string}`;
 }
 
 // Verified in autorange.md — cross-checked against Celopedia, CoinGecko, DefiLlama, and
@@ -218,6 +247,26 @@ const ARBITRUM: ChainDef = {
   // (tx 0x6e3b92463f0349e449516dde2441303f059dbdd8a051afc4476c9a6237e04238), reusing the
   // already-live PlatformConfig above — see DeployArbCompound.s.sol.
   compoundFactoryDeployBlock: 487963866n,
+  // Addresses/decimals verified live via cast call 2026-07-27 — do not
+  // change without re-verifying on-chain. Fee tier 100 (0.01%) is the
+  // deepest pool for both USDC/USDT and USDC/DAI today, but the actual tier
+  // used at deposit time is chosen dynamically (see useThirdPartyDepositQuote),
+  // not hardcoded — these are just the candidates to probe.
+  compoundDepositTokens: [
+    {
+      address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+      decimals: 6,
+      displaySymbol: "USDT",
+      candidateSwapFeeTiers: [100, 500, 3000, 10000],
+    },
+    {
+      address: "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1",
+      decimals: 18,
+      displaySymbol: "DAI",
+      candidateSwapFeeTiers: [100, 500, 3000, 10000],
+    },
+  ],
+  quoterV2Address: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
 };
 
 export const CHAINS: Record<number, ChainDef> = {

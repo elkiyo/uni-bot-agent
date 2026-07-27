@@ -218,6 +218,8 @@ const en: Dictionary = {
 
     insufficientBalanceMsg:
       "You're short {{missing}} {{symbol}} — you have {{balance}} {{symbol}} and this vault needs {{total}} {{symbol}} (including {{fee}} {{symbol}} creation fee, one-time).",
+    quoteLoadingMsg: "Getting a live swap quote…",
+    quoteErrorMsg: "Couldn't get a quote for {{symbol}} right now — try again in a moment.",
     signEach: "Sign each transaction in your wallet — there are {{count}} in total",
 
     summaryTitle: "Summary",
@@ -466,6 +468,10 @@ const en: Dictionary = {
     fieldReserve: "Reserve",
     fieldGasBudget: "Gas budget",
     deposit: "Deposit",
+    depositTokenLabel: "Deposit in",
+    insufficientBalanceMsg: "Not enough {{symbol}} — you need {{total}} {{symbol}} and your wallet has {{balance}} {{symbol}}.",
+    quoteLoadingMsg: "Getting a live swap quote…",
+    quoteErrorMsg: "Couldn't get a quote for {{symbol}} right now — try again in a moment.",
 
     reconfigureLabelPre: "Reconfigure ",
     reconfigureLabelHighlight: "agent",
