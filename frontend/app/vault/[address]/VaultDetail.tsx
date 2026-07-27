@@ -353,7 +353,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       !tickLowerData ||
       !tickUpperData
     ) {
-      return positionTokensOwed;
+      // Still loading the second round-trip (feeGrowthReads) — undefined
+      // here reads as "—"/disabled in the UI rather than a misleading "0",
+      // which the raw (possibly genuinely stale) tokensOwed0/1 would show if
+      // returned instead. Confirmed live 2026-07-27: opening "Cobrar
+      // comisiones" in the brief window before this resolves showed a false
+      // 0.000000/0.00 even though real accrued fees existed.
+      return undefined;
     }
     const live = uncollectedFeesRaw({
       liquidity: positionLiquidity,
@@ -1500,29 +1506,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 belowUniswapLink={compoundToggle}
               />
             )}
-
-            {/* TEMP DIAG2 — remove before final commit */}
-            <pre id="diagtmp2" style={{ color: "#0f0", fontSize: 10, whiteSpace: "pre-wrap" }}>
-              {JSON.stringify(
-                {
-                  now: Date.now(),
-                  isOwner,
-                  poolAddress,
-                  currentTick,
-                  positionTicks,
-                  feeGrowthReadsStatus: feeGrowthReads?.map((r) => ({ status: r.status, error: r.error ? String(r.error).slice(0, 200) : undefined })),
-                  positionTokensOwed: positionTokensOwed
-                    ? { t0: positionTokensOwed.tokensOwed0.toString(), t1: positionTokensOwed.tokensOwed1.toString() }
-                    : null,
-                  positionTokensOwedLive: positionTokensOwedLive
-                    ? { t0: positionTokensOwedLive.tokensOwed0.toString(), t1: positionTokensOwedLive.tokensOwed1.toString() }
-                    : null,
-                  collectPreview,
-                },
-                null,
-                2,
-              )}
-            </pre>
 
             {/* Uniswap-style liquidity actions, right under the position's own
                 range card (PositionNFT above already shows "Rango de precio")
