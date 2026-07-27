@@ -39,10 +39,22 @@ export function useVaultPairInfo(address: `0x${string}` | undefined, chain: Chai
     queryFn: async (): Promise<VaultPairInfo> => {
       if (!address || !publicClient) throw new Error("useVaultPairInfo: missing address or publicClient");
 
+      // stableIsToken0() only exists on the Arbitrum vault family — Celo's
+      // original RangeVault.sol hardcodes token0 as the stable leg and has
+      // no such getter (see lib/keeper/pairInfo.ts's identical fix,
+      // confirmed live 2026-07-27: calling this unconditionally threw for
+      // every Celo vault, silently falling back to chain.stableIsToken0 in
+      // both callers — harmless only by coincidence today, since Celo has
+      // just one real pair so the fallback equals the true value).
+      const supportsStableIsToken0 = (vaultAbi as readonly { type: string; name?: string }[]).some(
+        (item) => item.type === "function" && item.name === "stableIsToken0",
+      );
       const [token0, token1, stableIsToken0] = await Promise.all([
         publicClient.readContract({ address, abi: vaultAbi, functionName: "token0" }) as Promise<`0x${string}`>,
         publicClient.readContract({ address, abi: vaultAbi, functionName: "token1" }) as Promise<`0x${string}`>,
-        publicClient.readContract({ address, abi: vaultAbi, functionName: "stableIsToken0" }) as Promise<boolean>,
+        supportsStableIsToken0
+          ? (publicClient.readContract({ address, abi: vaultAbi, functionName: "stableIsToken0" }) as Promise<boolean>)
+          : Promise.resolve(true),
       ]);
       const stableToken = stableIsToken0 ? token0 : token1;
       const volatileToken = stableIsToken0 ? token1 : token0;

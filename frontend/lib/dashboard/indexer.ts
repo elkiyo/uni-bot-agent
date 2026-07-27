@@ -190,9 +190,12 @@ async function indexVaultDirectory(
 }
 
 // Minimal fragment shared with lib/keeper/pairInfo.ts's own resolution —
-// stableIsToken0() exists on both the standard and compound vault ABIs
-// (identical signature), so this narrow, hand-written fragment works for
-// either without needing to import the full ABI just for one function.
+// stableIsToken0() exists on the Arbitrum vault family (standard and
+// compound alike) but NOT on Celo's original RangeVault.sol, which hardcodes
+// token0 as the stable leg by construction (see pairInfo.ts's own fix for
+// the identical bug on the keeper side, confirmed live 2026-07-27). This
+// narrow, hand-written fragment works for either ABI that DOES have it,
+// without needing to import the full ABI just for one function.
 const stableIsToken0Abi = [
   { type: "function", name: "stableIsToken0", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
 ] as const;
@@ -202,8 +205,13 @@ const stableIsToken0Abi = [
  * until AFTER this resolves), so this takes pool explicitly rather than
  * looking it up. */
 async function readIndexedVaultPair(chain: ChainRuntime, vaultAddress: Address, pool?: Address): Promise<IndexedVaultPair> {
+  const supportsStableIsToken0 = (chain.vaultAbi as readonly { type: string; name?: string }[]).some(
+    (item) => item.type === "function" && item.name === "stableIsToken0",
+  );
   const [stableIsToken0, token0, token1, resolvedPool] = await Promise.all([
-    chain.publicClient.readContract({ address: vaultAddress, abi: stableIsToken0Abi, functionName: "stableIsToken0" }),
+    supportsStableIsToken0
+      ? chain.publicClient.readContract({ address: vaultAddress, abi: stableIsToken0Abi, functionName: "stableIsToken0" })
+      : Promise.resolve(true),
     chain.publicClient.readContract({ address: vaultAddress, abi: chain.vaultAbi, functionName: "token0" }) as Promise<Address>,
     chain.publicClient.readContract({ address: vaultAddress, abi: chain.vaultAbi, functionName: "token1" }) as Promise<Address>,
     pool
