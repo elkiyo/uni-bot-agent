@@ -285,7 +285,7 @@ const es = {
     viewExplorer: "Ver NFT en el explorer →",
     viewOnUniswap: "Ver posición en Uniswap →",
     position: "Posición",
-    feesEarned: "Comisiones ganadas",
+    feesEarned: "Comisiones sin reclamar (posición actual)",
     feesCaption:
       "Comisiones acumuladas en tiempo real, calculadas igual que lo hace Uniswap — se cobran recién cuando el vault rebalancea o se retira.",
     priceRange: "Rango de precio",
