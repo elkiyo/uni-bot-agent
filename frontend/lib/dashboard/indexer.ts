@@ -205,13 +205,17 @@ const stableIsToken0Abi = [
  * until AFTER this resolves), so this takes pool explicitly rather than
  * looking it up. */
 async function readIndexedVaultPair(chain: ChainRuntime, vaultAddress: Address, pool?: Address): Promise<IndexedVaultPair> {
-  const supportsStableIsToken0 = (chain.vaultAbi as readonly { type: string; name?: string }[]).some(
-    (item) => item.type === "function" && item.name === "stableIsToken0",
-  );
+  // .catch() (not a static check against chain.vaultAbi) because an
+  // EIP-1167 clone's real behavior comes from whatever implementation it was
+  // pointed at when created — an Arbitrum vault cloned before this getter
+  // was added to the implementation genuinely reverts on this call too, even
+  // though today's ABI lists it (confirmed live 2026-07-27, vault
+  // 0xcb7b1964...e00c22). Falls back to this chain's own known default
+  // rather than hardcoding `true`, since that default differs per chain.
   const [stableIsToken0, token0, token1, resolvedPool] = await Promise.all([
-    supportsStableIsToken0
-      ? chain.publicClient.readContract({ address: vaultAddress, abi: stableIsToken0Abi, functionName: "stableIsToken0" })
-      : Promise.resolve(true),
+    chain.publicClient
+      .readContract({ address: vaultAddress, abi: stableIsToken0Abi, functionName: "stableIsToken0" })
+      .catch(() => chain.stableIsToken0),
     chain.publicClient.readContract({ address: vaultAddress, abi: chain.vaultAbi, functionName: "token0" }) as Promise<Address>,
     chain.publicClient.readContract({ address: vaultAddress, abi: chain.vaultAbi, functionName: "token1" }) as Promise<Address>,
     pool

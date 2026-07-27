@@ -157,7 +157,15 @@ async function hasEnoughOperatorGas(
   // confirmed live 2026-07-27: every Celo vault silently unable to
   // rebalance since this check was introduced, the crash caught by tick.ts's
   // per-vault try/catch and only ever console.log'd.
-  const supportsGasReserve = abi.some((item) => item.type === "function" && item.name === "gasReserveBalance");
+  //
+  // `.catch()` on the read itself (not a static abi.some() check) because an
+  // EIP-1167 clone's real behavior comes from whatever implementation it was
+  // pointed at when created — an Arbitrum vault cloned before this ledger
+  // was added to the implementation genuinely reverts on this call too, even
+  // though today's RangeVaultArb.json lists it (confirmed live 2026-07-27,
+  // vault 0xcb7b1964...e00c22: an old, never-funded vault predating both
+  // gasReserveBalance() and stableIsToken0()). Same fallback pattern already
+  // used just below for recenterMarginBps/exitTopCeilingMarginBps.
   const [gasPrice, balance, mainGas, gasReserveBalance, pool] = await Promise.all([
     chain.publicClient.getGasPrice(),
     chain.publicClient.getBalance({ address: operatorAccount.address }),
@@ -168,7 +176,7 @@ async function hasEnoughOperatorGas(
       args: mainCall.args as unknown[],
       account: operatorAccount.address,
     }),
-    supportsGasReserve ? (vault.read.gasReserveBalance() as Promise<bigint>) : Promise.resolve(undefined),
+    (vault.read.gasReserveBalance() as Promise<bigint>).catch(() => undefined),
     vault.read.pool() as Promise<Address>,
   ]);
 
@@ -198,7 +206,7 @@ async function hasEnoughOperatorGas(
   // sqrtPriceX96 fixed-point math) — this only decides whether to raise an
   // alert, the contract's own math stays authoritative for what actually
   // gets paid.
-  if (supportsGasReserve && gasReserveBalance !== undefined) {
+  if (gasReserveBalance !== undefined) {
     try {
       const tick = await currentTick(chain, pool);
       const ethPriceUsd = ethPriceFromTick(tick, chain.stableIsToken0);

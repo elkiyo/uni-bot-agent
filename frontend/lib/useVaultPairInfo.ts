@@ -41,20 +41,22 @@ export function useVaultPairInfo(address: `0x${string}` | undefined, chain: Chai
 
       // stableIsToken0() only exists on the Arbitrum vault family — Celo's
       // original RangeVault.sol hardcodes token0 as the stable leg and has
-      // no such getter (see lib/keeper/pairInfo.ts's identical fix,
-      // confirmed live 2026-07-27: calling this unconditionally threw for
-      // every Celo vault, silently falling back to chain.stableIsToken0 in
-      // both callers — harmless only by coincidence today, since Celo has
-      // just one real pair so the fallback equals the true value).
-      const supportsStableIsToken0 = (vaultAbi as readonly { type: string; name?: string }[]).some(
-        (item) => item.type === "function" && item.name === "stableIsToken0",
-      );
+      // no such getter at all (see lib/keeper/pairInfo.ts's identical fix).
+      // A plain .catch() (not a static check against vaultAbi) because an
+      // EIP-1167 clone's real behavior comes from whatever implementation it
+      // was pointed at when created, not from today's ABI file — an
+      // Arbitrum vault cloned before this getter was added to the
+      // implementation genuinely reverts on this call too, even though the
+      // current ABI lists it (confirmed live 2026-07-27, vault
+      // 0xcb7b1964...e00c22). Falls back to this chain's own known default
+      // rather than hardcoding `true`, since that default differs per chain
+      // (Celo: true; Arbitrum: false).
       const [token0, token1, stableIsToken0] = await Promise.all([
         publicClient.readContract({ address, abi: vaultAbi, functionName: "token0" }) as Promise<`0x${string}`>,
         publicClient.readContract({ address, abi: vaultAbi, functionName: "token1" }) as Promise<`0x${string}`>,
-        supportsStableIsToken0
-          ? (publicClient.readContract({ address, abi: vaultAbi, functionName: "stableIsToken0" }) as Promise<boolean>)
-          : Promise.resolve(true),
+        (publicClient.readContract({ address, abi: vaultAbi, functionName: "stableIsToken0" }) as Promise<boolean>).catch(
+          () => chain.stableIsToken0,
+        ),
       ]);
       const stableToken = stableIsToken0 ? token0 : token1;
       const volatileToken = stableIsToken0 ? token1 : token0;

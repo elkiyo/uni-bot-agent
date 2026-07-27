@@ -117,8 +117,25 @@ export async function readVaultPairLive(chain: ChainRuntime, vaultAddress: Addre
   // while the keeper successfully processed every other vault around it,
   // because this uncaught crash inside checkVault() only ever hit
   // console.log, never surfacing anywhere visible.
-  const supportsStableIsToken0 = abi.some((item) => item.type === "function" && item.name === "stableIsToken0");
-  const stableIsToken0 = supportsStableIsToken0 ? ((await vault.read.stableIsToken0()) as boolean) : true;
+  //
+  // A plain try/catch (not just checking whether the CURRENT abi.json
+  // declares the function) because an EIP-1167 clone's actual behavior comes
+  // from whatever implementation it was pointed at when created, not from
+  // today's ABI file — an Arbitrum vault cloned before stableIsToken0() was
+  // added to the implementation genuinely reverts on this call too, even
+  // though the current RangeVaultArb.json lists it (confirmed live
+  // 2026-07-27, vault 0xcb7b1964...e00c22: token0()/token1() work, but
+  // stableIsToken0()/gasReserveBalance() both revert — an old,
+  // never-funded vault from before either feature existed). Falls back to
+  // this CHAIN's own known default rather than hardcoding `true`, since
+  // that default differs per chain (Celo: true; Arbitrum: false).
+  let stableIsToken0 = chain.stableIsToken0;
+  try {
+    stableIsToken0 = (await vault.read.stableIsToken0()) as boolean;
+  } catch {
+    // Function doesn't exist on this vault's actual implementation — use
+    // the chain default computed above.
+  }
 
   const stableToken = stableIsToken0 ? token0 : token1;
   const volatileToken = stableIsToken0 ? token1 : token0;
