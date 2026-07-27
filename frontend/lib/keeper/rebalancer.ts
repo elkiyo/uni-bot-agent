@@ -148,6 +148,16 @@ async function hasEnoughOperatorGas(
 ): Promise<boolean> {
   if (!operatorAccount) return false;
   const vault = vaultContract(chain, vaultAddress, abi);
+  // gasReserveBalance() only exists on the Arbitrum vault family — Celo's
+  // RangeVault.sol has no such ledger at all (see this vault's own class
+  // docstring and CLAUDE.md's "Arbitrum ... con soporte de reserva de gas
+  // que Celo no tiene"). Calling it unconditionally here threw
+  // AbiFunctionNotFoundError for EVERY Celo vault's every operator action
+  // (rebalance/init/claimFees/sweep, all funnel through this one gate) —
+  // confirmed live 2026-07-27: every Celo vault silently unable to
+  // rebalance since this check was introduced, the crash caught by tick.ts's
+  // per-vault try/catch and only ever console.log'd.
+  const supportsGasReserve = abi.some((item) => item.type === "function" && item.name === "gasReserveBalance");
   const [gasPrice, balance, mainGas, gasReserveBalance, pool] = await Promise.all([
     chain.publicClient.getGasPrice(),
     chain.publicClient.getBalance({ address: operatorAccount.address }),
@@ -158,7 +168,7 @@ async function hasEnoughOperatorGas(
       args: mainCall.args as unknown[],
       account: operatorAccount.address,
     }),
-    vault.read.gasReserveBalance() as Promise<bigint>,
+    supportsGasReserve ? (vault.read.gasReserveBalance() as Promise<bigint>) : Promise.resolve(undefined),
     vault.read.pool() as Promise<Address>,
   ]);
 
@@ -188,20 +198,22 @@ async function hasEnoughOperatorGas(
   // sqrtPriceX96 fixed-point math) — this only decides whether to raise an
   // alert, the contract's own math stays authoritative for what actually
   // gets paid.
-  try {
-    const tick = await currentTick(chain, pool);
-    const ethPriceUsd = ethPriceFromTick(tick, chain.stableIsToken0);
-    // 1e-18 here is the chain's NATIVE gas token's decimals (an EVM-wide
-    // invariant, always 18, unrelated to this vault's own pair) — not
-    // chain.volatileDecimals, even though the two happen to coincide on
-    // every chain this platform runs on today (ETH is both the gas token
-    // and the volatile leg on Arbitrum; ditto CELO/WETH-adjacent on Celo's
-    // own _nativeWeiToStableRaw assumption, unchanged here).
-    const estimatedCostUsd = Number(estimatedCost) * 1e-18 * ethPriceUsd;
-    const gasReserveUsd = Number(gasReserveBalance) * 10 ** -chain.stableDecimals;
-    await new Store(chain.id).setGasReserveDepleted(vaultAddress, gasReserveUsd < estimatedCostUsd);
-  } catch (err) {
-    logEvent({ level: "warn", vault: vaultAddress, msg: "gas-reserve depletion check failed, ignoring", err: String(err) });
+  if (supportsGasReserve && gasReserveBalance !== undefined) {
+    try {
+      const tick = await currentTick(chain, pool);
+      const ethPriceUsd = ethPriceFromTick(tick, chain.stableIsToken0);
+      // 1e-18 here is the chain's NATIVE gas token's decimals (an EVM-wide
+      // invariant, always 18, unrelated to this vault's own pair) — not
+      // chain.volatileDecimals, even though the two happen to coincide on
+      // every chain this platform runs on today (ETH is both the gas token
+      // and the volatile leg on Arbitrum; ditto CELO/WETH-adjacent on Celo's
+      // own _nativeWeiToStableRaw assumption, unchanged here).
+      const estimatedCostUsd = Number(estimatedCost) * 1e-18 * ethPriceUsd;
+      const gasReserveUsd = Number(gasReserveBalance) * 10 ** -chain.stableDecimals;
+      await new Store(chain.id).setGasReserveDepleted(vaultAddress, gasReserveUsd < estimatedCostUsd);
+    } catch (err) {
+      logEvent({ level: "warn", vault: vaultAddress, msg: "gas-reserve depletion check failed, ignoring", err: String(err) });
+    }
   }
 
   return true;
