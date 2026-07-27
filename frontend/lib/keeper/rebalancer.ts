@@ -1170,7 +1170,7 @@ async function runRebalanceViaUniLab(
   // 2026-07-16, see note above).
   let resp: RcRlpRebalanceResponse | undefined;
   try {
-    resp = await rcRlpRebalanceViaX402(record.uniLabApiKey, baseParams, vaultAddress);
+    resp = await rcRlpRebalanceViaX402(record.uniLabApiKey, baseParams, vaultAddress, chain.id);
   } catch (err) {
     logEvent({
       level: "warn",

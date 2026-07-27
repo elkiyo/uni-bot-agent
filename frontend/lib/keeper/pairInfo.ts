@@ -103,11 +103,22 @@ export function applyVaultPair(chain: ChainRuntime, pair: VaultPairInfo): ChainR
  * at registration time, before a VaultRecord even exists to check. */
 export async function readVaultPairLive(chain: ChainRuntime, vaultAddress: Address, abi: Abi): Promise<VaultPairInfo> {
   const vault = vaultContract(chain, vaultAddress, abi);
-  const [token0, token1, stableIsToken0] = (await Promise.all([
-    vault.read.token0(),
-    vault.read.token1(),
-    vault.read.stableIsToken0(),
-  ])) as [Address, Address, boolean];
+  const [token0, token1] = (await Promise.all([vault.read.token0(), vault.read.token1()])) as [Address, Address];
+
+  // Only the Arbitrum family (RangeVaultArb.sol/RangeVaultArbCompound.sol)
+  // added stableIsToken0() to support arbitrary token0/token1 ordering for
+  // new pairs — Celo's original RangeVault.sol has no such getter at all
+  // (confirmed: zero occurrences in lib/abi/RangeVault.json) because it
+  // hardcodes token0 as the stable leg by construction (see its own class
+  // docstring: "token0 IS the dollar leg of the pool"). Calling
+  // stableIsToken0() unconditionally here threw AbiFunctionNotFoundError for
+  // every Celo vault, forever, whenever this fallback ran — confirmed live
+  // 2026-07-27, vault 0x00a393AB...78F52b: stuck out-of-range for over a day
+  // while the keeper successfully processed every other vault around it,
+  // because this uncaught crash inside checkVault() only ever hit
+  // console.log, never surfacing anywhere visible.
+  const supportsStableIsToken0 = abi.some((item) => item.type === "function" && item.name === "stableIsToken0");
+  const stableIsToken0 = supportsStableIsToken0 ? ((await vault.read.stableIsToken0()) as boolean) : true;
 
   const stableToken = stableIsToken0 ? token0 : token1;
   const volatileToken = stableIsToken0 ? token1 : token0;

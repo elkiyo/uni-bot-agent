@@ -79,6 +79,7 @@ export async function rcRlpRebalanceViaX402(
   apiKey: string,
   params: RcRlpRebalanceParams,
   vaultAddress: string,
+  vaultChainId: number,
 ): Promise<RcRlpRebalanceResponse> {
   const fetchImpl = getPayFetch();
   if (!fetchImpl) throw new Error("no operator account configured for x402 payment");
@@ -109,6 +110,7 @@ export async function rcRlpRebalanceViaX402(
 
     await logUniLabCall({
       vault: vaultAddress,
+      chainId: vaultChainId,
       endpoint: `${endpoint} (x402)`,
       request: body,
       httpStatus: res.status,
