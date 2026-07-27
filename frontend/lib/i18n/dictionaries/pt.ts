@@ -425,6 +425,9 @@ const pt: Dictionary = {
       "É descontado a cada rebalanceamento — se chegar a 0, o agente continua operando, mas não reembolsa mais nada ao operador",
     statRebalances: "Rebalanceamentos",
     statFees: "Comissões geradas",
+    statFeesClaimed: "Comissões resgatadas",
+    statFeesReinjected: "Comissões reinjetadas",
+    statFeesReinjectedHint: "{{count}} reinjeções",
 
     targetRange: "Faixa-alvo",
     invertedTicksWarning: "Ticks invertidos on-chain — use \"Reconfigurar agente\" para corrigir",

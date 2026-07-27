@@ -227,8 +227,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     compoundData?.map((d) => d.result) ?? [];
   const autoCompoundFees = Boolean(autoCompoundFeesRaw);
 
-  const { data: feesSummary } = useVaultFeesSummary(address, chain);
-  const { data: depositSummary } = useVaultDepositSummary(address, chain);
+  const { data: feesSummary } = useVaultFeesSummary(address, chain, vaultAbi);
+  const { data: depositSummary } = useVaultDepositSummary(address, chain, vaultAbi);
   const { data: createdAt } = useVaultCreatedAt(address, chain);
   const { data: slot0 } = useReadContract({
     address: poolAddress,
@@ -242,12 +242,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const feesUsdtStr = formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals);
   const feesWethRaw = feesSummary?.totalWeth ?? 0n;
   const feesWethStr = Number(formatUnits(feesWethRaw, volatileDecimals)).toFixed(6);
-  const feesUsdTotal =
+  // Claimed = LpFeesPaidToOwner + FeesCollected, what actually landed in the
+  // owner's wallet. Reinjected = FeesReinjected.netFeeUsd (compound-only,
+  // always 0 for a standard vault) — already USD-denominated by the
+  // contract itself, no per-leg conversion needed. "Generadas" (feesUsdTotal
+  // below) is the TRUE total ever earned — claimed + reinjected — not just
+  // what got paid out, so it (and the rentabilidad stat derived from it)
+  // doesn't understate a compounding vault's real return.
+  const claimedUsd =
     currentTick !== undefined
       ? Number(feesUsdtStr) +
         Number(formatUnits(feesWethRaw, volatileDecimals)) *
           ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
       : undefined;
+  const reinjectedUsd = Number(formatUnits(feesSummary?.reinjectedUsdRaw ?? 0n, stableDecimals));
+  const feesUsdTotal = claimedUsd !== undefined ? claimedUsd + reinjectedUsd : undefined;
 
   // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
   // vault — mismo cálculo simple que la tarjeta en /vaults, no anualizado.
@@ -777,6 +786,26 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 hint2ClassName="mt-1 font-mono text-base font-bold text-accent"
                 accent
               />
+              <Stat
+                label={t("vaultDetail.statFeesClaimed")}
+                value={claimedUsd !== undefined ? `$${claimedUsd.toFixed(2)}` : `${feesUsdtStr} ${stableSymbol}`}
+                hint={
+                  feesWethRaw > 0n
+                    ? `${feesUsdtStr} ${stableSymbol} + ${feesWethStr} ${volatileSymbol}`
+                    : undefined
+                }
+              />
+              {isCompound && (
+                <Stat
+                  label={t("vaultDetail.statFeesReinjected")}
+                  value={`$${reinjectedUsd.toFixed(2)}`}
+                  hint={
+                    feesSummary?.reinjectionCount
+                      ? t("vaultDetail.statFeesReinjectedHint", { count: feesSummary.reinjectionCount })
+                      : undefined
+                  }
+                />
+              )}
             </div>
 
             {hasPosition && (
@@ -1243,8 +1272,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               </div>
             )}
 
-            <PositionHistory address={address} chain={chain} />
-            <ActivityFeed address={address} chain={chain} />
+            <PositionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
+            <ActivityFeed address={address} chain={chain} vaultAbi={vaultAbi} />
           </>
         )}
       </main>

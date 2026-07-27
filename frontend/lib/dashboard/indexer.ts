@@ -109,11 +109,22 @@ interface VaultCreatedArgs {
   fee: number;
 }
 
-async function indexVaultDirectory(chain: ChainRuntime, factoryAddress: Address): Promise<void> {
-  const key = `directory:${chain.id}`;
+async function indexVaultDirectory(
+  chain: ChainRuntime,
+  factoryAddress: Address,
+  kind: "standard" | "compound" = "standard",
+  factoryAbi: ChainRuntime["factoryAbi"] = chain.factoryAbi,
+): Promise<void> {
+  // Per-kind checkpoint/state key — same reasoning as the keeper's own
+  // discovery.ts: a chain with two factories scans each independently, so a
+  // slow/late-deployed compound factory never gets its fromBlock accidentally
+  // advanced past real events by the OTHER factory's scan finishing first.
+  const key = kind === "compound" ? `directory:${chain.id}:compound` : `directory:${chain.id}`;
   const latest = await chain.publicClient.getBlockNumber();
   let fromBlock = await getIndexerState(key);
-  if (fromBlock === 0n) fromBlock = chain.factoryDeployBlock;
+  if (fromBlock === 0n) {
+    fromBlock = kind === "compound" ? (chain.compoundFactoryDeployBlock ?? chain.factoryDeployBlock) : chain.factoryDeployBlock;
+  }
   if (fromBlock > latest) return;
   const toBlock = fromBlock + MAX_SCAN_BLOCKS - 1n > latest ? latest : fromBlock + MAX_SCAN_BLOCKS - 1n;
 
@@ -122,7 +133,7 @@ async function indexVaultDirectory(chain: ChainRuntime, factoryAddress: Address)
     fromBlock,
     toBlock,
   });
-  const logs = parseEventLogs({ abi: chain.factoryAbi, logs: rawLogs }).filter(
+  const logs = parseEventLogs({ abi: factoryAbi, logs: rawLogs }).filter(
     (l) => l.eventName === "VaultCreated",
   );
 
@@ -169,6 +180,7 @@ async function indexVaultDirectory(chain: ChainRuntime, factoryAddress: Address)
         stable_is_token0: pair?.stableIsToken0 ?? null,
         stable_decimals: pair?.stableDecimals ?? null,
         volatile_decimals: pair?.volatileDecimals ?? null,
+        kind,
       };
     });
     const { error } = await supabase().from("indexed_vaults").upsert(rows, { onConflict: "chain_id,address" });
@@ -264,6 +276,11 @@ function cheapUsdValue(eventName: string, args: Record<string, unknown>, pair: I
   if (eventName === "KeeperGasReimbursed") {
     return Number((args.amountUsd as bigint) ?? 0n) * 10 ** -pair.stableDecimals;
   }
+  // Compound-only — already converted to stable-raw units by the contract
+  // itself (_toStableUsd) at the exact moment of reinjection, used as-is.
+  if (eventName === "FeesReinjected") {
+    return Number((args.netFeeUsd as bigint) ?? 0n) * 10 ** -pair.stableDecimals;
+  }
   if (eventName === "Deposited") {
     const total =
       ((args.investableAmount as bigint) ?? 0n) +
@@ -291,15 +308,27 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
     stable_is_token0: boolean | null;
     stable_decimals: number | null;
     volatile_decimals: number | null;
+    kind: string | null;
   }>((from, to) =>
     supabase()
       .from("indexed_vaults")
-      .select("address,pool,stable_is_token0,stable_decimals,volatile_decimals")
+      .select("address,pool,stable_is_token0,stable_decimals,volatile_decimals,kind")
       .eq("chain_id", chain.id)
       .range(from, to),
   );
   const addresses = vaultRows.map((v) => v.address as Address);
   if (addresses.length === 0) return;
+
+  // Which ABI each vault's own logs need to be decoded with — compound-only
+  // events (FeesReinjected, etc.) don't exist on the standard ABI at all, so
+  // decoding EVERY vault's logs with a single shared ABI would silently drop
+  // them. Kept per-vault rather than one shared parse call for the opposite
+  // reason too: several events (Deposited, Rebalanced, ...) have IDENTICAL
+  // signatures on both ABIs, so decoding a standard vault's logs with the
+  // compound ABI as well would double-count them.
+  const kindByVault = new Map<string, "standard" | "compound">(
+    vaultRows.map((v) => [v.address.toLowerCase(), v.kind === "compound" ? "compound" : "standard"]),
+  );
 
   // Per-vault pair — a row whose pair hasn't been resolved yet (null, see
   // backfillVaultPairInfo) falls back to the CHAIN's own default pair rather
@@ -332,9 +361,14 @@ async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
     return;
   }
 
-  const parsed = parseEventLogs({ abi: chain.vaultAbi, logs: rawLogs }).filter(
-    (l) => l.blockNumber !== null && l.transactionHash !== null && l.logIndex !== null,
-  );
+  const standardLogs = rawLogs.filter((l) => kindByVault.get(l.address.toLowerCase()) !== "compound");
+  const compoundLogs = rawLogs.filter((l) => kindByVault.get(l.address.toLowerCase()) === "compound");
+  const parsed = [
+    ...parseEventLogs({ abi: chain.vaultAbi, logs: standardLogs }),
+    ...(chain.compoundVaultAbi && compoundLogs.length > 0
+      ? parseEventLogs({ abi: chain.compoundVaultAbi, logs: compoundLogs })
+      : []),
+  ].filter((l) => l.blockNumber !== null && l.transactionHash !== null && l.logIndex !== null);
   if (parsed.length === 0) {
     await setIndexerState(key, toBlock);
     return;
@@ -549,6 +583,13 @@ export async function runIndexer(): Promise<void> {
     const chain = getChainRuntime(chainDef);
     try {
       await indexVaultDirectory(chain, chainDef.factoryAddress);
+      // Second factory, compound-interest vaults — Arbitrum only today (see
+      // chains.ts's ChainDef docstring on compoundFactoryAddress). Undefined
+      // on every other chain, so this whole block is a no-op there. Same
+      // pattern as the keeper's own tick.ts.
+      if (chainDef.compoundFactoryAddress && chainDef.compoundFactoryAbi) {
+        await indexVaultDirectory(chain, chainDef.compoundFactoryAddress, "compound", chainDef.compoundFactoryAbi);
+      }
       await backfillVaultPairInfo(chain);
       await indexVaultEvents(chain);
       await backfillMintUsd(chain);

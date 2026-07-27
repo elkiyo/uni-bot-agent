@@ -200,6 +200,15 @@ create table if not exists indexed_vaults (
   stable_is_token0 boolean,
   stable_decimals integer,
   volatile_decimals integer,
+  -- 'standard' | 'compound' — which factory/ABI this vault's events need to
+  -- be decoded with (RangeVaultArb vs RangeVaultArbCompound — the latter has
+  -- extra events like FeesReinjected that the standard ABI can't parse at
+  -- all). Same distinction as keeper_vaults.kind, tracked separately here
+  -- since this indexer is deliberately never coupled to the keeper's own
+  -- bookkeeping (see this table's own intro comment). Defaults to
+  -- 'standard' for every row that predates this column and for every row
+  -- from the standard factory's own scan.
+  kind text not null default 'standard',
   primary key (chain_id, address)
 );
 alter table indexed_vaults enable row level security;
@@ -212,6 +221,11 @@ alter table indexed_vaults enable row level security;
 -- alter table indexed_vaults add column if not exists stable_is_token0 boolean;
 -- alter table indexed_vaults add column if not exists stable_decimals integer;
 -- alter table indexed_vaults add column if not exists volatile_decimals integer;
+
+-- Migration for a table created before the compound-vault kind column
+-- existed (2026-07-26) — run once in the Supabase SQL Editor before the
+-- indexer starts scanning the compound factory. Idempotent.
+-- alter table indexed_vaults add column if not exists kind text not null default 'standard';
 
 create table if not exists indexed_events (
   id bigint generated always as identity primary key,

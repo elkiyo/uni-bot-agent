@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { formatUnits } from "viem";
+import { formatUnits, type Abi } from "viem";
 import { useVaultEventLogs } from "@/lib/useVaultEventLogs";
 import type { ChainDef } from "@/lib/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
@@ -24,9 +24,17 @@ interface FeedItem {
  * scan. 60s polling — the keeper's own cycle is 5 min, so this still shows
  * it acting close to real time without re-fetching identical data in between.
  */
-export function ActivityFeed({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
+export function ActivityFeed({
+  address,
+  chain,
+  vaultAbi = chain.vaultAbi,
+}: {
+  address: `0x${string}`;
+  chain: ChainDef;
+  vaultAbi?: Abi;
+}) {
   const { t, locale } = useTranslation();
-  const { data: eventLogs } = useVaultEventLogs(address, chain);
+  const { data: eventLogs } = useVaultEventLogs(address, chain, vaultAbi);
 
   const { data: items } = useQuery({
     queryKey: ["vault-activity", chain.id, address, locale, eventLogs?.length],

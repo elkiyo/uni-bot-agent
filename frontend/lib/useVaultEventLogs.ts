@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import type { Abi } from "viem";
 import type { ChainDef } from "./chains";
 import { deserializeArgs } from "./eventArgsCodec";
 
@@ -43,7 +44,7 @@ interface ApiEventRow {
  * (~5 min), so polling faster than that would just re-fetch identical rows;
  * 60s keeps the page feeling live without doing that.
  */
-export function useVaultEventLogs(address: `0x${string}` | undefined, chain: ChainDef) {
+export function useVaultEventLogs(address: `0x${string}` | undefined, chain: ChainDef, abi: Abi = chain.vaultAbi) {
   return useQuery({
     queryKey: ["vault-event-logs", chain.id, address],
     enabled: Boolean(address),
@@ -56,7 +57,7 @@ export function useVaultEventLogs(address: `0x${string}` | undefined, chain: Cha
 
       return rows.map((r) => ({
         eventName: r.event_name,
-        args: deserializeArgs(chain.vaultAbi, r.event_name, r.args),
+        args: deserializeArgs(abi, r.event_name, r.args),
         blockNumber: BigInt(r.block_number),
         transactionHash: r.tx_hash as `0x${string}`,
         logIndex: r.log_index,

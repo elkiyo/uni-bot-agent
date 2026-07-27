@@ -326,7 +326,7 @@ function VaultCard({
     query: { refetchInterval: 60_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
-  const { data: feesSummary } = useVaultFeesSummary(vaultAddress, chain);
+  const { data: feesSummary } = useVaultFeesSummary(vaultAddress, chain, vaultAbi);
 
   const hasPosition = Boolean(positionTokenId && (positionTokenId as bigint) > 0n);
 
@@ -399,7 +399,7 @@ function VaultCard({
   // depositado cuando se creó el vault — no el total histórico (top-ups
   // posteriores no cuentan) ni el capital libre actual (que baja cada vez que
   // se abre/reinyecta una posición), ni anualizado.
-  const { data: depositSummary } = useVaultDepositSummary(vaultAddress, chain);
+  const { data: depositSummary } = useVaultDepositSummary(vaultAddress, chain, vaultAbi);
   const feesUsdEquivalent =
     Number(formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)) +
     (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice : 0);

@@ -423,6 +423,9 @@ const es = {
       "Se descuenta en cada rebalanceo — si llega a 0, el agente sigue operando pero no le reembolsa nada al operador",
     statRebalances: "Rebalanceos",
     statFees: "Comisiones generadas",
+    statFeesClaimed: "Comisiones reclamadas",
+    statFeesReinjected: "Comisiones reinyectadas",
+    statFeesReinjectedHint: "{{count}} reinyecciones",
 
     targetRange: "Rango objetivo",
     invertedTicksWarning: 'Ticks invertidos on-chain — usá "Reconfigurar agente" para corregir',

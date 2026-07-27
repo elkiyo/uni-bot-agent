@@ -1,5 +1,6 @@
 "use client";
 
+import type { Abi } from "viem";
 import { useVaultEventLogs } from "./useVaultEventLogs";
 import type { ChainDef } from "./chains";
 
@@ -14,9 +15,16 @@ export interface VaultDepositSummary {
  * full-history scan and no longer does). Used as the denominator for the
  * simple "rentabilidad" stat (comisiones / inversión inicial), so later
  * top-up deposits don't get folded in and dilute it.
+ *
+ * `abi` must match whatever every OTHER useVaultEventLogs caller for this
+ * same address passes (see that hook's own queryKey, which doesn't include
+ * abi) — Deposited's own shape is identical on every vault flavor, so this
+ * never affects THIS hook's own output, but a mismatched abi here can still
+ * win the shared cache entry's deserialization for every OTHER consumer of
+ * the same address (e.g. useVaultFeesSummary's FeesReinjected.netFeeUsd).
  */
-export function useVaultDepositSummary(address: `0x${string}` | undefined, chain: ChainDef) {
-  const { data: logs, ...rest } = useVaultEventLogs(address, chain);
+export function useVaultDepositSummary(address: `0x${string}` | undefined, chain: ChainDef, abi: Abi = chain.vaultAbi) {
+  const { data: logs, ...rest } = useVaultEventLogs(address, chain, abi);
 
   const summary: VaultDepositSummary | undefined = logs
     ? (() => {

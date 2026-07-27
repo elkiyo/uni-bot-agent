@@ -421,6 +421,9 @@ const zh: Dictionary = {
       "每次再平衡时都会扣减——降至 0 后，智能体仍会继续运作，但不再向运营方支付任何报销",
     statRebalances: "再平衡次数",
     statFees: "已产生手续费",
+    statFeesClaimed: "已领取手续费",
+    statFeesReinjected: "已再投入手续费",
+    statFeesReinjectedHint: "共 {{count}} 次再投入",
 
     targetRange: "目标区间",
     invertedTicksWarning: '链上 tick 顺序颠倒——请使用"重新配置智能体"进行修正',

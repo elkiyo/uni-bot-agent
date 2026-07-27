@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { formatUnits } from "viem";
+import { formatUnits, type Abi } from "viem";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { useVaultEventLogs } from "@/lib/useVaultEventLogs";
 import type { ChainDef } from "@/lib/chains";
@@ -42,9 +42,17 @@ interface PositionRecord {
  * PositionInitialized/Rebalanced event, pair it with the NEXT such event
  * (its close) and whatever LpFeesPaidToOwner fired in that same closing tx.
  */
-export function PositionHistory({ address, chain }: { address: `0x${string}`; chain: ChainDef }) {
+export function PositionHistory({
+  address,
+  chain,
+  vaultAbi = chain.vaultAbi,
+}: {
+  address: `0x${string}`;
+  chain: ChainDef;
+  vaultAbi?: Abi;
+}) {
   const { t, locale } = useTranslation();
-  const { data: eventLogs } = useVaultEventLogs(address, chain);
+  const { data: eventLogs } = useVaultEventLogs(address, chain, vaultAbi);
 
   const { data: positions } = useQuery({
     queryKey: ["vault-position-history", chain.id, address, eventLogs?.length],

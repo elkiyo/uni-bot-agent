@@ -425,6 +425,9 @@ const en: Dictionary = {
       "Deducted on every rebalance — if it reaches 0, the agent keeps operating but stops reimbursing the operator",
     statRebalances: "Rebalances",
     statFees: "Fees generated",
+    statFeesClaimed: "Fees claimed",
+    statFeesReinjected: "Fees reinjected",
+    statFeesReinjectedHint: "{{count}} reinjections",
 
     targetRange: "Target range",
     invertedTicksWarning: 'Ticks inverted on-chain — use "Reconfigure agent" to fix',
