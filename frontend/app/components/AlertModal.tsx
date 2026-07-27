@@ -13,8 +13,14 @@ export function AlertModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="glass max-w-md rounded-2xl p-6 sm:p-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
+      {/* Solid background, not .glass — a translucent card here let whatever
+          busy page sits behind it bleed through and become unreadable. Same
+          solid-fill pattern NetworkSelector's own dropdown already uses. */}
+      <div
+        className="w-full max-w-md rounded-2xl border border-hairline p-6 shadow-2xl shadow-black/60 sm:p-8"
+        style={{ backgroundColor: "#0a0a0a" }}
+      >
         <h3 className="text-xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
           {title}
         </h3>

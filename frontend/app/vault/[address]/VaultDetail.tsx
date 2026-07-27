@@ -925,14 +925,22 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         <AlertModal title={t("vaultDetail.capAlertTitle")} message={capAlert} onClose={() => setCapAlert(null)} />
       )}
       {withdrawReviewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="glass max-w-md rounded-2xl p-6 sm:p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
+          {/* Solid background, not .glass — a translucent card here let the
+              busy page behind it (also full of light-colored text) bleed
+              through and become unreadable. Same solid-fill pattern
+              NetworkSelector's own dropdown already uses for the identical
+              reason. */}
+          <div
+            className="w-full max-w-md rounded-2xl border border-hairline p-6 shadow-2xl shadow-black/60 sm:p-8"
+            style={{ backgroundColor: "#0a0a0a" }}
+          >
             <h3 className="text-xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
               {t("vaultDetail.withdrawReviewTitle")}
             </h3>
             <div className="mt-5 flex flex-col gap-4 text-sm">
               {withdrawPositionShareBps > 0 && (
-                <div className="rounded-xl border border-hairline p-4">
+                <div className="rounded-xl border border-hairline bg-white/[0.03] p-4">
                   <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
                     {t("vaultDetail.withdrawReviewPosition", { pct: withdrawPositionPct })}
                   </p>
@@ -946,7 +954,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
               )}
               {withdrawFundsShareBps > 0 && (
-                <div className="rounded-xl border border-hairline p-4">
+                <div className="rounded-xl border border-hairline bg-white/[0.03] p-4">
                   <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
                     {t("vaultDetail.withdrawReviewFunds", { pct: withdrawFundsPct })}
                   </p>
