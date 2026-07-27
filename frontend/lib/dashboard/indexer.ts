@@ -312,6 +312,113 @@ async function ethPriceForPair(chain: ChainRuntime, pair: IndexedVaultPair): Pro
   return ethPriceFromTick(slot0[1], pair.stableIsToken0, pair.stableDecimals, pair.volatileDecimals);
 }
 
+/**
+ * indexVaultEvents' own block-range checkpoint (`events:${chain.id}`) is
+ * shared across every vault on the chain and only ever moves forward — it
+ * has no notion of "this specific vault is new, go back to ITS creation
+ * block." A vault discovered late (e.g. by indexVaultDirectory running
+ * behind — confirmed live 2026-07-27: the compound-factory discovery gap
+ * meant vault 0x55CB44A1...947D19 wasn't added to indexed_vaults until
+ * hours after its real on-chain creation) has its OWN early history — the
+ * initial deposit/configureTarget/initPosition — permanently skipped: by
+ * the time it's added to the tracked list, the shared checkpoint has
+ * already scanned past those blocks and never revisits them. Symptom-based
+ * (not a one-time flag) so it stays a correct no-op forever once a vault's
+ * gap is actually filled: for every vault, compare its own created_at_block
+ * against the EARLIEST block_number already indexed for it — a gap wider
+ * than GAP_THRESHOLD_BLOCKS (generously larger than any real
+ * creation-to-first-deposit delay) means its pre-discovery history is
+ * missing, so re-scan that vault's own full lifetime once.
+ */
+const GAP_THRESHOLD_BLOCKS = 50_000n;
+
+async function backfillMissingVaultHistory(chain: ChainRuntime): Promise<void> {
+  const vaultRows = await fetchAllRows<{
+    address: string;
+    created_at_block: string;
+    pool: string;
+    stable_is_token0: boolean | null;
+    stable_decimals: number | null;
+    volatile_decimals: number | null;
+    kind: string | null;
+  }>((from, to) =>
+    supabase()
+      .from("indexed_vaults")
+      .select("address,created_at_block,pool,stable_is_token0,stable_decimals,volatile_decimals,kind")
+      .eq("chain_id", chain.id)
+      .range(from, to),
+  );
+  if (vaultRows.length === 0) return;
+
+  const eventRows = await fetchAllRows<{ address: string; block_number: string }>((from, to) =>
+    supabase().from("indexed_events").select("address,block_number").eq("chain_id", chain.id).range(from, to),
+  );
+  const earliestByVault = new Map<string, bigint>();
+  for (const row of eventRows) {
+    const addr = row.address.toLowerCase();
+    const bn = BigInt(row.block_number);
+    const cur = earliestByVault.get(addr);
+    if (cur === undefined || bn < cur) earliestByVault.set(addr, bn);
+  }
+
+  const gappedVaults = vaultRows.filter((v) => {
+    const createdAtBlock = BigInt(v.created_at_block);
+    const earliest = earliestByVault.get(v.address.toLowerCase());
+    return earliest === undefined || earliest - createdAtBlock > GAP_THRESHOLD_BLOCKS;
+  });
+  if (gappedVaults.length === 0) return;
+
+  const latest = await chain.publicClient.getBlockNumber();
+  for (const v of gappedVaults) {
+    const address = v.address as Address;
+    const fromBlock = BigInt(v.created_at_block);
+    if (fromBlock > latest) continue;
+    const toBlock = fromBlock + MAX_SCAN_BLOCKS - 1n > latest ? latest : fromBlock + MAX_SCAN_BLOCKS - 1n;
+    const abi = v.kind === "compound" && chain.compoundVaultAbi ? chain.compoundVaultAbi : chain.vaultAbi;
+
+    const rawLogs = await getLogsChunkedMulti(chain.publicClient, { address: [address], fromBlock, toBlock });
+    const parsed = parseEventLogs({ abi, logs: rawLogs }).filter(
+      (l) => l.blockNumber !== null && l.transactionHash !== null && l.logIndex !== null,
+    );
+    if (parsed.length === 0) continue;
+
+    const pair: IndexedVaultPair = {
+      pool: v.pool as Address,
+      stableIsToken0: v.stable_is_token0 ?? chain.stableIsToken0,
+      stableDecimals: v.stable_decimals ?? chain.stableDecimals,
+      volatileDecimals: v.volatile_decimals ?? chain.volatileDecimals,
+    };
+    const uniqueBlocks = [...new Set(parsed.map((l) => l.blockNumber as bigint))];
+    const blocks = await mapWithConcurrency(uniqueBlocks, SCAN_CONCURRENCY, (bn) =>
+      chain.publicClient.getBlock({ blockNumber: bn }),
+    );
+    const timestampByBlock = new Map(uniqueBlocks.map((bn, i) => [bn, Number(blocks[i].timestamp)]));
+    const ethPrice = await ethPriceForPair(chain, pair);
+
+    const rows = parsed.map((l) => {
+      const args = (l.args ?? {}) as Record<string, unknown>;
+      const blockNumber = l.blockNumber as bigint;
+      return {
+        chain_id: chain.id,
+        address: address.toLowerCase(),
+        event_name: l.eventName,
+        args: serializeArgs(args),
+        block_number: blockNumber.toString(),
+        log_index: l.logIndex as number,
+        tx_hash: l.transactionHash as string,
+        block_timestamp: new Date((timestampByBlock.get(blockNumber) ?? 0) * 1000).toISOString(),
+        usd_value: cheapUsdValue(l.eventName, args, pair, ethPrice),
+      };
+    });
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await supabase()
+        .from("indexed_events")
+        .upsert(rows.slice(i, i + 500), { onConflict: "chain_id,tx_hash,log_index" });
+      if (error) throw error;
+    }
+  }
+}
+
 async function indexVaultEvents(chain: ChainRuntime): Promise<void> {
   const key = `events:${chain.id}`;
   const vaultRows = await fetchAllRows<{
@@ -603,6 +710,7 @@ export async function runIndexer(): Promise<void> {
         await indexVaultDirectory(chain, chainDef.compoundFactoryAddress, "compound", chainDef.compoundFactoryAbi);
       }
       await backfillVaultPairInfo(chain);
+      await backfillMissingVaultHistory(chain);
       await indexVaultEvents(chain);
       await backfillMintUsd(chain);
     } catch (err) {
