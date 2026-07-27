@@ -358,6 +358,7 @@ function VaultCard({
   // "undercounts fees since the position's last poke" tolerance already
   // accepted elsewhere for this exact reason.
   let feeYieldPct: number | undefined;
+  let unclaimedFeesUsd = 0;
   if (positionData && currentTick !== undefined && ethPrice !== undefined) {
     const [, , , , , tickLower, tickUpper, liquidity, , , tokensOwed0, tokensOwed1] = positionData as readonly [
       bigint,
@@ -380,8 +381,8 @@ function VaultCard({
 
     const owedStable = stableIsToken0 ? tokensOwed0 : tokensOwed1;
     const owedVolatile = stableIsToken0 ? tokensOwed1 : tokensOwed0;
-    const owedUsd = Number(owedStable) * 10 ** -stableDecimals + Number(owedVolatile) * 10 ** -volatileDecimals * ethPrice;
-    feeYieldPct = positionValueUsd > 0 ? (owedUsd / positionValueUsd) * 100 : 0;
+    unclaimedFeesUsd = Number(owedStable) * 10 ** -stableDecimals + Number(owedVolatile) * 10 ** -volatileDecimals * ethPrice;
+    feeYieldPct = positionValueUsd > 0 ? (unclaimedFeesUsd / positionValueUsd) * 100 : 0;
 
     const priceA = ethPriceFromTick(tickLower, stableIsToken0, stableDecimals, volatileDecimals);
     const priceB = ethPriceFromTick(tickUpper, stableIsToken0, stableDecimals, volatileDecimals);
@@ -533,22 +534,28 @@ function VaultCard({
         </StatCell>
 
         <StatCell label={t("vaults.fees")}>
-          <p className="text-sm font-medium text-positive">
+          {/* Headline is the TRUE total in USD (claimed + reinjected) — was
+              showing just the raw stable-leg amount before, with no overall
+              total anywhere on this card, unlike VaultDetail.tsx's own
+              "Comisiones generadas" stat which leads with the $ total. Same
+              claimed-only raw breakdown kept as the secondary hint below. */}
+          <p className="text-sm font-medium text-positive">${feesUsdEquivalent.toFixed(2)}</p>
+          <p className="mt-0.5 font-mono text-xs text-positive/70">
             {formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)} {stableSymbol}
+            {(feesSummary?.totalWeth ?? 0n) > 0n
+              ? ` + ${Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)).toFixed(6)} ${volatileSymbol}`
+              : ""}
           </p>
-          {(feesSummary?.totalWeth ?? 0n) > 0n && (
-            <p className="mt-0.5 font-mono text-xs text-positive/70">
-              + {Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)).toFixed(6)} {volatileSymbol}
-              {ethPrice !== undefined
-                ? ` (~$${(Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice).toFixed(2)})`
-                : ""}
-            </p>
-          )}
           <p className="mt-0.5 font-mono text-xs text-white/50">{rentLabel}</p>
         </StatCell>
 
         <StatCell label={t("vaults.floatingReturn")}>
-          <p className={`text-sm font-medium ${(feeYieldPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}>
+          {/* Same pairing as PositionNFT.tsx's own card: the $ unclaimed-fees
+              amount alongside the % it represents of the position's value —
+              showing only the % here (with no $ figure anywhere on this
+              card) was its own source of confusion. */}
+          <p className="text-sm font-medium text-positive">${unclaimedFeesUsd.toFixed(2)}</p>
+          <p className={`mt-0.5 font-mono text-xs ${(feeYieldPct ?? 0) >= 0 ? "text-positive/70" : "text-negative"}`}>
             {floatingLabel}
           </p>
         </StatCell>
