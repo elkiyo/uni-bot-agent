@@ -273,8 +273,8 @@ const pt: Dictionary = {
     fees: "Comissões",
     returnLabel: "{{pct}}% de rent.",
     range: "Faixa",
-    floatingReturn: "Rentabilidade flutuante",
-    floatingReturnLabel: "{{pct}}% flut.",
+    floatingReturn: "Rendimento de comissões (posição atual)",
+    floatingReturnLabel: "{{pct}}%",
     createdOn: "Criado em {{date}}",
   },
   positionNft: {

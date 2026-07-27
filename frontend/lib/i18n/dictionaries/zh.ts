@@ -269,8 +269,8 @@ const zh: Dictionary = {
     fees: "手续费",
     returnLabel: "{{pct}}% 收益率",
     range: "区间",
-    floatingReturn: "浮动收益率",
-    floatingReturnLabel: "{{pct}}% 浮动",
+    floatingReturn: "手续费收益率（当前仓位）",
+    floatingReturnLabel: "{{pct}}%",
     createdOn: "创建于 {{date}}",
   },
   positionNft: {

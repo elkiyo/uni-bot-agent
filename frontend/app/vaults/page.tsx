@@ -345,8 +345,21 @@ function VaultCard({
   let positionValueUsd: number | undefined;
   let rangeLabel: string | undefined;
   let inRange: boolean | undefined;
+  // Same metric as PositionNFT.tsx's own "rendimiento de comisiones (posición
+  // actual)" — uncollected fees on the CURRENT position, sized against the
+  // position's own current value. Deliberately the SAME formula (not the
+  // mark-to-market total-value-vs-initial-investment this card used to show
+  // under "rentabilidad flotante", a genuinely different number that
+  // confused users into thinking the two pages disagreed) — this card uses
+  // the position's own tokensOwed0/1 (already fetched by the SAME positions()
+  // read below, no extra RPC call) instead of PositionNFT's live
+  // feeGrowthGlobal reads, since a list of many cards can't afford 2+ extra
+  // reads per card the way a single vault's detail page can — same
+  // "undercounts fees since the position's last poke" tolerance already
+  // accepted elsewhere for this exact reason.
+  let feeYieldPct: number | undefined;
   if (positionData && currentTick !== undefined && ethPrice !== undefined) {
-    const [, , , , , tickLower, tickUpper, liquidity] = positionData as readonly [
+    const [, , , , , tickLower, tickUpper, liquidity, , , tokensOwed0, tokensOwed1] = positionData as readonly [
       bigint,
       string,
       string,
@@ -364,6 +377,11 @@ function VaultCard({
     const stableRaw = stableIsToken0 ? amount0Raw : amount1Raw;
     const volatileRaw = stableIsToken0 ? amount1Raw : amount0Raw;
     positionValueUsd = stableRaw * 10 ** -stableDecimals + volatileRaw * 10 ** -volatileDecimals * ethPrice;
+
+    const owedStable = stableIsToken0 ? tokensOwed0 : tokensOwed1;
+    const owedVolatile = stableIsToken0 ? tokensOwed1 : tokensOwed0;
+    const owedUsd = Number(owedStable) * 10 ** -stableDecimals + Number(owedVolatile) * 10 ** -volatileDecimals * ethPrice;
+    feeYieldPct = positionValueUsd > 0 ? (owedUsd / positionValueUsd) * 100 : 0;
 
     const priceA = ethPriceFromTick(tickLower, stableIsToken0, stableDecimals, volatileDecimals);
     const priceB = ethPriceFromTick(tickUpper, stableIsToken0, stableDecimals, volatileDecimals);
@@ -412,15 +430,8 @@ function VaultCard({
       ? t("vaults.returnLabel", { pct: ((feesUsdEquivalent / initialInvestmentUsd) * 100).toFixed(2) })
       : "—";
 
-  // Rentabilidad flotante = valor actual de todo lo que el vault sostiene
-  // ahora mismo (posición mark-to-market + capital libre) contra la
-  // inversión inicial — a diferencia de "rentLabel" arriba, esto SÍ refleja
-  // impermanent loss / suba de precio, no solo comisiones cobradas.
-  const currentTotalValueUsd =
-    (hasPosition ? (positionValueUsd ?? 0) : 0) + Number(formatUnits(idleCapital, stableDecimals)) + (idleWethUsd ?? 0);
-  const floatingPct =
-    initialInvestmentUsd > 0 ? ((currentTotalValueUsd - initialInvestmentUsd) / initialInvestmentUsd) * 100 : undefined;
-  const floatingLabel = floatingPct !== undefined ? t("vaults.floatingReturnLabel", { pct: floatingPct.toFixed(2) }) : "—";
+  const floatingLabel =
+    hasPosition && feeYieldPct !== undefined ? t("vaults.floatingReturnLabel", { pct: feeYieldPct.toFixed(2) }) : "—";
 
   const createdOnLabel =
     createdAt !== undefined && createdAt > 0
@@ -537,7 +548,7 @@ function VaultCard({
         </StatCell>
 
         <StatCell label={t("vaults.floatingReturn")}>
-          <p className={`text-sm font-medium ${(floatingPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}>
+          <p className={`text-sm font-medium ${(feeYieldPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}>
             {floatingLabel}
           </p>
         </StatCell>

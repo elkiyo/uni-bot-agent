@@ -271,8 +271,8 @@ const es = {
     fees: "Comisiones",
     returnLabel: "{{pct}}% rent.",
     range: "Rango",
-    floatingReturn: "Rentabilidad flotante",
-    floatingReturnLabel: "{{pct}}% flot.",
+    floatingReturn: "Rendimiento de comisiones (posición actual)",
+    floatingReturnLabel: "{{pct}}%",
     createdOn: "Creado el {{date}}",
   },
   positionNft: {

@@ -273,8 +273,8 @@ const en: Dictionary = {
     fees: "Fees",
     returnLabel: "{{pct}}% return",
     range: "Range",
-    floatingReturn: "Floating return",
-    floatingReturnLabel: "{{pct}}% floating",
+    floatingReturn: "Fee yield (current position)",
+    floatingReturnLabel: "{{pct}}%",
     createdOn: "Created on {{date}}",
   },
   positionNft: {
