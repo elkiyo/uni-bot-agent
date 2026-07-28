@@ -922,6 +922,15 @@ async function getCumulativeInvestmentUsd(
     const args = ev.args as Record<string, unknown>;
     if (ev.eventName === "Deposited") {
       totalRaw += args.investableAmount as bigint;
+    } else if (ev.eventName === "PositionIncreased") {
+      // increasePosition() ("Sumar a la posición abierta") — real owner
+      // capital landing directly in the position, same as Deposited's
+      // investableAmount, just via a different entry point. Missing this
+      // meant B1 silently understated true committed capital by exactly
+      // whatever the owner topped up this way — confirmed live 2026-07-27,
+      // vault 0x55CB44A1...947D19: a $20 top-up left B1 reporting $100.27
+      // instead of the real $120.27 until this fix.
+      totalRaw += args.usdtAmount as bigint;
     } else if (ev.eventName === "Rebalanced") {
       totalRaw += args.reinjectedAmount as bigint;
     } else if (ev.eventName === "ReinjectedIntoPosition") {
