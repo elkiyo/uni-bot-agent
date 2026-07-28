@@ -489,6 +489,8 @@ const es = {
       "Este vault todavía no tiene rango — completá precio mínimo y máximo para terminar de configurarlo.",
     fieldMinPriceUsd: "Precio mínimo (USD)",
     fieldMaxPriceUsd: "Precio máximo (USD)",
+    fieldPriceCurrentHint: "Precio actual: ${{price}}",
+    errMaxRebalancesRequired: "Este vault todavía no tiene tope de rebalanceos — completá ese campo para terminar de configurarlo.",
     fieldMaxRebalancesToday: "Tope rebalanceos (hoy: {{n}})",
     fieldReinjectionSymbol: "Tope de reinyección ({{symbol}})",
     fieldPeriodicHours: "Periódico (horas)",

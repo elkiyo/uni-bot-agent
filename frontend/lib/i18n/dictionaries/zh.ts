@@ -486,6 +486,8 @@ const zh: Dictionary = {
       "该金库尚未设置区间——请填写最低和最高价格以完成配置。",
     fieldMinPriceUsd: "最低价格（USD）",
     fieldMaxPriceUsd: "最高价格（USD）",
+    fieldPriceCurrentHint: "当前价格：${{price}}",
+    errMaxRebalancesRequired: "这个 vault 还没有设置再平衡上限 —— 请填写该字段以完成配置。",
     fieldMaxRebalancesToday: "再平衡次数上限（当前：{{n}}）",
     fieldReinjectionSymbol: "再注入上限（{{symbol}}）",
     fieldPeriodicHours: "周期（小时）",

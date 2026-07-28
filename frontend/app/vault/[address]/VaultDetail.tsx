@@ -24,7 +24,7 @@ import { ReinjectionHistory } from "./ReinjectionHistory";
 import { RebalanceCountdown } from "./RebalanceCountdown";
 import { erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
 import type { ChainDef } from "@/lib/chains";
-import { ethPriceFromTick } from "@/lib/priceMath";
+import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
 import { uncollectedFeesRaw } from "@/lib/positionMath";
 import { sizeRebalanceSwap, estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
@@ -243,6 +243,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     query: { refetchInterval: 60_000 },
   });
   const currentTick = slot0 ? Number((slot0 as readonly unknown[])[1]) : undefined;
+
+  // Only needed to convert a manually-typed price range into ticks (see
+  // handleReconfigure) — same read create/page.tsx uses for the same reason.
+  const { data: tickSpacing } = useReadContract({
+    address: poolAddress,
+    abi: uniswapV3PoolAbi,
+    functionName: "tickSpacing",
+    chainId: chain.id,
+  });
 
   const feesUsdtStr = formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals);
   const feesWethRaw = feesSummary?.totalWeth ?? 0n;
@@ -541,6 +550,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   ].filter((f) => !isNative(f.token) && (parseFloat(f.amount) || 0) > 0);
   const depositQuoteLoading = pendingDepositQuoteFields.some((f) => f.quote.isLoading);
   const depositQuoteErrored = pendingDepositQuoteFields.find((f) => f.quote.isError);
+  // Only used when the vault has no configured range yet (targetConfigured
+  // false — e.g. an owner who backed out at signature 3/5 during creation,
+  // leaving a real on-chain vault with nothing to reconfigure "from"). Left
+  // blank for an already-configured vault, which keeps its current range
+  // exactly as before — see handleReconfigure.
+  const [cfgPriceMin, setCfgPriceMin] = useState("");
+  const [cfgPriceMax, setCfgPriceMax] = useState("");
   const [cfgMaxRebalances, setCfgMaxRebalances] = useState("");
   const [cfgReinjection, setCfgReinjection] = useState("");
   const [cfgPeriodicHours, setCfgPeriodicHours] = useState("");
@@ -723,15 +739,63 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleReconfigure() {
-    // Always keeps the existing on-chain tick range now — no price-range
-    // override from this form anymore (the min/max sort here still repairs
-    // vaults configured with inverted ticks by an older create flow, higher
-    // USD price of ETH = lower tick in this pool). A vault that never
-    // finished its initial configureTarget() (targetTickLower/Upper both 0)
-    // gets fixed via create/page.tsx's own resume flow instead, not here.
-    if (targetTickLower === undefined || targetTickUpper === undefined) return;
-    const lo = Math.min(Number(targetTickLower), Number(targetTickUpper));
-    const hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
+    // Two cases, same call: an already-configured vault keeps its current
+    // on-chain tick range unless the owner explicitly types a new one in
+    // Precio mínimo/máximo (an intentional override, e.g. correcting a
+    // range set too wide) — everything else preserves its current value the
+    // same way it always has. An UNCONFIGURED vault (targetTickLower/Upper
+    // both undefined/0 — e.g. an owner who backed out at signature 3/5
+    // during creation: createVault() + approve() went through, but
+    // configureTarget() never did) has nothing to fall back to at all, so
+    // Precio mínimo/máximo — and every other field below — are REQUIRED in
+    // that case; this used to just silently no-op here, stranding that
+    // vault with no way to finish setup short of re-doing /create's whole
+    // flow (which would also re-pay the creation fee for a second, orphaned
+    // vault).
+    const wasConfigured = Boolean(targetConfigured);
+
+    let lo: number;
+    let hi: number;
+    if (cfgPriceMin || cfgPriceMax || !wasConfigured) {
+      const priceMin = Number(cfgPriceMin);
+      const priceMax = Number(cfgPriceMax);
+      if (!(priceMin > 0) || !(priceMax > priceMin)) {
+        setError(t("vaultDetail.errPriceRange"));
+        return;
+      }
+      if (tickSpacing === undefined) {
+        setError(t("vaultDetail.errNoRange"));
+        return;
+      }
+      // Which typed price maps to the lower/higher tick depends on
+      // stableIsToken0 (a higher USD price of ETH is a LOWER tick in this
+      // pool's own convention on Celo, higher on Arbitrum) — sort by tick,
+      // not by which field the price was typed into, same as create/page.tsx.
+      const tickA = alignToTickSpacing(
+        tickFromEthPrice(priceMin, stableIsToken0, stableDecimals, volatileDecimals),
+        Number(tickSpacing),
+      );
+      const tickB = alignToTickSpacing(
+        tickFromEthPrice(priceMax, stableIsToken0, stableDecimals, volatileDecimals),
+        Number(tickSpacing),
+      );
+      lo = Math.min(tickA, tickB);
+      hi = Math.max(tickA, tickB);
+    } else {
+      // targetConfigured=true implies these are real numbers on-chain, but
+      // the client read for them may simply not have resolved yet.
+      if (targetTickLower === undefined || targetTickUpper === undefined) {
+        setError(t("vaultDetail.errNoRange"));
+        return;
+      }
+      lo = Math.min(Number(targetTickLower), Number(targetTickUpper));
+      hi = Math.max(Number(targetTickLower), Number(targetTickUpper));
+    }
+
+    if (!wasConfigured && !cfgMaxRebalances) {
+      setError(t("vaultDetail.errMaxRebalancesRequired"));
+      return;
+    }
 
     await withTx(t("vaultDetail.txReconfiguring"), () =>
       writeContractAsync({
@@ -1702,8 +1766,19 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       : t("vaultDetail.reconfigureHintUnconfigured")}
                   </p>
                   <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <MiniField label={t("vaultDetail.fieldMinPriceUsd")} value={cfgPriceMin} onChange={setCfgPriceMin} />
+                    <MiniField label={t("vaultDetail.fieldMaxPriceUsd")} value={cfgPriceMax} onChange={setCfgPriceMax} />
+                    {currentTick !== undefined && (
+                      <span className="pb-3 text-xs text-faint">
+                        {t("vaultDetail.fieldPriceCurrentHint", {
+                          price: ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals).toFixed(2),
+                        })}
+                      </span>
+                    )}
                     <MiniField
-                      label={t("vaultDetail.fieldMaxRebalancesToday", { n: maxRebalances !== undefined ? String(maxRebalances) : "…" })}
+                      label={t("vaultDetail.fieldMaxRebalancesToday", {
+                        n: maxRebalances !== undefined ? String(maxRebalances) : "…",
+                      })}
                       value={cfgMaxRebalances}
                       onChange={setCfgMaxRebalances}
                     />

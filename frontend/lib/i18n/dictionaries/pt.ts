@@ -490,6 +490,8 @@ const pt: Dictionary = {
       "Este vault ainda não tem faixa — preencha preço mínimo e máximo para terminar de configurá-lo.",
     fieldMinPriceUsd: "Preço mínimo (USD)",
     fieldMaxPriceUsd: "Preço máximo (USD)",
+    fieldPriceCurrentHint: "Preço atual: ${{price}}",
+    errMaxRebalancesRequired: "Este vault ainda não tem limite de rebalanceamentos — preencha esse campo para terminar de configurá-lo.",
     fieldMaxRebalancesToday: "Teto de rebalanceamentos (hoje: {{n}})",
     fieldReinjectionSymbol: "Teto de reinjeção ({{symbol}})",
     fieldPeriodicHours: "Periódico (horas)",
