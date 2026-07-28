@@ -426,6 +426,7 @@ const en: Dictionary = {
     loading: "Loading…",
 
     statAge: "Vault age",
+    statInitialCapital: "Initial capital",
     statInvestable: "Investable capital",
     idleWethHint: "+ {{amount}} {{symbol}} idle{{usdSuffix}}",
     statReserve: "Reinjection reserve",

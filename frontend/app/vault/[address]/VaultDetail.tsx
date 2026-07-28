@@ -1426,6 +1426,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <VaultAgeStat createdAt={createdAt} />
               <Stat
+                label={t("vaultDetail.statInitialCapital")}
+                value={`${initialInvestmentUsd.toFixed(2)} ${stableSymbol}`}
+              />
+              <Stat
                 label={t("vaultDetail.statInvestable")}
                 value={`${formatUnits((investableUsdt as bigint) ?? 0n, stableDecimals)} ${stableSymbol}`}
                 hint={
