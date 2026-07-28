@@ -1149,16 +1149,38 @@ async function runRebalanceViaUniLab(
     return;
   }
 
-  const reinjectionUsd = Number(reinjectAmount) * 10 ** -chain.stableDecimals; // E1 = what the keeper is actually doing this cycle
-
   // B1: always the vault's ENTIRE committed capital (original investment +
   // every reinjection to date), never just the current position's live
   // value — even on a still-in-range periodic cycle. The position's USD
   // value moves with price inside the range (impermanent-loss-style), so it
   // can sit below what was actually invested even while genuinely in range;
   // using positionValueUsd here would understate B1 and feed uni-lab a
-  // "amount to recover" smaller than the real capital at stake.
-  const amountToRecoverUsd = await getCumulativeInvestmentUsd(chain, vaultAddress, BigInt(record.createdAtBlock), abi);
+  // "amount to recover" smaller than the real capital at stake. This is
+  // ALWAYS the capital committed *before* this cycle — it must never include
+  // this cycle's own reinjection (see newCapitalUsd below), which hasn't
+  // happened yet at the moment this is read.
+  const historicalAmountToRecoverUsd = await getCumulativeInvestmentUsd(chain, vaultAddress, BigInt(record.createdAtBlock), abi);
+
+  // RC method (2026-07-28, replaces the old RLP-style split where reserve
+  // reinjection went through E1/reinvestmentAmountUsd instead): fold every
+  // real reinjection happening THIS cycle — reserve (reinjectAmount) and any
+  // pending investable top-up (idleInvestableUsdt, e.g. from a later
+  // deposit() or a swap-sizing leftover the contract already carries
+  // forward) — into BOTH A1 and B1 at once, and always send E1=0. Verified
+  // empirically against a real vault (2026-07-28): parametrizing the exact
+  // same scenario via E1 (RLP) vs. via this combined A1/B1 (RC) produced the
+  // IDENTICAL new_upper_bound from uni-lab down to the cent — so this is a
+  // pure simplification, not a behavior change, and it closes a real gap the
+  // old RLP-style call had: idleInvestableUsdt was never communicated to
+  // uni-lab via E1 even though it always entered the real mint via
+  // availableStableRaw below. idleWeth (WETH-side dust) is deliberately
+  // EXCLUDED here — dust is swap-sizing leftover from a PRIOR cycle's A1,
+  // not new owner capital, so folding it in again here would double-count
+  // it (same reasoning `getCumulativeInvestmentUsd` already applies by never
+  // summing `IdleDustSwept`).
+  const newCapitalUsd = Number(reinjectAmount + idleInvestableUsdt) * 10 ** -chain.stableDecimals;
+  const combinedCurrentLiquidityUsd = positionValueUsd + newCapitalUsd;
+  const combinedAmountToRecoverUsd = historicalAmountToRecoverUsd + newCapitalUsd;
 
   // uni-lab.xyz's /rc-rlp-rebalance returns 500 ("input combination doesn't
   // produce a valid rebalance range" — its own documented meaning) whenever
@@ -1171,16 +1193,20 @@ async function runRebalanceViaUniLab(
   // NEVER touched — only B1, and only when this specific condition holds;
   // the normal case (B1 already comfortably above A1, the common one) is
   // untouched. 1.0005 (0.05%) is comfortably above float rounding noise
-  // without meaningfully distorting the real "amount to recover".
+  // without meaningfully distorting the real "amount to recover". Compared
+  // against the COMBINED (post-reinjection) A1/B1, not the raw historical
+  // ones — those are what actually get sent.
   const cappedAmountToRecoverUsd =
-    positionValueUsd > amountToRecoverUsd ? positionValueUsd * 1.0005 : amountToRecoverUsd;
+    combinedCurrentLiquidityUsd > combinedAmountToRecoverUsd
+      ? combinedCurrentLiquidityUsd * 1.0005
+      : combinedAmountToRecoverUsd;
 
   const baseParams = {
-    currentLiquidityUsd: positionValueUsd,
+    currentLiquidityUsd: combinedCurrentLiquidityUsd,
     amountToRecoverUsd: cappedAmountToRecoverUsd,
     currentPriceVolatileAsset: ethPrice,
     newLowerBound: newLowerPrice,
-    reinvestmentAmountUsd: reinjectionUsd,
+    reinvestmentAmountUsd: 0,
   };
 
   // x402-only (2026-07-15) — the operator's own USDC pays uni-lab directly,
