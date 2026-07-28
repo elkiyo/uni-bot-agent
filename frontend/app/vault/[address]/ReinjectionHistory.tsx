@@ -20,6 +20,16 @@ const dateLocale: Record<string, string> = { es: "es", en: "en-US", pt: "pt-BR",
  * needing a separate reconstruction of the pool's own Swap event. Same
  * "reconstructed straight from chain events, no backend" pattern as
  * PositionHistory.tsx/ActivityFeed.tsx.
+ *
+ * Gas cost per row is read from KeeperGasReimbursed — a SEPARATE event the
+ * same transaction ALSO emits whenever the keeper is the one triggering the
+ * auto-claim/reinject cycle (see RangeVaultArbCompound.sol's
+ * _reimburseKeeperGas, called right after _reinjectFees in every public
+ * entry point that can reach it) — matched here purely by tx_hash, already
+ * present in the same eventLogs fetch, no extra RPC call needed. A manual,
+ * owner-triggered "Cobrar comisiones" with auto-compound on has no such
+ * event (the owner paid their own real gas directly, nothing to reimburse),
+ * so that case just shows no gas figure rather than guessing one.
  */
 export function ReinjectionHistory({
   address,
@@ -62,6 +72,13 @@ export function ReinjectionHistory({
     return found;
   }
 
+  const gasByTxHash = new Map<string, bigint>();
+  for (const log of eventLogs ?? []) {
+    if (log.eventName !== "KeeperGasReimbursed") continue;
+    const amountUsd = (log.args as { amountUsd?: bigint }).amountUsd ?? 0n;
+    gasByTxHash.set(log.transactionHash, amountUsd);
+  }
+
   const reinjections = (eventLogs ?? [])
     .filter((log) => log.eventName === "FeesReinjected")
     .map((log) => {
@@ -70,17 +87,25 @@ export function ReinjectionHistory({
       const netFee1 = args.netFee1 ?? 0n;
       const used0 = args.used0 ?? 0n;
       const used1 = args.used1 ?? 0n;
+      const netFeeUsd = args.netFeeUsd ?? 0n;
+      const gasUsd = gasByTxHash.get(log.transactionHash);
+      // Both already raw stable-token (6-decimal) amounts — plain integer
+      // ratio gives the same % a human-dollar division would, without a
+      // float round-trip through formatUnits first.
+      const gasPct = gasUsd !== undefined && netFeeUsd > 0n ? (Number(gasUsd) / Number(netFeeUsd)) * 100 : undefined;
       // Route Uniswap's real token0/token1 to stable/volatile based on this
       // chain's actual pair order — same pattern used throughout this page.
       return {
         blockTimestamp: log.blockTimestamp,
         txHash: log.transactionHash,
-        netFeeUsd: args.netFeeUsd ?? 0n,
+        netFeeUsd,
         claimedStable: chain.stableIsToken0 ? netFee0 : netFee1,
         claimedVolatile: chain.stableIsToken0 ? netFee1 : netFee0,
         reinjectedStable: chain.stableIsToken0 ? used0 : used1,
         reinjectedVolatile: chain.stableIsToken0 ? used1 : used0,
         positionId: positionAt(log.blockNumber),
+        gasUsd,
+        gasPct,
       };
     })
     .sort((a, b) => b.blockTimestamp - a.blockTimestamp); // newest first
@@ -91,6 +116,7 @@ export function ReinjectionHistory({
     new Date(ts * 1000).toLocaleString(dateLocale[locale] ?? "es", { dateStyle: "short", timeStyle: "short" });
   const fmtStable = (v: bigint) => `${formatUnits(v, chain.stableDecimals)} ${chain.stableSymbol}`;
   const fmtVolatile = (v: bigint) => `${Number(formatUnits(v, chain.volatileDecimals)).toFixed(6)} ${chain.volatileSymbol}`;
+  const fmtUsd4 = (v: bigint) => `$${Number(formatUnits(v, chain.stableDecimals)).toFixed(4)}`;
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
@@ -99,51 +125,92 @@ export function ReinjectionHistory({
       </h2>
       <p className="mt-1 text-sm text-muted">{t("reinjectionHistory.subtitle")}</p>
 
-      <ol className="mt-6 flex flex-col gap-4">
-        {reinjections.map((r) => (
-          <li key={`${r.txHash}`} className="rounded-xl border border-hairline p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-sm text-white/90">{fmtDate(r.blockTimestamp)}</span>
-                {r.positionId !== undefined && (
-                  <span className="eyebrow !px-3 !py-1">{t("reinjectionHistory.positionLabel", { id: r.positionId.toString() })}</span>
-                )}
-              </div>
-              <span className="font-mono text-sm font-semibold text-positive">
-                ${Number(formatUnits(r.netFeeUsd, chain.stableDecimals)).toFixed(2)}
-              </span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                  {t("reinjectionHistory.claimed")}
-                </p>
-                <p className="mt-0.5 text-white/90">
-                  {fmtStable(r.claimedStable)}
-                  {r.claimedVolatile > 0n ? ` + ${fmtVolatile(r.claimedVolatile)}` : ""}
-                </p>
-              </div>
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                  {t("reinjectionHistory.reinjected")}
-                </p>
-                <p className="mt-0.5 text-white/90">
-                  {fmtStable(r.reinjectedStable)}
-                  {r.reinjectedVolatile > 0n ? ` + ${fmtVolatile(r.reinjectedVolatile)}` : ""}
-                </p>
-              </div>
-            </div>
-            <a
-              href={`${chain.explorerBaseUrl}/tx/${r.txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-block font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"
-            >
-              {t("reinjectionHistory.tx", { hash: `${r.txHash.slice(0, 10)}…${r.txHash.slice(-6)}` })}
-            </a>
-          </li>
-        ))}
-      </ol>
+      <div className="mt-6 overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-hairline text-left">
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("reinjectionHistory.colDate")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("reinjectionHistory.claimed")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("reinjectionHistory.reinjected")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("reinjectionHistory.colGasCost")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("reinjectionHistory.colProfitability")}
+              </th>
+              <th className="whitespace-nowrap py-2 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("reinjectionHistory.colTx")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {reinjections.map((r) => {
+              // >=100% means gas alone cost as much as (or more than) the
+              // whole reinjected amount — a real loss, not just a thin
+              // margin. Under that, still flag anything eating a big slice
+              // (>=25%) as marginal rather than cleanly profitable.
+              const unprofitable = r.gasPct !== undefined && r.gasPct >= 100;
+              const marginal = r.gasPct !== undefined && r.gasPct >= 25 && r.gasPct < 100;
+              return (
+                <tr key={r.txHash} className="border-b border-hairline/60 last:border-0">
+                  <td className="whitespace-nowrap py-3 pr-4">
+                    <div className="font-mono text-xs text-white/90">{fmtDate(r.blockTimestamp)}</div>
+                    {r.positionId !== undefined && (
+                      <span className="eyebrow mt-1 inline-block !px-2 !py-0.5 !text-[10px]">
+                        {t("reinjectionHistory.positionLabel", { id: r.positionId.toString() })}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-4 text-white/90">
+                    {fmtStable(r.claimedStable)}
+                    {r.claimedVolatile > 0n ? ` + ${fmtVolatile(r.claimedVolatile)}` : ""}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <span className="font-mono font-semibold text-positive">{fmtUsd4(r.netFeeUsd)}</span>
+                    <div className="mt-0.5 text-xs text-muted">
+                      {fmtStable(r.reinjectedStable)}
+                      {r.reinjectedVolatile > 0n ? ` + ${fmtVolatile(r.reinjectedVolatile)}` : ""}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap py-3 pr-4 font-mono text-white/80">
+                    {r.gasUsd !== undefined ? fmtUsd4(r.gasUsd) : t("reinjectionHistory.gasUnknown")}
+                  </td>
+                  <td className="whitespace-nowrap py-3 pr-4">
+                    {r.gasPct === undefined ? (
+                      <span className="text-muted">—</span>
+                    ) : (
+                      <span
+                        className={`font-mono font-semibold ${
+                          unprofitable ? "text-negative" : marginal ? "text-accent" : "text-positive"
+                        }`}
+                        title={t("reinjectionHistory.profitabilityHint")}
+                      >
+                        {r.gasPct.toFixed(1)}%{unprofitable ? ` ${t("reinjectionHistory.unprofitable")}` : ""}
+                      </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap py-3">
+                    <a
+                      href={`${chain.explorerBaseUrl}/tx/${r.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"
+                    >
+                      {r.txHash.slice(0, 8)}…{r.txHash.slice(-6)} ↗
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
