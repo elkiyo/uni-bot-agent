@@ -445,7 +445,7 @@ const es = {
 
     agentConfigPre: "Configuración del ",
     agentConfigHighlight: "agente",
-    configReinjection: "Reinyección alternada",
+    configReinjection: "Tope de reinyección por ciclo",
     configPeriodic: "Rebalanceo periódico",
     configPeriodicEvery: "cada {{hours}}h",
     configOff: "desactivado",

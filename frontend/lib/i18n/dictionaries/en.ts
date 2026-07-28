@@ -447,7 +447,7 @@ const en: Dictionary = {
 
     agentConfigPre: "Configuration for the ",
     agentConfigHighlight: "agent",
-    configReinjection: "Alternating reinjection",
+    configReinjection: "Reinjection cap per cycle",
     configPeriodic: "Periodic rebalancing",
     configPeriodicEvery: "every {{hours}}h",
     configOff: "off",

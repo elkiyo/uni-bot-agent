@@ -443,7 +443,7 @@ const zh: Dictionary = {
 
     agentConfigPre: "",
     agentConfigHighlight: "智能体配置",
-    configReinjection: "交替再注入",
+    configReinjection: "每周期再注入上限",
     configPeriodic: "周期性再平衡",
     configPeriodicEvery: "每 {{hours}} 小时",
     configOff: "已停用",

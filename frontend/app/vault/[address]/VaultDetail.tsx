@@ -743,8 +743,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           lo,
           hi,
           BigInt(cfgMaxRebalances || String(maxRebalances ?? 0)),
-          parseUnits(cfgReinjection || "0", stableDecimals),
-          BigInt(Math.round(Number(cfgPeriodicHours || "24") * 3600)),
+          cfgReinjection ? parseUnits(cfgReinjection, stableDecimals) : ((reinjectionAmount as bigint) ?? 0n),
+          cfgPeriodicHours
+            ? BigInt(Math.round(Number(cfgPeriodicHours) * 3600))
+            : ((periodicRebalanceInterval as bigint) ?? 0n),
           cfgRecenterMarginPct
             ? BigInt(Math.round(Number(cfgRecenterMarginPct) * 100))
             : ((recenterMarginBps as bigint) ?? 500n),
