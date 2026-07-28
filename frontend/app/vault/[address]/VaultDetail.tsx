@@ -266,6 +266,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
   // vault — mismo cálculo simple que la tarjeta en /vaults, no anualizado.
   const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, stableDecimals));
+  // "Capital inicial" (la tarjeta) muestra SOLO investableAmount del primer
+  // depósito — no investableAmount+reserveAmount (eso es initialInvestmentUsd
+  // de arriba, usado nada más como denominador de rentLabel).
+  const initialInvestableAmountUsd = Number(formatUnits(depositSummary?.initialInvestableAmount ?? 0n, stableDecimals));
   const rentLabel =
     feesUsdTotal !== undefined && initialInvestmentUsd > 0
       ? t("vaults.returnLabel", { pct: ((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2) })
@@ -1427,7 +1431,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               <VaultAgeStat createdAt={createdAt} />
               <Stat
                 label={t("vaultDetail.statInitialCapital")}
-                value={`${initialInvestmentUsd.toFixed(2)} ${stableSymbol}`}
+                value={`${initialInvestableAmountUsd.toFixed(2)} ${stableSymbol}`}
               />
               <Stat
                 label={t("vaultDetail.statInvestable")}

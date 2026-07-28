@@ -6,6 +6,7 @@ import type { ChainDef } from "./chains";
 
 export interface VaultDepositSummary {
   initialInvestmentUsdt: bigint; // investableAmount + reserveAmount from the vault's very first deposit() call
+  initialInvestableAmount: bigint; // investableAmount alone, same event — what actually went into the position
 }
 
 /**
@@ -29,9 +30,12 @@ export function useVaultDepositSummary(address: `0x${string}` | undefined, chain
   const summary: VaultDepositSummary | undefined = logs
     ? (() => {
         const deposited = logs.find((l) => l.eventName === "Deposited");
-        if (!deposited) return { initialInvestmentUsdt: 0n };
+        if (!deposited) return { initialInvestmentUsdt: 0n, initialInvestableAmount: 0n };
         const args = deposited.args as { investableAmount?: bigint; reserveAmount?: bigint };
-        return { initialInvestmentUsdt: (args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n) };
+        return {
+          initialInvestmentUsdt: (args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n),
+          initialInvestableAmount: args.investableAmount ?? 0n,
+        };
       })()
     : undefined;
 
