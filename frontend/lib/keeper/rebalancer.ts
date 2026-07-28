@@ -1157,30 +1157,43 @@ async function runRebalanceViaUniLab(
   // using positionValueUsd here would understate B1 and feed uni-lab a
   // "amount to recover" smaller than the real capital at stake. This is
   // ALWAYS the capital committed *before* this cycle — it must never include
-  // this cycle's own reinjection (see newCapitalUsd below), which hasn't
-  // happened yet at the moment this is read.
+  // this cycle's own RESERVE reinjection (see reinjectAmountUsd below),
+  // which hasn't happened yet at the moment this is read. `investableUsdt`
+  // is DIFFERENT: getCumulativeInvestmentUsd already counted its
+  // `Deposited.investableAmount` immediately at deposit time (same rule
+  // withdraw()'s own principalUsd assumes — see that function's docstring),
+  // so it must NOT be added again here when it finally gets folded into the
+  // mint — doing so double-counts it (caught live 2026-07-28 against vault
+  // 0x55CB44A1...947D19, before this fix).
   const historicalAmountToRecoverUsd = await getCumulativeInvestmentUsd(chain, vaultAddress, BigInt(record.createdAtBlock), abi);
 
   // RC method (2026-07-28, replaces the old RLP-style split where reserve
-  // reinjection went through E1/reinvestmentAmountUsd instead): fold every
-  // real reinjection happening THIS cycle — reserve (reinjectAmount) and any
-  // pending investable top-up (idleInvestableUsdt, e.g. from a later
-  // deposit() or a swap-sizing leftover the contract already carries
-  // forward) — into BOTH A1 and B1 at once, and always send E1=0. Verified
-  // empirically against a real vault (2026-07-28): parametrizing the exact
-  // same scenario via E1 (RLP) vs. via this combined A1/B1 (RC) produced the
-  // IDENTICAL new_upper_bound from uni-lab down to the cent — so this is a
-  // pure simplification, not a behavior change, and it closes a real gap the
-  // old RLP-style call had: idleInvestableUsdt was never communicated to
-  // uni-lab via E1 even though it always entered the real mint via
-  // availableStableRaw below. idleWeth (WETH-side dust) is deliberately
-  // EXCLUDED here — dust is swap-sizing leftover from a PRIOR cycle's A1,
-  // not new owner capital, so folding it in again here would double-count
-  // it (same reasoning `getCumulativeInvestmentUsd` already applies by never
-  // summing `IdleDustSwept`).
-  const newCapitalUsd = Number(reinjectAmount + idleInvestableUsdt) * 10 ** -chain.stableDecimals;
-  const combinedCurrentLiquidityUsd = positionValueUsd + newCapitalUsd;
-  const combinedAmountToRecoverUsd = historicalAmountToRecoverUsd + newCapitalUsd;
+  // reinjection went through E1/reinvestmentAmountUsd instead): fold the
+  // reserve reinjection happening THIS cycle into BOTH A1 and B1 at once,
+  // and always send E1=0. `idleInvestableUsdt` folds into A1 only (uni-lab
+  // needs the position's real post-mint size), never into B1 (see above —
+  // already counted at deposit time). Verified empirically against a real
+  // vault (2026-07-28): parametrizing an equivalent scenario via E1 (RLP)
+  // vs. this combined A1/B1 (RC) produced the IDENTICAL new_upper_bound from
+  // uni-lab down to the cent, so this is a pure simplification for the
+  // reserve leg, not a behavior change.
+  //
+  // KNOWN GAP, not fixed here (documented in CLAUDE.md, needs a contract
+  // change to close properly): a later `deposit()`'s investableAmount is
+  // only ever folded into the real position via `rebalance()` (this
+  // function) or the standalone `sweepIdleDust()` — and `sweepIdleDust()`'s
+  // own `IdleDustSwept` event is deliberately never summed by
+  // `getCumulativeInvestmentUsd` (it's usually genuine swap-sizing dust that
+  // was already counted before). The contract has no way to tell "genuine
+  // dust" apart from "a pending top-up that happens to get swept before the
+  // next rebalance" — both live in the same `investableUsdt` slot. Since
+  // this function still counts investableAmount at deposit time regardless,
+  // that specific gap doesn't apply here; it only matters if this file ever
+  // switches to NOT counting investableAmount until it's actually folded in.
+  const reinjectAmountUsd = Number(reinjectAmount) * 10 ** -chain.stableDecimals;
+  const idleInvestableUsd = Number(idleInvestableUsdt) * 10 ** -chain.stableDecimals;
+  const combinedCurrentLiquidityUsd = positionValueUsd + reinjectAmountUsd + idleInvestableUsd;
+  const combinedAmountToRecoverUsd = historicalAmountToRecoverUsd + reinjectAmountUsd;
 
   // uni-lab.xyz's /rc-rlp-rebalance returns 500 ("input combination doesn't
   // produce a valid rebalance range" — its own documented meaning) whenever
