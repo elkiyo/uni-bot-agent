@@ -1653,7 +1653,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       k={t("vaultDetail.configFeeClaimInterval")}
                       v={
                         feeClaimIntervalSeconds && (feeClaimIntervalSeconds as bigint) > 0n
-                          ? `${Number(feeClaimIntervalSeconds) / 3600}h`
+                          ? formatHms(Number(feeClaimIntervalSeconds))
                           : t("vaultDetail.configOff")
                       }
                     />
@@ -2017,6 +2017,17 @@ function formatAge(totalSeconds: number): string {
   if (d > 0) return `${d}d ${h}h ${m}m`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+// Stopwatch-style HH:MM:SS — used for short configured intervals (e.g. the
+// compound vault's fee-claim interval) where "0.05h" reads as meaningless
+// but "00:03:00" reads instantly.
+function formatHms(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 function Stat({
