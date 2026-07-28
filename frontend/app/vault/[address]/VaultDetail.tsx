@@ -1652,9 +1652,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     <ConfigRow
                       k={t("vaultDetail.configFeeClaimInterval")}
                       v={
-                        feeClaimIntervalSeconds && (feeClaimIntervalSeconds as bigint) > 0n
-                          ? formatHms(Number(feeClaimIntervalSeconds))
-                          : t("vaultDetail.configOff")
+                        feeClaimIntervalSeconds && (feeClaimIntervalSeconds as bigint) > 0n ? (
+                          <FeeClaimCountdown
+                            lastFeeClaimTimestamp={lastFeeClaimTimestamp as bigint | undefined}
+                            feeClaimIntervalSeconds={feeClaimIntervalSeconds as bigint | undefined}
+                          />
+                        ) : (
+                          t("vaultDetail.configOff")
+                        )
                       }
                     />
                     <ConfigRow
@@ -1924,13 +1929,41 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   );
 }
 
-function ConfigRow({ k, v }: { k: string; v: string }) {
+function ConfigRow({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div>
       <dt className="text-xs text-faint">{k}</dt>
       <dd className="mt-0.5 font-medium text-white/90">{v}</dd>
     </div>
   );
+}
+
+// Live, ticking countdown to the next scheduled auto-claim — same
+// nextAt/remaining shape as RebalanceCountdown.tsx, just rendered inline as
+// HH:MM:SS instead of a standalone card, since this sits inside a compact
+// config row. Freezes at 00:00:00 once the window opens (the countdown
+// can't know exactly when the next tick actually fires the claim — the
+// vault's own polling refresh picks up the real lastFeeClaimTimestamp once
+// it does, which resets this naturally).
+function FeeClaimCountdown({
+  lastFeeClaimTimestamp,
+  feeClaimIntervalSeconds,
+}: {
+  lastFeeClaimTimestamp: bigint | undefined;
+  feeClaimIntervalSeconds: bigint | undefined;
+}) {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const intervalSeconds = Number(feeClaimIntervalSeconds ?? 0n);
+  const nextAt = Number(lastFeeClaimTimestamp ?? 0n) + intervalSeconds;
+  const remaining = Math.max(0, nextAt - now);
+
+  return <span className="font-mono tabular-nums">{formatHms(remaining)}</span>;
 }
 
 // Uniswap-style quick-pick chips (25/50/75/Max) for a percentage field —
