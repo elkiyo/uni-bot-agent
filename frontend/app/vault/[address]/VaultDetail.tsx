@@ -568,8 +568,40 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [riskMinCooldownHours, setRiskMinCooldownHours] = useState("");
   const [riskMaxRangeDeviationTicks, setRiskMaxRangeDeviationTicks] = useState("");
   const [increaseAmount, setIncreaseAmount] = useState("0");
+  // Which token the owner hands over for "Sumar a la posición abierta" —
+  // same capability/gating as the deposit fields above (compound vaults
+  // only, via increasePositionWithToken()'s new third-party-swap path).
+  const [increaseDepositToken, setIncreaseDepositToken] = useState<`0x${string}`>(stableToken);
+  const [prevIsCompoundForIncrease, setPrevIsCompoundForIncrease] = useState(isCompound);
+  if (prevIsCompoundForIncrease !== isCompound) {
+    setPrevIsCompoundForIncrease(isCompound);
+    if (!isCompound) setIncreaseDepositToken(stableToken);
+  }
+  const increaseTokenMeta = depositTokenMetaFor(increaseDepositToken);
+  const increaseRawAmount = parseUnits(increaseAmount || "0", increaseTokenMeta.decimals);
+  const increaseQuote = useThirdPartyDepositQuote(
+    chain,
+    isNative(increaseDepositToken) ? undefined : (chain.compoundDepositTokens ?? []).find((tk) => tk.address === increaseDepositToken),
+    increaseRawAmount,
+    30n,
+  );
+  const increaseInsufficient =
+    !isNative(increaseDepositToken) &&
+    Boolean(increaseAmount) &&
+    balanceFor(increaseDepositToken) !== undefined &&
+    (parseFloat(increaseAmount) || 0) > (balanceFor(increaseDepositToken) ?? 0);
+  const increaseQuotePending = !isNative(increaseDepositToken) && (parseFloat(increaseAmount) || 0) > 0;
+  const increaseQuoteLoading = increaseQuotePending && increaseQuote.isLoading;
+  const increaseQuoteErrored = increaseQuotePending && increaseQuote.isError;
   const [withdrawPositionPct, setWithdrawPositionPct] = useState("0");
+  // withdrawFundsPct: standard (V1) vaults only — withdraw() there still
+  // takes one shared bps for investable+reserve+gas. Compound (V2) vaults
+  // split it into 3 fully independent buckets below (see withdraw()'s own
+  // signature change documented in CLAUDE.md's "Interés compuesto V2").
   const [withdrawFundsPct, setWithdrawFundsPct] = useState("0");
+  const [withdrawInvestablePct, setWithdrawInvestablePct] = useState("0");
+  const [withdrawReservePct, setWithdrawReservePct] = useState("0");
+  const [withdrawGasReservePct, setWithdrawGasReservePct] = useState("0");
   // Uniswap-style liquidity actions — "Agregar liquidez"/"Eliminar
   // liquidez"/"Cobrar comisiones" each open their own modal (input step,
   // then a review step before the wallet ever opens) instead of living as
@@ -924,12 +956,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handleIncreasePosition() {
-    const usdtAmount = parseUnits(increaseAmount || "0", stableDecimals);
-    if (usdtAmount === 0n) return;
     if (!positionTicks || currentTick === undefined) {
       setError(t("vaultDetail.errNoRange"));
       return;
     }
+    const native = isNative(increaseDepositToken);
+    // Third-party token (increasePositionWithToken()): the amount that
+    // actually lands in the vault's own stable is whatever the sell-side
+    // quote says, not the raw typed amount of the foreign token — same
+    // reasoning as handleDepositMore's finalInvestableRaw.
+    if (!native && (increaseQuote.isLoading || increaseQuote.isError || increaseQuote.expectedStableOut === 0n)) {
+      setError(t("vaultDetail.quoteErrorMsg", { symbol: increaseTokenMeta.displaySymbol }));
+      return;
+    }
+    const usdtAmount = native ? parseUnits(increaseAmount || "0", stableDecimals) : increaseQuote.expectedStableOut;
+    if (usdtAmount === 0n) return;
 
     // Sized client-side — no uni-lab consultation needed, this is just the
     // position's already-known live ratio at the pool's current price, both
@@ -941,7 +982,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // exactly what left $64.92 of USDT stranded in production 2026-07-16
     // (vault 0x0Bf394B3...5dEBCE5b8). The stable side is still capped to
     // usdtAmount to match increasePosition()'s own cap — old investableUsdt
-    // dust stays untouched.
+    // dust stays untouched. Applies the same way whether usdtAmount came
+    // straight from the input (native) or from a third-party sell quote.
     const ethPrice = ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals);
     const swap = sizeRebalanceSwap({
       currentTick,
@@ -954,53 +996,133 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       stableDecimals,
       volatileDecimals,
     });
+    const swapIx = {
+      token0ToToken1: swap.sellStable === stableIsToken0,
+      amountIn: swap.amountIn,
+      amountOutMinimum: 0n,
+      fee: feeTier,
+    };
 
-    await withTx(t("vaultDetail.txApproving"), () =>
-      writeContractAsync({
-        address: stableToken,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [address, usdtAmount],
-        chainId: chain.id,
-      }),
-    );
-    await withTx(t("vaultDetail.txIncreasing"), () =>
-      writeContractAsync({
-        address,
-        abi: vaultAbi,
-        functionName: "increasePosition",
-        args: [
-          {
-            token0ToToken1: swap.sellStable === stableIsToken0,
-            amountIn: swap.amountIn,
-            amountOutMinimum: 0n,
-            fee: feeTier,
-          },
-          usdtAmount,
-          0n,
-          0n,
-        ],
-        chainId: chain.id,
-      }),
-    );
+    if (native) {
+      await withTx(t("vaultDetail.txApproving"), () =>
+        writeContractAsync({
+          address: stableToken,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [address, usdtAmount],
+          chainId: chain.id,
+        }),
+      );
+      await withTx(t("vaultDetail.txIncreasing"), () =>
+        writeContractAsync({
+          address,
+          abi: vaultAbi,
+          functionName: "increasePosition",
+          args: [swapIx, usdtAmount, 0n, 0n],
+          chainId: chain.id,
+        }),
+      );
+    } else {
+      await withTx(t("vaultDetail.txApproving"), () =>
+        writeContractAsync({
+          address: increaseDepositToken,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [address, increaseRawAmount],
+          chainId: chain.id,
+        }),
+      );
+      await withTx(t("vaultDetail.txIncreasing"), () =>
+        writeContractAsync({
+          address,
+          abi: vaultAbi,
+          functionName: "increasePositionWithToken",
+          args: [
+            increaseDepositToken,
+            increaseRawAmount,
+            increaseQuote.feeTier,
+            increaseQuote.thirdPartyAmountOutMinimum,
+            swapIx,
+            usdtAmount,
+            0n,
+            0n,
+          ],
+          chainId: chain.id,
+        }),
+      );
+    }
     setIncreaseAmount("0");
+  }
+
+  // ownerRebalance() (V2 only) — the owner forces a rebalance without
+  // waiting for the keeper's next cycle, even while still comfortably in
+  // range. The new range still has to come from uni-lab.xyz's real
+  // calculation (same as every keeper rebalance), so this first asks a
+  // server route (paid via the operator's own x402 wallet, no cost to the
+  // owner) for the params, then has the owner's OWN wallet sign
+  // ownerRebalance() with them — owner pays their own gas, same
+  // collectFees()-vs-harvestFees() reasoning as the rest of this file.
+  async function handleOwnerRebalance() {
+    if (!connected) return;
+    setBusy(t("vaultDetail.txComputingRange"));
+    setError(null);
+    try {
+      const res = await fetch(`/api/vault/${address}/owner-rebalance-params`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chainId: chain.id, owner: connected }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(t("vaultDetail.errOwnerRebalanceFailed"));
+        return;
+      }
+      setBusy(null);
+      await withTx(t("vaultDetail.txRebalancing"), () =>
+        writeContractAsync({
+          address,
+          abi: vaultAbi,
+          functionName: "ownerRebalance",
+          args: [
+            data.newTickLower,
+            data.newTickUpper,
+            {
+              token0ToToken1: data.swapIx.token0ToToken1,
+              amountIn: BigInt(data.swapIx.amountIn),
+              amountOutMinimum: BigInt(data.swapIx.amountOutMinimum),
+              fee: data.swapIx.fee,
+            },
+            BigInt(data.reinjectAmount),
+            0n,
+            0n,
+          ],
+          chainId: chain.id,
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function handlePartialWithdraw() {
     const positionShareBps = BigInt(Math.round(Number(withdrawPositionPct || "0") * 100));
-    const fundsShareBps = BigInt(Math.round(Number(withdrawFundsPct || "0") * 100));
-    if (positionShareBps === 0n && fundsShareBps === 0n) return;
-    if (positionShareBps > 10_000n || fundsShareBps > 10_000n) {
+    // Compound (V2) vaults: 3 fully independent buckets. Standard (V1)
+    // vaults: one shared bucket, withdraw() there only takes 2 args total.
+    const withdrawArgs = isCompound
+      ? [
+          positionShareBps,
+          BigInt(Math.round(Number(withdrawInvestablePct || "0") * 100)),
+          BigInt(Math.round(Number(withdrawReservePct || "0") * 100)),
+          BigInt(Math.round(Number(withdrawGasReservePct || "0") * 100)),
+        ]
+      : [positionShareBps, BigInt(Math.round(Number(withdrawFundsPct || "0") * 100))];
+    if (withdrawArgs.every((bps) => bps === 0n)) return;
+    if (withdrawArgs.some((bps) => bps > 10_000n)) {
       setError(t("vaultDetail.errPctOver100"));
       return;
     }
-    // Compound (V2) vaults split withdraw() into 4 independent buckets
-    // (position/investable/reserve/gas) instead of V1's single shared
-    // fundsShareBps — the UI still exposes one "funds %" slider, so apply
-    // it uniformly to all 3 non-position buckets to keep today's behavior.
-    const withdrawArgs = isCompound
-      ? [positionShareBps, fundsShareBps, fundsShareBps, fundsShareBps]
-      : [positionShareBps, fundsShareBps];
     await withTx(t("vaultDetail.txWithdrawing"), () =>
       writeContractAsync({
         address,
@@ -1012,6 +1134,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     );
     setWithdrawPositionPct("0");
     setWithdrawFundsPct("0");
+    setWithdrawInvestablePct("0");
+    setWithdrawReservePct("0");
+    setWithdrawGasReservePct("0");
   }
 
   // Owner-only switch — sits right under the "view on Uniswap" link in
@@ -1055,6 +1180,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // tokensOwed0/1, same reasoning as collectPreview below.
   const withdrawPositionShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawPositionPct) || 0) * 100)));
   const withdrawFundsShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawFundsPct) || 0) * 100)));
+  const withdrawInvestableShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawInvestablePct) || 0) * 100)));
+  const withdrawReserveShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawReservePct) || 0) * 100)));
+  const withdrawGasReserveShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawGasReservePct) || 0) * 100)));
   const withdrawPreview =
     positionTicks && positionLiquidity !== undefined && positionTokensOwedLive && currentTick !== undefined
       ? (() => {
@@ -1069,12 +1197,22 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           const shareFraction = withdrawPositionShareBps / 10_000;
           const positionStableRaw = (stableIsToken0 ? total0 : total1) * shareFraction;
           const positionVolatileRaw = (stableIsToken0 ? total1 : total0) * shareFraction;
-          const fundsStableRaw =
-            (Number((investableUsdt as bigint) ?? 0n) + Number((reserveBalance as bigint) ?? 0n)) * (withdrawFundsShareBps / 10_000);
+          const investableUsdtNum = Number((investableUsdt as bigint) ?? 0n);
+          const reserveBalanceNum = Number((reserveBalance as bigint) ?? 0n);
+          const gasReserveBalanceNum = Number(gasReserveBalance);
+          // Standard vaults: one combined bucket. Compound vaults: 3
+          // independent buckets, each previewed against its own bps.
+          const fundsStableRaw = isCompound
+            ? investableUsdtNum * (withdrawInvestableShareBps / 10_000)
+            : (investableUsdtNum + reserveBalanceNum) * (withdrawFundsShareBps / 10_000);
+          const reserveStableRaw = isCompound ? reserveBalanceNum * (withdrawReserveShareBps / 10_000) : 0;
+          const gasReserveStableRaw = isCompound ? gasReserveBalanceNum * (withdrawGasReserveShareBps / 10_000) : 0;
           return {
             positionStable: positionStableRaw * 10 ** -stableDecimals,
             positionVolatile: positionVolatileRaw * 10 ** -volatileDecimals,
             fundsStable: fundsStableRaw * 10 ** -stableDecimals,
+            reserveStable: reserveStableRaw * 10 ** -stableDecimals,
+            gasReserveStable: gasReserveStableRaw * 10 ** -stableDecimals,
           };
         })()
       : undefined;
@@ -1132,7 +1270,17 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 <p className="mt-1 text-sm text-black/60">{t("vaultDetail.increasePositionHint")}</p>
                 <div className="mt-5">
                   <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-black/60">{t("vaultDetail.fieldAmountSymbol", { symbol: stableSymbol })}</span>
+                    <span className="text-xs text-black/60">{t("vaultDetail.fieldAmountSymbol", { symbol: increaseTokenMeta.displaySymbol })}</span>
+                    {isCompound && (
+                      <DepositTokenSelector
+                        size="mini"
+                        variant="light"
+                        tokens={depositTokenOptions}
+                        selected={increaseDepositToken}
+                        onSelect={setIncreaseDepositToken}
+                        balances={depositTokenBalancesUsd}
+                      />
+                    )}
                     <input
                       className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
                       value={increaseAmount}
@@ -1141,9 +1289,26 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     />
                   </label>
                 </div>
+                {increaseInsufficient && (
+                  <p className="mt-2 text-sm text-red-700">
+                    {t("vaultDetail.insufficientBalanceMsg", {
+                      symbol: increaseTokenMeta.displaySymbol,
+                      total: (parseFloat(increaseAmount) || 0).toFixed(2),
+                      balance: (balanceFor(increaseDepositToken) ?? 0).toFixed(2),
+                    })}
+                  </p>
+                )}
+                {!increaseInsufficient && increaseQuoteLoading && (
+                  <p className="mt-2 text-sm text-black/50">{t("vaultDetail.quoteLoadingMsg")}</p>
+                )}
+                {!increaseInsufficient && increaseQuoteErrored && (
+                  <p className="mt-2 text-sm text-red-700">
+                    {t("vaultDetail.quoteErrorMsg", { symbol: increaseTokenMeta.displaySymbol })}
+                  </p>
+                )}
                 <button
                   onClick={() => setManageStep("review")}
-                  disabled={(Number(increaseAmount) || 0) <= 0}
+                  disabled={(Number(increaseAmount) || 0) <= 0 || increaseInsufficient || increaseQuoteLoading || increaseQuoteErrored}
                   className="mt-6 w-full rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
                   {t("vaultDetail.reviewButton")}
@@ -1157,7 +1322,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     {t("vaultDetail.addLiquidityAmount")}
                   </p>
                   <p className="mt-1 text-lg font-semibold text-[#050505]">
-                    {increaseAmount} {stableSymbol}
+                    {increaseAmount} {increaseTokenMeta.displaySymbol}
                   </p>
                   <p className="mt-2 text-xs text-black/60">{t("vaultDetail.addLiquidityNote")}</p>
                 </div>
@@ -1197,21 +1362,61 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     />
                     <LightPctQuickButtons onPick={setWithdrawPositionPct} />
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-xs text-black/60">{t("vaultDetail.fieldIdleFundsPct")}</span>
-                    <input
-                      className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
-                      value={withdrawFundsPct}
-                      onChange={(e) => setWithdrawFundsPct(e.target.value)}
-                      inputMode="decimal"
-                    />
-                    <LightPctQuickButtons onPick={setWithdrawFundsPct} />
-                  </div>
+                  {isCompound ? (
+                    <>
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestablePct")}</span>
+                        <input
+                          className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                          value={withdrawInvestablePct}
+                          onChange={(e) => setWithdrawInvestablePct(e.target.value)}
+                          inputMode="decimal"
+                        />
+                        <LightPctQuickButtons onPick={setWithdrawInvestablePct} />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-xs text-black/60">{t("vaultDetail.fieldReservePct")}</span>
+                        <input
+                          className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                          value={withdrawReservePct}
+                          onChange={(e) => setWithdrawReservePct(e.target.value)}
+                          inputMode="decimal"
+                        />
+                        <LightPctQuickButtons onPick={setWithdrawReservePct} />
+                      </div>
+                      {chain.supportsGasReserve && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs text-black/60">{t("vaultDetail.fieldGasReservePct")}</span>
+                          <input
+                            className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                            value={withdrawGasReservePct}
+                            onChange={(e) => setWithdrawGasReservePct(e.target.value)}
+                            inputMode="decimal"
+                          />
+                          <LightPctQuickButtons onPick={setWithdrawGasReservePct} />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs text-black/60">{t("vaultDetail.fieldIdleFundsPct")}</span>
+                      <input
+                        className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                        value={withdrawFundsPct}
+                        onChange={(e) => setWithdrawFundsPct(e.target.value)}
+                        inputMode="decimal"
+                      />
+                      <LightPctQuickButtons onPick={setWithdrawFundsPct} />
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => {
-                    if (withdrawPositionShareBps === 0 && withdrawFundsShareBps === 0) return;
-                    if ((Number(withdrawPositionPct) || 0) > 100 || (Number(withdrawFundsPct) || 0) > 100) {
+                    const pctFields = isCompound
+                      ? [withdrawPositionPct, withdrawInvestablePct, withdrawReservePct, withdrawGasReservePct]
+                      : [withdrawPositionPct, withdrawFundsPct];
+                    if (pctFields.every((pct) => (Number(pct) || 0) === 0)) return;
+                    if (pctFields.some((pct) => (Number(pct) || 0) > 100)) {
                       setError(t("vaultDetail.errPctOver100"));
                       return;
                     }
@@ -1240,15 +1445,50 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       <p className="mt-2 text-xs text-black/60">{t("vaultDetail.withdrawReviewFeesNote")}</p>
                     </div>
                   )}
-                  {withdrawFundsShareBps > 0 && (
-                    <div className="rounded-xl border border-black/10 bg-black/5 p-4">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
-                        {t("vaultDetail.withdrawReviewFunds", { pct: withdrawFundsPct })}
-                      </p>
-                      <p className="mt-1 text-lg font-semibold text-[#050505]">
-                        {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
-                      </p>
-                    </div>
+                  {isCompound ? (
+                    <>
+                      {withdrawInvestableShareBps > 0 && (
+                        <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                            {t("vaultDetail.withdrawReviewInvestable", { pct: withdrawInvestablePct })}
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-[#050505]">
+                            {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
+                          </p>
+                        </div>
+                      )}
+                      {withdrawReserveShareBps > 0 && (
+                        <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                            {t("vaultDetail.withdrawReviewReserve", { pct: withdrawReservePct })}
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-[#050505]">
+                            {withdrawPreview ? withdrawPreview.reserveStable.toFixed(2) : "—"} {stableSymbol}
+                          </p>
+                        </div>
+                      )}
+                      {withdrawGasReserveShareBps > 0 && (
+                        <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                            {t("vaultDetail.withdrawReviewGasReserve", { pct: withdrawGasReservePct })}
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-[#050505]">
+                            {withdrawPreview ? withdrawPreview.gasReserveStable.toFixed(2) : "—"} {stableSymbol}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    withdrawFundsShareBps > 0 && (
+                      <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                          {t("vaultDetail.withdrawReviewFunds", { pct: withdrawFundsPct })}
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-[#050505]">
+                          {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
+                        </p>
+                      </div>
+                    )
                   )}
                 </div>
                 <div className="mt-6 flex gap-3">
@@ -1632,6 +1872,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     >
                       {t("vaultDetail.collectFeesTitle")}
                     </button>
+                    {isCompound && (
+                      <button
+                        onClick={handleOwnerRebalance}
+                        disabled={Boolean(busy)}
+                        className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                        title={t("vaultDetail.ownerRebalanceHint")}
+                      >
+                        {t("vaultDetail.ownerRebalanceTitle")}
+                      </button>
+                    )}
                   </>
                 )}
                 <button

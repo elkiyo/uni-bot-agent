@@ -240,8 +240,9 @@ async function wouldSucceed(
   functionName: string,
   args: readonly unknown[],
   abi: Abi = chain.vaultAbi as Abi,
+  account?: Address,
 ): Promise<boolean> {
-  return (await simulateAttempt(chain, vaultAddress, functionName, args, abi)).ok;
+  return (await simulateAttempt(chain, vaultAddress, functionName, args, abi, account)).ok;
 }
 
 /**
@@ -257,6 +258,7 @@ async function simulateAttempt(
   functionName: string,
   args: readonly unknown[],
   abi: Abi = chain.vaultAbi as Abi,
+  account?: Address,
 ): Promise<{ ok: boolean; errorName?: string }> {
   try {
     await chain.publicClient.simulateContract({
@@ -264,7 +266,12 @@ async function simulateAttempt(
       abi,
       functionName,
       args: args as unknown[],
-      account: operatorAccount?.address,
+      // Defaults to the operator — right for every existing caller
+      // (rebalance()/harvestFees()/etc. are all onlyOperator). Callers
+      // simulating an onlyOwner function (ownerRebalance()) must pass the
+      // real owner's address here, or the simulation always reverts with
+      // NotOwner regardless of whether the tx itself would actually succeed.
+      account: account ?? operatorAccount?.address,
     });
     return { ok: true };
   } catch (err) {
@@ -566,9 +573,10 @@ async function minAmountOutForRebalanceSwap(
   maxSlippageBps: bigint,
   abi: Abi = chain.vaultAbi as Abi,
   targetFunctionName: string = "rebalance",
+  simulateAsAccount?: Address,
 ): Promise<bigint | null> {
   if (swap.amountIn === 0n) return 0n;
-  if (!(await wouldSucceed(chain, vaultAddress, targetFunctionName, buildArgs(0n), abi))) return null;
+  if (!(await wouldSucceed(chain, vaultAddress, targetFunctionName, buildArgs(0n), abi, simulateAsAccount))) return null;
 
   // Generous upper bound for the search range — pre-fee, pre-impact spot
   // conversion, always >= the real achievable output.
@@ -582,7 +590,7 @@ async function minAmountOutForRebalanceSwap(
   for (let i = 0; i < 12 && hi - lo > precision; i++) {
     const mid = (lo + hi + 1n) / 2n;
     // eslint-disable-next-line no-await-in-loop -- sequential probes of the same contract, deliberately not parallelized
-    if (await wouldSucceed(chain, vaultAddress, targetFunctionName, buildArgs(mid), abi)) lo = mid;
+    if (await wouldSucceed(chain, vaultAddress, targetFunctionName, buildArgs(mid), abi, simulateAsAccount)) lo = mid;
     else hi = mid - 1n;
   }
   return (lo * (10_000n - maxSlippageBps)) / 10_000n;
@@ -988,17 +996,39 @@ async function getCumulativeInvestmentUsd(
  * — it never calls uni-lab at all, since a position that broke out above is
  * already ~100% stable and there's no split left to compute.
  */
-async function runRebalanceViaUniLab(
+/**
+ * Computes uni-lab-derived rebalance parameters without sending any
+ * transaction — shared by runRebalanceViaUniLab (the keeper's own cycle,
+ * which sends `rebalance()` itself right after this returns) and
+ * computeOwnerRebalanceParams (a new API route hands these back to the
+ * vault's owner to sign `ownerRebalance()` with their own wallet). Returns
+ * null at every point the keeper's own cycle would have logged-and-skipped
+ * — same gates, same uni-lab call, same swap sizing, just without the send.
+ *
+ * targetFunctionName/simulateAsAccount let the final slippage-search
+ * (minAmountOutForRebalanceSwap) simulate against whichever function the
+ * caller will actually send, signed by whichever address will actually
+ * sign it — required for ownerRebalance() specifically, since it's
+ * onlyOwner, not onlyOperator (see simulateAttempt's own docstring).
+ */
+async function computeRebalanceParams(
   chain: ChainRuntime,
   vaultAddress: Address,
   store: Store,
   reason: "periodic" | "out-of-range-bottom",
   abi: Abi = chain.vaultAbi as Abi,
-): Promise<void> {
+  targetFunctionName: string = "rebalance",
+  simulateAsAccount?: Address,
+): Promise<{
+  newTickLower: number;
+  newTickUpper: number;
+  swapIx: { token0ToToken1: boolean; amountIn: bigint; amountOutMinimum: bigint; fee: number };
+  reinjectAmount: bigint;
+} | null> {
   const record = await store.getVault(vaultAddress);
   if (!record?.uniLabApiKey) {
     logEvent({ level: "error", vault: vaultAddress, msg: "no uni-lab api key on record, skipping rebalance" });
-    return;
+    return null;
   }
 
   const vault = vaultContract(chain, vaultAddress, abi);
@@ -1170,7 +1200,7 @@ async function runRebalanceViaUniLab(
       rebalanceCount: rebalanceCount.toString(),
       maxRebalances: maxRebalances.toString(),
     });
-    return;
+    return null;
   }
 
   // B1: always the vault's ENTIRE committed capital (original investment +
@@ -1275,7 +1305,7 @@ async function runRebalanceViaUniLab(
       msg: "rc-rlp-rebalance (x402) call failed — skipping cycle, no local fallback for the real mint",
       err: String(err),
     });
-    return;
+    return null;
   }
 
   // Confirmed schema (2026-07-13, from a real 200 response — see the
@@ -1308,7 +1338,7 @@ async function runRebalanceViaUniLab(
       msg: "rc-rlp-rebalance responded but no usable upper bound — skipping cycle, no local fallback for the real mint",
       response: resp,
     });
-    return;
+    return null;
   }
   const newUpperPrice = upper;
 
@@ -1369,18 +1399,44 @@ async function runRebalanceViaUniLab(
     ethPrice,
     maxSlippageBps,
     abi,
+    targetFunctionName,
+    simulateAsAccount,
   );
   if (finalAmountOutMinimum === null) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
-      msg: "rebalance reverts on uni-lab's real range — skipping send (uni-lab already paid this cycle)",
+      msg: `${targetFunctionName} reverts on uni-lab's real range — skipping (uni-lab already paid this cycle)`,
       newTickLower,
       newTickUpper,
     });
-    return;
+    return null;
   }
-  const finalArgs = buildFinalArgs(finalAmountOutMinimum);
+
+  return {
+    newTickLower,
+    newTickUpper,
+    swapIx: {
+      token0ToToken1: toToken0ToToken1(finalSwap.sellStable, chain),
+      amountIn: finalSwap.amountIn,
+      amountOutMinimum: finalAmountOutMinimum,
+      fee: swapFee,
+    },
+    reinjectAmount,
+  };
+}
+
+async function runRebalanceViaUniLab(
+  chain: ChainRuntime,
+  vaultAddress: Address,
+  store: Store,
+  reason: "periodic" | "out-of-range-bottom",
+  abi: Abi = chain.vaultAbi as Abi,
+): Promise<void> {
+  const params = await computeRebalanceParams(chain, vaultAddress, store, reason, abi, "rebalance");
+  if (!params) return;
+
+  const finalArgs = [params.newTickLower, params.newTickUpper, params.swapIx, params.reinjectAmount, 0n, 0n] as const;
   if (!(await hasEnoughOperatorGas(chain, vaultAddress, { functionName: "rebalance", args: finalArgs }, abi))) {
     return;
   }
@@ -1393,13 +1449,50 @@ async function runRebalanceViaUniLab(
     vault: vaultAddress,
     msg: "rebalanced",
     reason,
-    newTickLower,
-    newTickUpper,
-    reinjectAmount: reinjectAmount.toString(),
+    newTickLower: params.newTickLower,
+    newTickUpper: params.newTickUpper,
+    reinjectAmount: params.reinjectAmount.toString(),
     txHash: hash,
   });
 
   await maybeSweepIdleDust(chain, vaultAddress, store);
+}
+
+/**
+ * Owner-triggered twin of runRebalanceViaUniLab, for RangeVaultArbCompoundV2's
+ * new ownerRebalance() (named explicitly in that function's own docstring).
+ * Computes the same kind of uni-lab-derived parameters — paid via the
+ * operator's own x402 wallet, same as every keeper-triggered rebalance — but
+ * returns them instead of sending a tx, so a new API route can hand them
+ * back to the vault's OWNER to sign with their own wallet, paying their own
+ * gas.
+ *
+ * Always uses reason="periodic": the owner is choosing to act now (e.g.
+ * right after changing recenterMarginBps), not recovering from a specific
+ * out-of-range-bottom break — same as a real periodic cycle, this never
+ * reinjects reserve. Simulated against ownerRebalance() itself, as the
+ * vault's real owner (not the operator) — see simulateAttempt's own
+ * docstring on why that distinction matters for an onlyOwner function.
+ */
+export async function computeOwnerRebalanceParams(
+  chain: ChainRuntime,
+  vaultAddress: Address,
+  store: Store,
+  abi: Abi,
+): Promise<
+  | {
+      ok: true;
+      newTickLower: number;
+      newTickUpper: number;
+      swapIx: { token0ToToken1: boolean; amountIn: bigint; amountOutMinimum: bigint; fee: number };
+      reinjectAmount: bigint;
+    }
+  | { ok: false }
+> {
+  const owner = (await vaultContract(chain, vaultAddress, abi).read.owner()) as Address;
+  const params = await computeRebalanceParams(chain, vaultAddress, store, "periodic", abi, "ownerRebalance", owner);
+  if (!params) return { ok: false };
+  return { ok: true, ...params };
 }
 
 /**

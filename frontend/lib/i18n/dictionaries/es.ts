@@ -412,6 +412,13 @@ const es = {
     txEmergency: "Retiro de emergencia",
     txClosing: "Cerrando vault",
     txIncreasing: "Sumando a la posición",
+    txComputingRange: "Calculando el nuevo rango (uni-lab.xyz)",
+    txRebalancing: "Rebalanceando",
+    ownerRebalanceTitle: "Forzar rebalanceo",
+    ownerRebalanceHint:
+      "Aplica el rango real calculado por uni-lab.xyz ahora mismo, sin esperar al próximo ciclo del agente — pagás vos el gas de la transacción.",
+    errOwnerRebalanceFailed:
+      "No se pudo calcular el nuevo rango — puede que aún no haya pasado el cooldown, que se haya alcanzado el máximo de rebalanceos, o que uni-lab.xyz no haya podido responder.",
 
     eyebrow: "Vault · {{pair}} {{fee}}%",
     paused: "Pausado",
@@ -522,9 +529,18 @@ const es = {
       "Independiente entre sí — retirá un % de la posición activa, un % de los fondos idle (invertible + reserva), o ambos, sin cerrar el vault.",
     fieldPositionPct: "% de la posición",
     fieldIdleFundsPct: "% de fondos idle",
+    // Compound (V2) vaults split "fondos idle" en 3 baldes 100%
+    // independientes entre sí — solo aplica ahí, los vaults estándar
+    // siguen con fieldIdleFundsPct de arriba.
+    fieldInvestablePct: "% de invertible",
+    fieldReservePct: "% de reserva",
+    fieldGasReservePct: "% de reserva de gas",
     pctMax: "Máx.",
     withdrawReviewPosition: "De la posición ({{pct}}%)",
     withdrawReviewFunds: "De fondos idle ({{pct}}%)",
+    withdrawReviewInvestable: "De invertible ({{pct}}%)",
+    withdrawReviewReserve: "De reserva ({{pct}}%)",
+    withdrawReviewGasReserve: "De reserva de gas ({{pct}}%)",
     withdrawReviewFeesNote: "Incluye las comisiones sin cobrar. Montos estimados — el contrato calcula el monto real al ejecutar.",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",
