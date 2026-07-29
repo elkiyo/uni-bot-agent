@@ -62,7 +62,7 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
               onClick={() => setGranularity(g)}
               className={
                 granularity === g
-                  ? "rounded-full bg-accent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
+                  ? "rounded-full bg-accent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-accent-contrast"
                   : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
               }
             >

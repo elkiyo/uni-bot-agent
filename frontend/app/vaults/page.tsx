@@ -89,7 +89,7 @@ function ChainTab({ label, active, onClick }: { label: string; active: boolean; 
       onClick={onClick}
       className={
         active
-          ? "rounded-full bg-accent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
+          ? "rounded-full bg-accent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-accent-contrast"
           : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
       }
     >

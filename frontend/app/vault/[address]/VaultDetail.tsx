@@ -1155,7 +1155,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       title={t("vaultDetail.autoCompoundToggleHint")}
       className={
         autoCompoundFees
-          ? "mt-3 flex w-full items-center justify-center gap-3 rounded-full bg-accent px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-background shadow-[0_0_20px_-4px_var(--accent)] transition-transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+          ? "mt-3 flex w-full items-center justify-center gap-3 rounded-full bg-accent px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-accent-contrast shadow-[0_0_20px_-4px_var(--accent)] transition-transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
           : "mt-3 flex w-full items-center justify-center gap-3 rounded-full border-2 border-foreground/25 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-foreground/80 transition-colors hover:border-accent hover:text-accent-text disabled:opacity-50"
       }
     >
@@ -1897,7 +1897,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                         setManageStep("input");
                       }}
                       disabled={Boolean(busy)}
-                      className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                      className="btn-secondary !border-[var(--accent-glow-border)] !bg-[var(--accent-glow-bg)] !text-accent-text"
                     >
                       {t("vaultDetail.addLiquidityTitle")}
                     </button>
@@ -1907,14 +1907,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                         setManageStep("input");
                       }}
                       disabled={Boolean(busy)}
-                      className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                      className="btn-secondary !border-[var(--accent-glow-border)] !bg-[var(--accent-glow-bg)] !text-accent-text"
                     >
                       {t("vaultDetail.removeLiquidityTitle")}
                     </button>
                     <button
                       onClick={() => setManageModal("collect")}
                       disabled={Boolean(busy)}
-                      className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                      className="btn-secondary !border-[var(--accent-glow-border)] !bg-[var(--accent-glow-bg)] !text-accent-text"
                       title={
                         isCompound && autoCompoundFees
                           ? t("vaultDetail.collectFeesTooltipCompoundOn")
@@ -1927,7 +1927,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       <button
                         onClick={handleOwnerRebalance}
                         disabled={Boolean(busy)}
-                        className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                        className="btn-secondary !border-[var(--accent-glow-border)] !bg-[var(--accent-glow-bg)] !text-accent-text"
                         title={t("vaultDetail.ownerRebalanceHint")}
                       >
                         {t("vaultDetail.ownerRebalanceTitle")}
@@ -1938,7 +1938,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 <button
                   onClick={() => setManageModal("deposit")}
                   disabled={Boolean(busy)}
-                  className="btn-secondary !border-[rgba(252,255,82,0.35)] !bg-[rgba(252,255,82,0.08)] !text-[#fcff52]"
+                  className="btn-secondary !border-[var(--accent-glow-border)] !bg-[var(--accent-glow-bg)] !text-accent-text"
                 >
                   {t("vaultDetail.deposit")}
                 </button>

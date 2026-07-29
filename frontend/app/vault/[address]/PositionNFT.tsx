@@ -409,7 +409,7 @@ function RangeMeter({
             style={{ left: `${pct}%` }}
           >
             <span
-              className="whitespace-nowrap rounded-md px-2.5 py-1 font-mono text-base font-bold tabular-nums text-background"
+              className="whitespace-nowrap rounded-md px-2.5 py-1 font-mono text-base font-bold tabular-nums text-accent-contrast"
               style={{ backgroundColor: statusColor }}
             >
               ${current!.toFixed(2)}
