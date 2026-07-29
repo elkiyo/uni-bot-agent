@@ -32,6 +32,12 @@ interface PositionRecord {
   feesUsd: number | null;
   openGasUsd: number | null;
   closeGasUsd: number | null;
+  /** (openGasUsd + closeGasUsd) ÷ feesUsd, as a % — what share of this
+   * position's own earnings got eaten by the gas needed to open AND close
+   * it. Only computed once both figures are known (closed position, and at
+   * least one gas figure available) — see the render for how a missing gas
+   * side (Celo, or an owner-triggered manual action) is still handled. */
+  gasPct: number | null;
   isOpen: boolean;
   createdAt?: number;
   closedAt?: number;
@@ -146,6 +152,17 @@ export function PositionHistory({
         // stable/volatile based on this chain's actual order.
         const feesStable = chain.stableIsToken0 ? fees?.amount0 : fees?.amount1;
         const feesVolatile = chain.stableIsToken0 ? fees?.amount1 : fees?.amount0;
+        const openGasUsd = gasByTx.get(e.txHash) ?? null;
+        const closeGasUsd = next ? (gasByTx.get(next.txHash) ?? null) : null;
+        const feesUsd = fees?.usdValue ?? null;
+        // Only meaningful for a CLOSED position with at least one gas figure
+        // known — an open position hasn't paid its close cost yet, and with
+        // neither gas figure available (Celo, or a manual owner action)
+        // there's nothing real to compare fees against.
+        const gasPct =
+          next && feesUsd !== null && feesUsd > 0 && (openGasUsd !== null || closeGasUsd !== null)
+            ? (((openGasUsd ?? 0) + (closeGasUsd ?? 0)) / feesUsd) * 100
+            : null;
         return {
           tokenId: e.tokenId,
           minPrice: Math.min(priceA, priceB),
@@ -157,9 +174,10 @@ export function PositionHistory({
           closedTxHash: next?.txHash,
           feesUsdt: feesStable ?? 0n,
           feesWeth: feesVolatile ?? 0n,
-          feesUsd: fees?.usdValue ?? null,
-          openGasUsd: gasByTx.get(e.txHash) ?? null,
-          closeGasUsd: next ? (gasByTx.get(next.txHash) ?? null) : null,
+          feesUsd,
+          openGasUsd,
+          closeGasUsd,
+          gasPct,
           isOpen: !next,
         };
       });
@@ -206,6 +224,9 @@ export function PositionHistory({
               </th>
               <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
                 {t("positionHistory.colGasCost")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.colProfitability")}
               </th>
               <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
                 {t("positionHistory.reinjectionOnOpen")}
@@ -262,6 +283,20 @@ export function PositionHistory({
                   <div className="mt-0.5 text-muted">
                     {t("positionHistory.gasClose")}: {p.closeGasUsd !== null ? fmtUsd(p.closeGasUsd) : "—"}
                   </div>
+                </td>
+                <td className="whitespace-nowrap py-3 pr-4">
+                  {p.gasPct === null ? (
+                    <span className="text-muted">—</span>
+                  ) : (
+                    <span
+                      className={`font-mono font-semibold ${
+                        p.gasPct >= 100 ? "text-negative" : p.gasPct >= 25 ? "text-accent" : "text-positive"
+                      }`}
+                      title={t("positionHistory.profitabilityHint")}
+                    >
+                      {p.gasPct.toFixed(1)}%{p.gasPct >= 100 ? ` ${t("positionHistory.unprofitable")}` : ""}
+                    </span>
+                  )}
                 </td>
                 <td className="whitespace-nowrap py-3 pr-4 text-white/90">
                   {p.reinjectedUsdt > 0n
