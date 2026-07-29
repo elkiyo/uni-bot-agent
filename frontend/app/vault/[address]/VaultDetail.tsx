@@ -994,12 +994,19 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       setError(t("vaultDetail.errPctOver100"));
       return;
     }
+    // Compound (V2) vaults split withdraw() into 4 independent buckets
+    // (position/investable/reserve/gas) instead of V1's single shared
+    // fundsShareBps — the UI still exposes one "funds %" slider, so apply
+    // it uniformly to all 3 non-position buckets to keep today's behavior.
+    const withdrawArgs = isCompound
+      ? [positionShareBps, fundsShareBps, fundsShareBps, fundsShareBps]
+      : [positionShareBps, fundsShareBps];
     await withTx(t("vaultDetail.txWithdrawing"), () =>
       writeContractAsync({
         address,
         abi: vaultAbi,
         functionName: "withdraw",
-        args: [positionShareBps, fundsShareBps],
+        args: withdrawArgs,
         chainId: chain.id,
       }),
     );
