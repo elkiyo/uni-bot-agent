@@ -282,10 +282,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
   // vault — mismo cálculo simple que la tarjeta en /vaults, no anualizado.
   const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, stableDecimals));
-  // "Capital inicial" (la tarjeta) muestra SOLO investableAmount del primer
-  // depósito — no investableAmount+reserveAmount (eso es initialInvestmentUsd
-  // de arriba, usado nada más como denominador de rentLabel).
-  const initialInvestableAmountUsd = Number(formatUnits(depositSummary?.initialInvestableAmount ?? 0n, stableDecimals));
   const rentLabel =
     feesUsdTotal !== undefined && initialInvestmentUsd > 0
       ? t("vaults.returnLabel", { pct: ((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2) })
@@ -1190,6 +1186,25 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const withdrawInvestableShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawInvestablePct) || 0) * 100)));
   const withdrawReserveShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawReservePct) || 0) * 100)));
   const withdrawGasReserveShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawGasReservePct) || 0) * 100)));
+  // A1 — current live value of the position (principal only, no uncollected
+  // fees), same formula PositionNFT.tsx uses for its own "$XX.XX" display —
+  // duplicated here rather than shared since that component re-derives it
+  // from its own reads. Used for the "Valor de la posición" stat below.
+  const a1Usd =
+    positionTicks && positionLiquidity !== undefined && currentTick !== undefined
+      ? (() => {
+          const { amount0Raw, amount1Raw } = estimatePositionAmounts({
+            liquidity: positionLiquidity,
+            currentTick,
+            tickLower: positionTicks.tickLower,
+            tickUpper: positionTicks.tickUpper,
+          });
+          const stableRaw = stableIsToken0 ? amount0Raw : amount1Raw;
+          const volatileRaw = stableIsToken0 ? amount1Raw : amount0Raw;
+          const ethPrice = ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals);
+          return stableRaw * 10 ** -stableDecimals + volatileRaw * 10 ** -volatileDecimals * ethPrice;
+        })()
+      : undefined;
   const withdrawPreview =
     positionTicks && positionLiquidity !== undefined && positionTokensOwedLive && currentTick !== undefined
       ? (() => {
@@ -1763,8 +1778,23 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <VaultAgeStat createdAt={createdAt} />
               <Stat
-                label={t("vaultDetail.statInitialCapital")}
-                value={`${initialInvestableAmountUsd.toFixed(2)} ${stableSymbol}`}
+                label={t("vaultDetail.statPositionValue")}
+                value={a1Usd !== undefined ? `$${a1Usd.toFixed(2)}` : "—"}
+                accent
+              />
+              <Stat
+                label={t("vaultDetail.statInvested")}
+                value={cumulativeInvestmentUsd !== undefined ? `$${cumulativeInvestmentUsd.toFixed(2)}` : "—"}
+                hint={
+                  a1Usd !== undefined && cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
+                    ? `${a1Usd >= cumulativeInvestmentUsd ? "+" : ""}${(a1Usd - cumulativeInvestmentUsd).toFixed(2)} (${(((a1Usd - cumulativeInvestmentUsd) / cumulativeInvestmentUsd) * 100).toFixed(2)}%)`
+                    : undefined
+                }
+                hintClassName={
+                  a1Usd !== undefined && cumulativeInvestmentUsd !== undefined && a1Usd >= cumulativeInvestmentUsd
+                    ? "mt-1 text-sm font-semibold text-positive"
+                    : "mt-1 text-sm font-semibold text-negative"
+                }
               />
               <Stat
                 label={t("vaultDetail.statInvestable")}

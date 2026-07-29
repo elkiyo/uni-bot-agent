@@ -441,7 +441,8 @@ const pt: Dictionary = {
     loading: "Carregando…",
 
     statAge: "Idade do vault",
-    statInitialCapital: "Capital inicial",
+    statPositionValue: "Valor da posição",
+    statInvested: "Capital investido",
     statInvestable: "Capital investível",
     idleWethHint: "+ {{amount}} {{symbol}} solto{{usdSuffix}}",
     statReserve: "Reserva de reinjeção",

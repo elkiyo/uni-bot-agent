@@ -439,7 +439,8 @@ const es = {
     loading: "Cargando…",
 
     statAge: "Antigüedad del vault",
-    statInitialCapital: "Capital inicial",
+    statPositionValue: "Valor de la posición",
+    statInvested: "Capital invertido",
     statInvestable: "Capital invertible",
     idleWethHint: "+ {{amount}} {{symbol}} suelto{{usdSuffix}}",
     statReserve: "Reserva reinyección",
