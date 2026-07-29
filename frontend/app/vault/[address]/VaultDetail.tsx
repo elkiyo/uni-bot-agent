@@ -1244,8 +1244,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               tell apart even fully opaque. Every class below is a
               deliberate dark-on-light override of this file's usual
               light-on-dark ones. */}
-          <div className="w-full max-w-md rounded-2xl bg-accent-soft p-6 shadow-2xl shadow-black/60 sm:p-8">
-            <div className="flex items-center justify-between gap-2">
+          {/* max-h + overflow-y-auto: the withdraw modal's 4 independent
+              fields (compound vaults) can run taller than the viewport —
+              without this the modal's own header (title + close ✕) got
+              pushed off-screen with no way to scroll back up to it.
+              Sticky header keeps ✕ reachable at every scroll position. */}
+          <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-accent-soft shadow-2xl shadow-black/60">
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-2xl bg-accent-soft px-6 pt-6 sm:px-8 sm:pt-8">
               <h3 className="text-xl font-semibold tracking-tight text-[#050505]" style={{ fontFamily: "var(--font-display)" }}>
                 {manageModal === "add"
                   ? t("vaultDetail.addLiquidityTitle")
@@ -1263,6 +1268,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 ✕
               </button>
             </div>
+            <div className="overflow-y-auto px-6 pb-6 sm:px-8 sm:pb-8">
 
             {/* ---- Agregar liquidez ---- */}
             {manageModal === "add" && manageStep === "input" && (
@@ -1363,7 +1369,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     <LightPctQuickButtons onPick={setWithdrawPositionPct} />
                   </div>
                   {isCompound ? (
-                    <>
+                    // 2-column grid instead of stacking all 3 — 4 fields
+                    // fully stacked (position + 3 more, each with its own
+                    // row of quick-pick buttons) pushed the modal's own
+                    // header off-screen with no way to scroll back up to
+                    // the close button. See the modal wrapper's own comment
+                    // above for the scroll/sticky-header half of that fix.
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-4">
                       <div className="flex flex-col gap-1.5">
                         <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestablePct")}</span>
                         <input
@@ -1396,7 +1408,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                           <LightPctQuickButtons onPick={setWithdrawGasReservePct} />
                         </div>
                       )}
-                    </>
+                    </div>
                   ) : (
                     <div className="flex flex-col gap-1.5">
                       <span className="text-xs text-black/60">{t("vaultDetail.fieldIdleFundsPct")}</span>
@@ -1675,6 +1687,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </button>
               </>
             )}
+            </div>
           </div>
         </div>
       )}
