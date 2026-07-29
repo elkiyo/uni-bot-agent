@@ -29,19 +29,23 @@ export function Header() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-hairline bg-background/80 backdrop-blur-xl transition-colors duration-200">
-      <div className="section flex h-20 items-center justify-between">
-        <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-3">
+      <div className="section flex h-20 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-8">
+          <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/logo-mark-64.png" alt="AutoRange" className="h-12 w-12 shrink-0 rounded-full" />
-            <span className="flex flex-col leading-none">
+            <img
+              src="/brand/logo-mark-64.png"
+              alt="AutoRange"
+              className="h-9 w-9 shrink-0 rounded-full sm:h-12 sm:w-12"
+            />
+            <span className="flex min-w-0 flex-col leading-none">
               <span
-                className="text-xl font-bold tracking-tight text-foreground"
+                className="truncate text-base font-bold tracking-tight text-foreground sm:text-xl"
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 AutoRange
               </span>
-              <span className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-text">
+              <span className="mt-1 hidden font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-text sm:block">
                 AI Agent
               </span>
             </span>
@@ -65,10 +69,24 @@ export function Header() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
           <ThemeToggle />
           <LanguageMenu />
-          <appkit-button balance="hide" />
+          {/* Two instances, one per breakpoint, rather than trying to resize
+              appkit-button's own shadow-DOM content with CSS — its internal
+              text/padding ignore host classes (and its React types don't
+              expose className at all, only label/size/balance/etc.), so a
+              full "Connect Wallet" label reliably overflowed a phone-width
+              header (confirmed: it was clipping off the right edge). Same
+              underlying wallet state either way (ChainController is a
+              singleton), just a shorter label on mobile. The wrapping
+              span carries the responsive visibility instead. */}
+          <span className="hidden sm:inline-flex">
+            <appkit-button balance="hide" />
+          </span>
+          <span className="sm:hidden">
+            <appkit-button balance="hide" label="Connect" />
+          </span>
         </div>
       </div>
     </header>
@@ -104,10 +122,10 @@ function LanguageMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="Idioma"
-        className="flex h-9 items-center gap-1.5 rounded-full border border-hairline bg-surface-1 px-3 text-sm text-foreground/70 transition-colors hover:text-foreground"
+        className="flex h-9 items-center gap-1.5 rounded-full border border-hairline bg-surface-1 px-2.5 text-sm text-foreground/70 transition-colors hover:text-foreground sm:px-3"
       >
         <span>{current.flag}</span>
-        <span className="font-mono text-[11px] uppercase tracking-wide">{current.code}</span>
+        <span className="hidden font-mono text-[11px] uppercase tracking-wide sm:inline">{current.code}</span>
       </button>
 
       {open && (

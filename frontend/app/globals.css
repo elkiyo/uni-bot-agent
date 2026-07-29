@@ -136,6 +136,16 @@
    token-based var() isn't enough (e.g. swapping an image). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* overflow-x on both html AND body — mobile Safari anchors `position:
+   fixed; inset-x-0` elements (MobileBottomNav) to the layout viewport,
+   not the visual one, so if ANY descendant overflows horizontally
+   (confirmed: the header did, see Header.tsx's mobile-width comment),
+   the fixed bottom nav can visibly drift/detach during scroll on a real
+   device even though it looks perfectly pinned in a headless browser. */
+html {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   background-color: var(--background);
