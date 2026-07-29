@@ -29,6 +29,9 @@ interface PositionRecord {
   closedTxHash?: string;
   feesUsdt: bigint;
   feesWeth: bigint;
+  feesUsd: number | null;
+  openGasUsd: number | null;
+  closeGasUsd: number | null;
   isOpen: boolean;
   createdAt?: number;
   closedAt?: number;
@@ -41,6 +44,18 @@ interface PositionRecord {
  * the previous one in the same tx, so "history" here means: for each
  * PositionInitialized/Rebalanced event, pair it with the NEXT such event
  * (its close) and whatever LpFeesPaidToOwner fired in that same closing tx.
+ *
+ * openGasUsd/closeGasUsd come from KeeperGasReimbursed — a separate event
+ * the SAME transaction also emits whenever the keeper (not the owner
+ * manually) is the one calling initPosition()/rebalance() — matched here by
+ * tx_hash, already present in the same eventLogs fetch, no extra RPC call.
+ * Both null on a chain/vault without gas-reserve support (chain.
+ * supportsGasReserve — Celo's plain RangeVault.sol never had this) or for
+ * an owner-triggered manual action (nothing to reimburse, no event fires).
+ * Since rebalance() closes the OLD position and opens the NEW one in ONE
+ * atomic transaction, a position's own "close" cost and the NEXT position's
+ * "open" cost are the exact same figure — not a bug, just what a single
+ * rebalance() call really costs.
  */
 export function PositionHistory({
   address,
@@ -63,7 +78,8 @@ export function PositionHistory({
 
       const targetConfigs: Array<{ tickLower: number; tickUpper: number; blockNumber: bigint }> = [];
       const rebalances: OpenEvent[] = [];
-      const feesByTx = new Map<string, { amount0: bigint; amount1: bigint }>();
+      const feesByTx = new Map<string, { amount0: bigint; amount1: bigint; usdValue: number | null }>();
+      const gasByTx = new Map<string, number>();
       let initEvent: { tokenId: bigint; blockNumber: bigint; txHash: string } | undefined;
       const timestampByBlock = new Map<bigint, number>();
 
@@ -93,7 +109,11 @@ export function PositionHistory({
           feesByTx.set(txHash, {
             amount0: (args.amount0 as bigint) ?? 0n,
             amount1: (args.amount1 as bigint) ?? 0n,
+            usdValue: log.usdValue,
           });
+        } else if (log.eventName === "KeeperGasReimbursed") {
+          const amountUsdRaw = (args.amountUsd as bigint) ?? 0n;
+          gasByTx.set(txHash, Number(formatUnits(amountUsdRaw, chain.stableDecimals)));
         }
       }
 
@@ -137,6 +157,9 @@ export function PositionHistory({
           closedTxHash: next?.txHash,
           feesUsdt: feesStable ?? 0n,
           feesWeth: feesVolatile ?? 0n,
+          feesUsd: fees?.usdValue ?? null,
+          openGasUsd: gasByTx.get(e.txHash) ?? null,
+          closeGasUsd: next ? (gasByTx.get(next.txHash) ?? null) : null,
           isOpen: !next,
         };
       });
@@ -156,6 +179,8 @@ export function PositionHistory({
   const fmtDate = (ts?: number) =>
     ts ? new Date(ts * 1000).toLocaleString(dateLocale[locale] ?? "es", { dateStyle: "short", timeStyle: "short" }) : "—";
 
+  const fmtUsd = (v: number) => `$${v.toFixed(v < 0.01 && v > 0 ? 4 : 2)}`;
+
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
@@ -163,62 +188,101 @@ export function PositionHistory({
       </h2>
       <p className="mt-1 text-sm text-muted">{t("positionHistory.subtitle")}</p>
 
-      <ol className="mt-6 flex flex-col gap-4">
-        {positions.map((p) => (
-          <li key={p.tokenId.toString()} className="rounded-xl border border-hairline p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-sm text-white/90">
-                {t("positionHistory.positionLabel", {
-                  id: p.tokenId.toString(),
-                  min: p.minPrice.toFixed(2),
-                  max: p.maxPrice.toFixed(2),
-                })}
-              </span>
-              {p.isOpen ? (
-                <span className="eyebrow !border-positive/40 !px-3 !py-1 !text-positive">{t("positionHistory.active")}</span>
-              ) : (
-                <span className="eyebrow !px-3 !py-1">{t("positionHistory.closed")}</span>
-              )}
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("positionHistory.created")}</p>
-                <p className="mt-0.5 text-white/90">{fmtDate(p.createdAt)}</p>
-              </div>
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("positionHistory.closedLabel")}</p>
-                <p className="mt-0.5 text-white/90">{p.isOpen ? "—" : fmtDate(p.closedAt)}</p>
-              </div>
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                  {t("positionHistory.feesEarned")}
-                </p>
-                <p className="mt-0.5 text-positive">
-                  {p.isOpen
-                    ? t("positionHistory.inProgress")
-                    : `${formatUnits(p.feesUsdt, 6)} ${chain.stableSymbol}${p.feesWeth > 0n ? ` + ${Number(formatUnits(p.feesWeth, 18)).toFixed(6)} ${chain.volatileSymbol}` : ""}`}
-                </p>
-              </div>
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("positionHistory.reinjectionOnOpen")}</p>
-                <p className="mt-0.5 text-white/90">
+      <div className="mt-6 overflow-x-auto">
+        <table className="w-full min-w-[860px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-hairline text-left">
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.colPosition")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.created")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.closedLabel")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.feesEarned")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.colGasCost")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.reinjectionOnOpen")}
+              </th>
+              <th className="whitespace-nowrap py-2 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-faint">
+                {t("positionHistory.colTx")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {positions.map((p) => (
+              <tr key={p.tokenId.toString()} className="border-b border-hairline/60 last:border-0">
+                <td className="py-3 pr-4">
+                  <span className="font-mono text-xs text-white/90">
+                    {t("positionHistory.positionLabel", {
+                      id: p.tokenId.toString(),
+                      min: p.minPrice.toFixed(2),
+                      max: p.maxPrice.toFixed(2),
+                    })}
+                  </span>
+                  <div className="mt-1">
+                    {p.isOpen ? (
+                      <span className="eyebrow !border-positive/40 !px-2 !py-0.5 !text-[10px] !text-positive">
+                        {t("positionHistory.active")}
+                      </span>
+                    ) : (
+                      <span className="eyebrow !px-2 !py-0.5 !text-[10px]">{t("positionHistory.closed")}</span>
+                    )}
+                  </div>
+                </td>
+                <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs text-white/90">{fmtDate(p.createdAt)}</td>
+                <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs text-white/90">
+                  {p.isOpen ? "—" : fmtDate(p.closedAt)}
+                </td>
+                <td className="py-3 pr-4">
+                  {p.isOpen ? (
+                    <span className="text-muted">{t("positionHistory.inProgress")}</span>
+                  ) : (
+                    <>
+                      {p.feesUsd !== null && (
+                        <span className="font-mono font-semibold text-positive">{fmtUsd(p.feesUsd)}</span>
+                      )}
+                      <div className="mt-0.5 text-xs text-muted">
+                        {formatUnits(p.feesUsdt, chain.stableDecimals)} {chain.stableSymbol}
+                        {p.feesWeth > 0n ? ` + ${Number(formatUnits(p.feesWeth, chain.volatileDecimals)).toFixed(6)} ${chain.volatileSymbol}` : ""}
+                      </div>
+                    </>
+                  )}
+                </td>
+                <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs">
+                  <div className="text-white/80">
+                    {t("positionHistory.gasOpen")}: {p.openGasUsd !== null ? fmtUsd(p.openGasUsd) : "—"}
+                  </div>
+                  <div className="mt-0.5 text-muted">
+                    {t("positionHistory.gasClose")}: {p.closeGasUsd !== null ? fmtUsd(p.closeGasUsd) : "—"}
+                  </div>
+                </td>
+                <td className="whitespace-nowrap py-3 pr-4 text-white/90">
                   {p.reinjectedUsdt > 0n
-                    ? `${formatUnits(p.reinjectedUsdt, 6)} ${chain.stableSymbol}`
+                    ? `${formatUnits(p.reinjectedUsdt, chain.stableDecimals)} ${chain.stableSymbol}`
                     : t("positionHistory.noReinjection")}
-                </p>
-              </div>
-            </div>
-            <a
-              href={`${chain.explorerBaseUrl}/tx/${p.createdTxHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-block font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"
-            >
-              {t("positionHistory.openingTx", { hash: `${p.createdTxHash.slice(0, 10)}…${p.createdTxHash.slice(-6)}` })}
-            </a>
-          </li>
-        ))}
-      </ol>
+                </td>
+                <td className="whitespace-nowrap py-3">
+                  <a
+                    href={`${chain.explorerBaseUrl}/tx/${p.createdTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"
+                  >
+                    {p.createdTxHash.slice(0, 8)}…{p.createdTxHash.slice(-6)} ↗
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
