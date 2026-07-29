@@ -921,18 +921,42 @@ async function getCumulativeInvestmentUsd(
   for (const ev of events) {
     const args = ev.args as Record<string, unknown>;
     if (ev.eventName === "Deposited") {
-      totalRaw += args.investableAmount as bigint;
+      // V1 vaults (no `positionAlreadyExists` field, always undefined here)
+      // keep the original behavior: investableAmount counts immediately at
+      // deposit time, unconditionally. V2 vaults only count it immediately
+      // when there was no position yet — a later top-up instead increments
+      // uncountedInvestable on-chain and gets counted below, via
+      // consumedUncounted, at the moment it's actually folded into the
+      // position (see RangeVaultArbCompoundV2.sol's own docstring on
+      // uncountedInvestable for why: sweepIdleDust() can fold a pending
+      // top-up into the real position without any V1-era event summing it
+      // toward B1 — this is what closes that gap for V2 vaults).
+      if ((args.positionAlreadyExists as boolean | undefined) !== true) {
+        totalRaw += args.investableAmount as bigint;
+      }
     } else if (ev.eventName === "PositionIncreased") {
-      // increasePosition() ("Sumar a la posición abierta") — real owner
-      // capital landing directly in the position, same as Deposited's
-      // investableAmount, just via a different entry point. Missing this
-      // meant B1 silently understated true committed capital by exactly
-      // whatever the owner topped up this way — confirmed live 2026-07-27,
-      // vault 0x55CB44A1...947D19: a $20 top-up left B1 reporting $100.27
-      // instead of the real $120.27 until this fix.
-      totalRaw += args.usdtAmount as bigint;
+      // increasePosition()/increasePositionWithToken() ("Sumar a la
+      // posición abierta") — real owner capital landing directly in the
+      // position, same as Deposited's investableAmount, just via a
+      // different entry point. Missing this meant B1 silently understated
+      // true committed capital by exactly whatever the owner topped up this
+      // way — confirmed live 2026-07-27, vault 0x55CB44A1...947D19: a $20
+      // top-up left B1 reporting $100.27 instead of the real $120.27 until
+      // this fix. V2 emits `consumedUncounted` (already-measured, precise);
+      // V1 has no such field, falls back to `usdtAmount` (identical to the
+      // original fix's behavior).
+      totalRaw += (args.consumedUncounted as bigint | undefined) ?? (args.usdtAmount as bigint);
     } else if (ev.eventName === "Rebalanced") {
       totalRaw += args.reinjectedAmount as bigint;
+      // V2 only — how much of this cycle's fold-in was a previously-pending
+      // investable top-up (see uncountedInvestable's own docstring).
+      totalRaw += (args.consumedUncounted as bigint | undefined) ?? 0n;
+    } else if (ev.eventName === "IdleDustSwept") {
+      // V2 only — sweepIdleDust() can fold a pending top-up into the real
+      // position; V1's IdleDustSwept is correctly never summed at all here
+      // (its used0/used1 are always genuine swap dust on V1, already
+      // counted whenever it first entered).
+      totalRaw += (args.consumedUncounted as bigint | undefined) ?? 0n;
     } else if (ev.eventName === "ReinjectedIntoPosition") {
       totalRaw += args.amount as bigint;
     } else if (ev.eventName === "FeesReinjected") {
@@ -1178,18 +1202,23 @@ async function runRebalanceViaUniLab(
   // uni-lab down to the cent, so this is a pure simplification for the
   // reserve leg, not a behavior change.
   //
-  // KNOWN GAP, not fixed here (documented in CLAUDE.md, needs a contract
-  // change to close properly): a later `deposit()`'s investableAmount is
-  // only ever folded into the real position via `rebalance()` (this
-  // function) or the standalone `sweepIdleDust()` — and `sweepIdleDust()`'s
-  // own `IdleDustSwept` event is deliberately never summed by
-  // `getCumulativeInvestmentUsd` (it's usually genuine swap-sizing dust that
-  // was already counted before). The contract has no way to tell "genuine
-  // dust" apart from "a pending top-up that happens to get swept before the
-  // next rebalance" — both live in the same `investableUsdt` slot. Since
-  // this function still counts investableAmount at deposit time regardless,
-  // that specific gap doesn't apply here; it only matters if this file ever
-  // switches to NOT counting investableAmount until it's actually folded in.
+  // GAP CLOSED FOR V2 VAULTS (RangeVaultArbCompoundV2.sol) — was previously
+  // documented here as unfixed, needing a contract change: a later
+  // `deposit()`'s investableAmount used to only ever fold into the real
+  // position via `rebalance()`/`sweepIdleDust()`, with no way for the
+  // contract to tell "genuine swap dust" (already counted, never sums)
+  // apart from "a pending top-up that happens to get swept" (should sum).
+  // V2 tracks this on-chain (`uncountedInvestable`, `Deposited.
+  // positionAlreadyExists`, `consumedUncounted` on `Rebalanced`/
+  // `IdleDustSwept`/`PositionIncreased`) and `getCumulativeInvestmentUsd`
+  // above already reads those fields. V1 vaults keep the original
+  // behavior (investableAmount always counts at deposit time — see that
+  // function's own comment) since they have none of these fields; this
+  // function itself is currently only ever called for V1 vaults (V2 isn't
+  // wired into the keeper yet), so `idleInvestableUsdt` below still only
+  // folds into A1, never B1 here — revisit once V2 vaults are connected,
+  // since a V2 vault's still-pending idleInvestableUsdt SHOULD fold into
+  // both A1 and B1 together in that case, same as reinjectAmountUsd.
   const reinjectAmountUsd = Number(reinjectAmount) * 10 ** -chain.stableDecimals;
   const idleInvestableUsd = Number(idleInvestableUsdt) * 10 ** -chain.stableDecimals;
   const combinedCurrentLiquidityUsd = positionValueUsd + reinjectAmountUsd + idleInvestableUsd;

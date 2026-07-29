@@ -3,8 +3,8 @@ import RangeVaultAbi from "./abi/RangeVault.json";
 import VaultFactoryAbi from "./abi/VaultFactory.json";
 import RangeVaultArbAbi from "./abi/RangeVaultArb.json";
 import VaultFactoryArbAbi from "./abi/VaultFactoryArb.json";
-import RangeVaultArbCompoundAbi from "./abi/RangeVaultArbCompound.json";
-import VaultFactoryArbCompoundAbi from "./abi/VaultFactoryArbCompound.json";
+import RangeVaultArbCompoundV2Abi from "./abi/RangeVaultArbCompoundV2.json";
+import VaultFactoryArbCompoundV2Abi from "./abi/VaultFactoryArbCompoundV2.json";
 import PlatformConfigAbi from "./abi/PlatformConfig.json";
 
 // Cast through Abi (rather than leaving the plain JSON-inferred type) so wagmi's
@@ -21,12 +21,17 @@ export const vaultFactoryAbi = VaultFactoryAbi as Abi;
 export const rangeVaultArbAbi = RangeVaultArbAbi as Abi;
 export const vaultFactoryArbAbi = VaultFactoryArbAbi as Abi;
 // rangeVaultArbCompoundAbi/vaultFactoryArbCompoundAbi are the interest-compounding
-// fork of RangeVaultArb.sol/VaultFactoryArb.sol — Arbitrum only, see
-// contracts/src/compound/RangeVaultArbCompound.sol's class docstring. A vault built
-// from this ABI is a compound vault forever; there's no shared code path with the
-// plain Arbitrum ABI above beyond both targeting the same USDC/WETH pool.
-export const rangeVaultArbCompoundAbi = RangeVaultArbCompoundAbi as Abi;
-export const vaultFactoryArbCompoundAbi = VaultFactoryArbCompoundAbi as Abi;
+// fork of RangeVaultArb.sol/VaultFactoryArb.sol — Arbitrum only. Points at the
+// V2 factory (ownerRebalance(), split withdraw(), increasePositionWithToken(),
+// uncountedInvestable — see contracts/src/compound/RangeVaultArbCompoundV2.sol's
+// class docstring) as of 2026-07-28: the only compound vault ever created (the
+// single beta wallet's, see compoundBeta.ts) was emptied before this switch, so
+// there was no live V1 vault left to keep serving — repointed this one slot
+// directly instead of adding V1/V2 coexistence plumbing. RangeVaultArbCompound.sol/
+// VaultFactoryArbCompound.sol (V1) are untouched on-chain but no longer referenced
+// from the frontend.
+export const rangeVaultArbCompoundAbi = RangeVaultArbCompoundV2Abi as Abi;
+export const vaultFactoryArbCompoundAbi = VaultFactoryArbCompoundV2Abi as Abi;
 export const platformConfigAbi = PlatformConfigAbi as Abi;
 
 export const uniswapV3PoolAbi = [

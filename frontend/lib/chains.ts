@@ -243,10 +243,14 @@ const ARBITRUM: ChainDef = {
   compoundFactoryAddress: (process.env.NEXT_PUBLIC_COMPOUND_FACTORY_ADDRESS_ARBITRUM || "") as `0x${string}` | "",
   compoundVaultAbi: rangeVaultArbCompoundAbi,
   compoundFactoryAbi: vaultFactoryArbCompoundAbi,
-  // VaultFactoryArbCompound deployed 2026-07-26 at 0x1f03Ea1C82ce4D44355D5d02C730620Fa6038B22
-  // (tx 0x6e3b92463f0349e449516dde2441303f059dbdd8a051afc4476c9a6237e04238), reusing the
-  // already-live PlatformConfig above — see DeployArbCompound.s.sol.
-  compoundFactoryDeployBlock: 487963866n,
+  // VaultFactoryArbCompoundV2 deployed 2026-07-28 at 0x62Db136F4049F5Bb4223C4AAe6709BD76aB55a8B
+  // (tx 0x7332d9a96f9aff588dd3830a515d9bda3b92964be485b0db3ec6a7e514dbc581, impl
+  // 0x713Dc45ceB611C595ef3B69c5fDd1f0Db5B5246F), reusing the already-live PlatformConfig
+  // above — see DeployArbCompoundV2.s.sol. Replaces the original VaultFactoryArbCompound
+  // (0x1f03Ea1C82ce4D44355D5d02C730620Fa6038B22, deployed 2026-07-26) — that vault's
+  // one live instance was emptied before this switch, so this slot was repointed
+  // directly instead of adding V1/V2 coexistence plumbing (see contracts.ts).
+  compoundFactoryDeployBlock: 488777520n,
   // Addresses/decimals verified live via cast call 2026-07-27 — do not
   // change without re-verifying on-chain. Fee tier 100 (0.01%) is the
   // deepest pool for both USDC/USDT and USDC/DAI today, but the actual tier
