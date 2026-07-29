@@ -300,6 +300,10 @@ const es = {
     floatingYield: "rendimiento de comisiones (posición actual)",
     belowRange: "Precio por debajo del rango — sin comisiones",
     aboveRange: "Precio por encima del rango — sin comisiones",
+    liquidityDistribution: "Distribución de liquidez",
+    currentLabel: "Actual",
+    atLowerLimit: "En el límite inferior (${{price}})",
+    atUpperLimit: "En el límite superior (${{price}})",
   },
   activity: {
     feedTitle: "Actividad on-chain",

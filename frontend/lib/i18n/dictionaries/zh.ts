@@ -298,6 +298,10 @@ const zh: Dictionary = {
     floatingYield: "手续费收益率（当前仓位）",
     belowRange: "价格低于区间——未产生手续费",
     aboveRange: "价格高于区间——未产生手续费",
+    liquidityDistribution: "流动性分布",
+    currentLabel: "当前",
+    atLowerLimit: "在下限（${{price}}）",
+    atUpperLimit: "在上限（${{price}}）",
   },
   activity: {
     feedTitle: "链上活动",

@@ -302,6 +302,10 @@ const en: Dictionary = {
     floatingYield: "fee yield (current position)",
     belowRange: "Price is below range — not earning fees",
     aboveRange: "Price is above range — not earning fees",
+    liquidityDistribution: "Liquidity distribution",
+    currentLabel: "Current",
+    atLowerLimit: "At the lower limit (${{price}})",
+    atUpperLimit: "At the upper limit (${{price}})",
   },
   activity: {
     feedTitle: "On-chain activity",

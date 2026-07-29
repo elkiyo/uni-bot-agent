@@ -302,6 +302,10 @@ const pt: Dictionary = {
     floatingYield: "rendimento de comissões (posição atual)",
     belowRange: "Preço abaixo da faixa — sem gerar comissões",
     aboveRange: "Preço acima da faixa — sem gerar comissões",
+    liquidityDistribution: "Distribuição de liquidez",
+    currentLabel: "Atual",
+    atLowerLimit: "No limite inferior (${{price}})",
+    atUpperLimit: "No limite superior (${{price}})",
   },
   activity: {
     feedTitle: "Atividade on-chain",

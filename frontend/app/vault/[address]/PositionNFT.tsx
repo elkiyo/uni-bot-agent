@@ -8,6 +8,7 @@ import { ethPriceFromTick } from "@/lib/priceMath";
 import { positionAmounts, uncollectedFeesRaw } from "@/lib/positionMath";
 import type { ChainDef } from "@/lib/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
+import { LiquidityDistributionChart } from "./LiquidityDistributionChart";
 
 /**
  * Renders the actual Uniswap V3 position NFT — the SVG art is generated fully
@@ -210,6 +211,20 @@ export function PositionNFT({
       </div>
       <p className="mt-1 text-sm text-muted">{t("positionNft.subtitle")}</p>
 
+      {currentTick !== undefined && (
+        <LiquidityDistributionChart
+          liquidity={liquidity}
+          tickLower={tickLower}
+          tickUpper={tickUpper}
+          currentTick={currentTick}
+          stableIsToken0={chain.stableIsToken0}
+          stableDecimals={6}
+          volatileDecimals={18}
+          stableSymbol={chain.stableSymbol}
+          volatileSymbol={chain.volatileSymbol}
+        />
+      )}
+
       <div className="mt-6 grid gap-8 lg:grid-cols-[260px_1fr]">
         {/* On-chain NFT art */}
         <div className="mx-auto w-full max-w-64">
@@ -246,8 +261,11 @@ export function PositionNFT({
           {belowUniswapLink}
         </div>
 
-        {/* Uniswap-style breakdown */}
+        {/* Uniswap-style breakdown — Posición/Comisiones side by side,
+            Rango de precio full-width below (it needs the horizontal room
+            for RangeMeter's track). */}
         <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="glass rounded-2xl p-5">
             <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{t("positionNft.position")}</span>
             <p
@@ -318,6 +336,7 @@ export function PositionNFT({
             </div>
             <p className="mt-3 text-xs text-faint">{t("positionNft.feesCaption")}</p>
           </div>
+        </div>
 
           <div className="glass rounded-2xl p-5">
             <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
