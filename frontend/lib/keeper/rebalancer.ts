@@ -944,16 +944,27 @@ async function getCumulativeInvestmentUsd(
       }
     } else if (ev.eventName === "PositionIncreased") {
       // increasePosition()/increasePositionWithToken() ("Sumar a la
-      // posición abierta") — real owner capital landing directly in the
-      // position, same as Deposited's investableAmount, just via a
-      // different entry point. Missing this meant B1 silently understated
-      // true committed capital by exactly whatever the owner topped up this
-      // way — confirmed live 2026-07-27, vault 0x55CB44A1...947D19: a $20
-      // top-up left B1 reporting $100.27 instead of the real $120.27 until
-      // this fix. V2 emits `consumedUncounted` (already-measured, precise);
-      // V1 has no such field, falls back to `usdtAmount` (identical to the
-      // original fix's behavior).
-      totalRaw += (args.consumedUncounted as bigint | undefined) ?? (args.usdtAmount as bigint);
+      // posición abierta") — always usdtAmount (the FULL amount the owner
+      // put in this call), never consumedUncounted. Missing this meant B1
+      // silently understated true committed capital by exactly whatever the
+      // owner topped up this way — confirmed live 2026-07-27, vault
+      // 0x55CB44A1...947D19: a $20 top-up left B1 reporting $100.27 instead
+      // of the real $120.27 until this fix.
+      //
+      // Deliberately NOT consumedUncounted, despite V2 emitting it (2026-07-28
+      // correction, same day it was first tried the other way): unlike a
+      // bare deposit()/depositToken() call — which never touches the live
+      // position in that same tx, so genuinely counts only once folded in
+      // later — increasePosition() DOES call increaseLiquidity() in the SAME
+      // transaction. The owner's capital leaves their wallet and enters the
+      // vault's working capital right then, even if Uniswap's own ratio math
+      // could only mint part of it into the NFT this specific call (the rest
+      // waits in investableUsdt for the next fold-in) — same "cuenta igual
+      // que un depósito" rule this function's own original design settled
+      // on for this event, before consumedUncounted briefly changed it.
+      // Real vault confirmed this the same day: usdtAmount=10,
+      // consumedUncounted=7.017287 — B1 must count the full 10, not 7.02.
+      totalRaw += args.usdtAmount as bigint;
     } else if (ev.eventName === "Rebalanced") {
       totalRaw += args.reinjectedAmount as bigint;
       // V2 only — how much of this cycle's fold-in was a previously-pending

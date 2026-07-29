@@ -18,9 +18,11 @@ import type { ChainDef } from "./chains";
  *     positionAlreadyExists is true (V2 only — a later top-up instead
  *     waits for consumedUncounted below, at the moment it's actually
  *     folded in).
- *   - PositionIncreased: consumedUncounted (V2, measured) or usdtAmount
- *     (V1 fallback) — "Sumar a la posición abierta" is real capital
- *     landing directly in the position.
+ *   - PositionIncreased: ALWAYS the full usdtAmount, never consumedUncounted
+ *     — "Sumar a la posición abierta" moves capital out of the owner's
+ *     wallet in the SAME transaction, so it counts in full immediately
+ *     (same as a bare deposit()), unlike a later deposit()/depositToken()
+ *     call, which never touches the live position until a future fold-in.
  *   - Rebalanced: reinjectedAmount + consumedUncounted (V2) — reserve
  *     reinjection and any pending top-up folded in this cycle.
  *   - IdleDustSwept: consumedUncounted (V2 only — V1's is always genuine
@@ -47,7 +49,14 @@ export function useVaultCumulativeInvestment(address: `0x${string}` | undefined,
               total += (args.investableAmount as bigint | undefined) ?? 0n;
             }
           } else if (log.eventName === "PositionIncreased") {
-            total += (args.consumedUncounted as bigint | undefined) ?? (args.usdtAmount as bigint | undefined) ?? 0n;
+            // Always the FULL usdtAmount, never consumedUncounted — see this
+            // repo's rebalancer.ts (getCumulativeInvestmentUsd) for the full
+            // reasoning: increasePosition() moves capital out of the owner's
+            // wallet in this same tx, so it counts in full immediately, same
+            // as a bare deposit() — unlike a later deposit()/depositToken()
+            // call, which never touches the live position until a FUTURE
+            // fold-in.
+            total += (args.usdtAmount as bigint | undefined) ?? 0n;
           } else if (log.eventName === "Rebalanced") {
             total += (args.reinjectedAmount as bigint | undefined) ?? 0n;
             total += (args.consumedUncounted as bigint | undefined) ?? 0n;
