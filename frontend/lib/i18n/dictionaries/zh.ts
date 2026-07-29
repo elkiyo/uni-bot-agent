@@ -285,6 +285,7 @@ const zh: Dictionary = {
     viewExplorer: "在区块浏览器中查看 NFT →",
     viewOnUniswap: "在 Uniswap 上查看仓位 →",
     position: "仓位",
+    investedVs: "已投入资金：${{amount}}",
     feesEarned: "未领取手续费（当前仓位）",
     feesCaption:
       "实时累计手续费，计算方式与 Uniswap 完全一致——仅在金库执行再平衡或提取时才会实际结算。",

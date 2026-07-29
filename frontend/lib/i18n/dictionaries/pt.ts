@@ -289,6 +289,7 @@ const pt: Dictionary = {
     viewExplorer: "Ver NFT no explorer →",
     viewOnUniswap: "Ver posição na Uniswap →",
     position: "Posição",
+    investedVs: "Capital investido: ${{amount}}",
     feesEarned: "Comissões não resgatadas (posição atual)",
     feesCaption:
       "Comissões acumuladas em tempo real, calculadas do mesmo jeito que a Uniswap faz — só são cobradas quando o vault rebalanceia ou saca.",

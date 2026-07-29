@@ -29,6 +29,7 @@ import { uncollectedFeesRaw } from "@/lib/positionMath";
 import { sizeRebalanceSwap, estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
+import { useVaultCumulativeInvestment } from "@/lib/useVaultCumulativeInvestment";
 import { useVaultCreatedAt } from "@/lib/useVaultCreatedAt";
 import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
 import { useSelectedChain } from "@/lib/useSelectedChain";
@@ -234,6 +235,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
   const { data: feesSummary } = useVaultFeesSummary(address, chain, vaultAbi);
   const { data: depositSummary } = useVaultDepositSummary(address, chain, vaultAbi);
+  // B1 — see useVaultCumulativeInvestment's own docstring. Raw stable-decimal
+  // bigint; converted to a display USD number right where it's used, in
+  // PositionNFT's own "invertido vs. valor actual" comparison.
+  const { data: cumulativeInvestmentRaw } = useVaultCumulativeInvestment(address, chain, vaultAbi);
+  const cumulativeInvestmentUsd =
+    cumulativeInvestmentRaw !== undefined ? Number(formatUnits(cumulativeInvestmentRaw, stableDecimals)) : undefined;
   const { data: createdAt } = useVaultCreatedAt(address, chain);
   const { data: slot0 } = useReadContract({
     address: poolAddress,
@@ -1838,6 +1845,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 chain={chain}
                 pool={poolAddress}
                 belowUniswapLink={compoundToggle}
+                investedUsd={cumulativeInvestmentUsd}
               />
             )}
 

@@ -20,6 +20,7 @@ export function PositionNFT({
   chain,
   pool,
   belowUniswapLink,
+  investedUsd,
 }: {
   tokenId: bigint;
   chain: ChainDef;
@@ -28,6 +29,13 @@ export function PositionNFT({
    * column — e.g. VaultDetail.tsx's compounding toggle, so it sits next to
    * the position's own external links instead of up in the page header. */
   belowUniswapLink?: ReactNode;
+  /** B1 — cumulative capital ever committed to this position (see
+   * useVaultCumulativeInvestment's own docstring), passed in from
+   * VaultDetail.tsx rather than computed here since it needs the vault's
+   * FULL event history, not just this position's live on-chain reads.
+   * undefined while still loading; shown next to totalValue (A1) below so
+   * the owner can see "posición actual vs. capital invertido" at a glance. */
+  investedUsd?: number;
 }) {
   const { t } = useTranslation();
   const { data: uri } = useReadContract({
@@ -248,6 +256,15 @@ export function PositionNFT({
             >
               ${totalValue.toFixed(2)}
             </p>
+            {investedUsd !== undefined && investedUsd > 0 && (
+              <p className="mt-1 text-xs text-muted">
+                {t("positionNft.investedVs", { amount: investedUsd.toFixed(2) })}{" "}
+                <span className={totalValue >= investedUsd ? "text-positive" : "text-negative"}>
+                  {totalValue >= investedUsd ? "+" : ""}
+                  {(totalValue - investedUsd).toFixed(2)} ({(((totalValue - investedUsd) / investedUsd) * 100).toFixed(2)}%)
+                </span>
+              </p>
+            )}
             <CompositionBar leftPct={wethPct} />
             <div className="mt-3 flex flex-col gap-2 text-sm">
               <TokenRow
