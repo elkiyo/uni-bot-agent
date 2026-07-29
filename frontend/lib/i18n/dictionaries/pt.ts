@@ -289,7 +289,7 @@ const pt: Dictionary = {
     viewExplorer: "Ver NFT no explorer →",
     viewOnUniswap: "Ver posição na Uniswap →",
     position: "Posição",
-    investedVs: "Capital investido: ${{amount}}",
+    investedVs: "Capital investido (B1): ${{amount}}",
     feesEarned: "Comissões não resgatadas (posição atual)",
     feesCaption:
       "Comissões acumuladas em tempo real, calculadas do mesmo jeito que a Uniswap faz — só são cobradas quando o vault rebalanceia ou saca.",
@@ -441,8 +441,8 @@ const pt: Dictionary = {
     loading: "Carregando…",
 
     statAge: "Idade do vault",
-    statPositionValue: "Valor da posição",
-    statInvested: "Capital investido",
+    statPositionValue: "Valor da posição (A1)",
+    statInvested: "Capital investido (B1)",
     statInvestable: "Capital investível",
     idleWethHint: "+ {{amount}} {{symbol}} solto{{usdSuffix}}",
     statReserve: "Reserva de reinjeção",

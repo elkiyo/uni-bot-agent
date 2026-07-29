@@ -287,7 +287,7 @@ const es = {
     viewExplorer: "Ver NFT en el explorer →",
     viewOnUniswap: "Ver posición en Uniswap →",
     position: "Posición",
-    investedVs: "Capital invertido: ${{amount}}",
+    investedVs: "Capital invertido (B1): ${{amount}}",
     feesEarned: "Comisiones sin reclamar (posición actual)",
     feesCaption:
       "Comisiones acumuladas en tiempo real, calculadas igual que lo hace Uniswap — se cobran recién cuando el vault rebalancea o se retira.",
@@ -439,8 +439,8 @@ const es = {
     loading: "Cargando…",
 
     statAge: "Antigüedad del vault",
-    statPositionValue: "Valor de la posición",
-    statInvested: "Capital invertido",
+    statPositionValue: "Valor de la posición (A1)",
+    statInvested: "Capital invertido (B1)",
     statInvestable: "Capital invertible",
     idleWethHint: "+ {{amount}} {{symbol}} suelto{{usdSuffix}}",
     statReserve: "Reserva reinyección",
