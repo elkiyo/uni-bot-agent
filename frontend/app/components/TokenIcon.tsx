@@ -113,7 +113,7 @@ export function TokenIcon({ symbol, size = 28, className = "" }: { symbol: strin
 
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full bg-white/10 font-mono uppercase text-faint ${className}`}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-foreground/10 font-mono uppercase text-faint ${className}`}
       style={{ width: size, height: size, fontSize: size * 0.32 }}
     >
       {s.slice(0, 2)}

@@ -41,7 +41,7 @@ export default function Docs() {
         </h1>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted">
           {t("docs.subtitlePre")}
-          <Link href="/recursos" className="text-accent underline-offset-4 hover:underline">
+          <Link href="/recursos" className="text-accent-text underline-offset-4 hover:underline">
             {t("docs.subtitleLink")}
           </Link>
           .
@@ -55,7 +55,7 @@ export default function Docs() {
                 <a
                   key={item.id}
                   href={`#${item.id}`}
-                  className="py-1 text-xs text-muted transition-colors hover:text-accent"
+                  className="py-1 text-xs text-muted transition-colors hover:text-accent-text"
                 >
                   {item.label}
                 </a>
@@ -68,14 +68,14 @@ export default function Docs() {
             <Section id="que-es" eyebrow="01" title={t("docs.s01Title")}>
               <p>
                 {t("docs.s01P1Pre")}
-                <strong className="text-white/85">USDT</strong>
+                <strong className="text-foreground/85">USDT</strong>
                 {t("docs.s01P1Mid")}
                 <em>keeper</em>
                 {t("docs.s01P1Post")}
               </p>
               <p>
                 {t("docs.s01P2Pre")}
-                <strong className="text-white/85">{t("docs.s01P2Strong")}</strong>
+                <strong className="text-foreground/85">{t("docs.s01P2Strong")}</strong>
                 {t("docs.s01P2Mid")}
                 <code>owner</code>
                 {t("docs.s01P2Post")}
@@ -113,15 +113,15 @@ export default function Docs() {
                   subtitle={
                     <>
                       {t("docs.roleOperatorSubtitlePre")}
-                      <span className="text-accent">{t("docs.roleOperatorSubtitleHighlight")}</span>
+                      <span className="text-accent-text">{t("docs.roleOperatorSubtitleHighlight")}</span>
                     </>
                   }
                   points={[t("docs.roleOperatorPoint1"), t("docs.roleOperatorPoint2"), t("docs.roleOperatorPoint3")]}
                 />
               </div>
 
-              <div className="mt-6 rounded-2xl border border-hairline bg-white/[0.02] p-5">
-                <p className="font-mono text-sm uppercase tracking-[0.14em] text-white">
+              <div className="mt-6 rounded-2xl border border-hairline bg-surface-1 p-5">
+                <p className="font-mono text-sm uppercase tracking-[0.14em] text-foreground">
                   {t("docs.trustBoxTitle")}
                 </p>
                 <ul className="mt-3 flex flex-col gap-2 text-sm text-muted">
@@ -171,12 +171,12 @@ export default function Docs() {
               />
 
               <div className="my-6 rounded-2xl border border-accent/30 bg-accent/[0.04] p-5">
-                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent-text">
                   {t("docs.cycleBoxTitle")}
                 </p>
                 <p className="mt-2 text-sm text-muted">
                   {t("docs.cycleBoxTextPre")}
-                  <a href="#decision" className="text-accent underline-offset-4 hover:underline">
+                  <a href="#decision" className="text-accent-text underline-offset-4 hover:underline">
                     {t("docs.cycleBoxLink")}
                   </a>
                   {t("docs.cycleBoxTextPost")}
@@ -219,11 +219,11 @@ export default function Docs() {
               />
 
               <ContractBlock name="RangeVault.sol" desc={t("docs.rangeVaultDesc")}>
-                <p className="mt-4 text-sm font-medium text-white/80">{t("docs.fundFlowTitle")}</p>
+                <p className="mt-4 text-sm font-medium text-foreground/80">{t("docs.fundFlowTitle")}</p>
                 <p className="mt-1 text-sm text-muted">{t("docs.fundFlowDesc")}</p>
                 <FundFlowDiagram t={t} />
 
-                <p className="mt-6 text-sm font-medium text-white/80">{t("docs.ledgersTitle")}</p>
+                <p className="mt-6 text-sm font-medium text-foreground/80">{t("docs.ledgersTitle")}</p>
                 <p className="mt-1 text-sm text-muted">
                   {t("docs.ledgersTextPre")}
                   <code>investableUsdt</code>
@@ -232,7 +232,7 @@ export default function Docs() {
                   {t("docs.ledgersTextPost")}
                 </p>
 
-                <p className="mt-5 text-sm font-medium text-white/80">{t("docs.ownerFunctionsTitle")}</p>
+                <p className="mt-5 text-sm font-medium text-foreground/80">{t("docs.ownerFunctionsTitle")}</p>
                 <FunctionTable
                   rows={[
                     ["deposit(reserve, investable)", t("docs.ownerFn1Desc")],
@@ -248,9 +248,9 @@ export default function Docs() {
                   ]}
                 />
 
-                <p className="mt-5 text-sm font-medium text-white/80">
+                <p className="mt-5 text-sm font-medium text-foreground/80">
                   {t("docs.operatorFunctionsTitlePre")}
-                  <span className="text-accent">{t("docs.operatorFunctionsTitleHighlight")}</span>
+                  <span className="text-accent-text">{t("docs.operatorFunctionsTitleHighlight")}</span>
                   {t("docs.operatorFunctionsTitlePost")}
                 </p>
                 <FunctionTable
@@ -262,14 +262,14 @@ export default function Docs() {
                   ]}
                 />
 
-                <p className="mt-5 text-sm font-medium text-white/80">{t("docs.eventsTitle")}</p>
+                <p className="mt-5 text-sm font-medium text-foreground/80">{t("docs.eventsTitle")}</p>
                 <p className="mt-1 text-sm leading-relaxed text-muted">
                   <code>PositionInitialized</code>, <code>Rebalanced</code>,{" "}
                   <code>LpFeesPaidToOwner</code>, <code>Withdrawn</code>,{" "}
                   <code>PositionIncreased</code>, <code>ReinjectedIntoPosition</code>,{" "}
                   <code>IdleDustSwept</code>
                   {t("docs.eventsTextPre")}
-                  <Link href="/vaults" className="text-accent underline-offset-4 hover:underline">
+                  <Link href="/vaults" className="text-accent-text underline-offset-4 hover:underline">
                     {t("docs.eventsTextLink")}
                   </Link>
                   {t("docs.eventsTextPost")}
@@ -284,29 +284,29 @@ export default function Docs() {
               title={
                 <>
                   {t("docs.s05TitlePre")}
-                  <span className="text-accent">{t("docs.s05TitleHighlight")}</span>
+                  <span className="text-accent-text">{t("docs.s05TitleHighlight")}</span>
                 </>
               }
             >
               <p>{t("docs.s05Intro")}</p>
               <ol className="mt-4 flex flex-col gap-2 text-sm text-muted">
                 <li>
-                  <strong className="text-white/80">1.</strong> {t("docs.d1Pre")}
+                  <strong className="text-foreground/80">1.</strong> {t("docs.d1Pre")}
                   <code>rebalanceCount &lt; maxRebalances</code>
                 </li>
                 <li>
-                  <strong className="text-white/80">2.</strong> {t("docs.d2")}
+                  <strong className="text-foreground/80">2.</strong> {t("docs.d2")}
                 </li>
                 <li>
-                  <strong className="text-white/80">3.</strong> {t("docs.d3")}
+                  <strong className="text-foreground/80">3.</strong> {t("docs.d3")}
                 </li>
                 <li>
-                  <strong className="text-white/80">4.</strong> {t("docs.d4")}
+                  <strong className="text-foreground/80">4.</strong> {t("docs.d4")}
                 </li>
               </ol>
               <p className="mt-4">
                 {t("docs.s05OutroPre")}
-                <Link href="/recursos" className="text-accent underline-offset-4 hover:underline">
+                <Link href="/recursos" className="text-accent-text underline-offset-4 hover:underline">
                   {t("docs.s05OutroLink")}
                 </Link>
                 .
@@ -321,21 +321,21 @@ export default function Docs() {
                   href="https://uni-lab-xyz.vercel.app/api-docs"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-accent underline-offset-4 hover:underline"
+                  className="text-accent-text underline-offset-4 hover:underline"
                 >
                   uni-lab.xyz
                 </a>
                 {t("docs.s06P1Mid")}
-                <strong className="text-white/85">{t("docs.s06P1Strong")}</strong>
+                <strong className="text-foreground/85">{t("docs.s06P1Strong")}</strong>
                 {t("docs.s06P1Post")}
                 <code>api.x402.celo.org</code>
                 {t("docs.s06P1End")}
               </p>
               <p>
                 {t("docs.s06P2Pre")}
-                <strong className="text-white/85">{t("docs.s06P2Strong")}</strong>
+                <strong className="text-foreground/85">{t("docs.s06P2Strong")}</strong>
                 {t("docs.s06P2Mid")}
-                <strong className="text-white/85">{t("docs.s06P2Strong2")}</strong>
+                <strong className="text-foreground/85">{t("docs.s06P2Strong2")}</strong>
                 {t("docs.s06P2Post")}
               </p>
 
@@ -391,8 +391,8 @@ export default function Docs() {
                   [t("docs.g7Term"), t("docs.g7Def")],
                   [t("docs.g8Term"), t("docs.g8Def")],
                 ].map(([term, def]) => (
-                  <div key={term} className="rounded-xl border border-hairline bg-white/[0.02] p-4">
-                    <dt className="text-sm font-semibold text-white/85">{term}</dt>
+                  <div key={term} className="rounded-xl border border-hairline bg-surface-1 p-4">
+                    <dt className="text-sm font-semibold text-foreground/85">{term}</dt>
                     <dd className="mt-1.5 text-xs leading-relaxed text-muted">{def}</dd>
                   </div>
                 ))}
@@ -429,14 +429,14 @@ function Section({
 }) {
   return (
     <section id={id} className="scroll-mt-28">
-      <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">{eyebrow}</span>
+      <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent-text">{eyebrow}</span>
       <h2
         className="mt-2 text-2xl font-semibold tracking-tight sm:text-[28px]"
         style={{ fontFamily: "var(--font-display)" }}
       >
         {title}
       </h2>
-      <div className="mt-4 flex flex-col gap-4 text-[15px] leading-relaxed text-muted [&_code]:rounded [&_code]:bg-white/[0.06] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px] [&_code]:text-white/80">
+      <div className="mt-4 flex flex-col gap-4 text-[15px] leading-relaxed text-muted [&_code]:rounded [&_code]:bg-foreground/[0.06] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px] [&_code]:text-foreground/80">
         {children}
       </div>
     </section>
@@ -456,7 +456,7 @@ function RoleCard({
 }) {
   return (
     <div className={accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"}>
-      <h3 className="text-base font-semibold text-white/90">{title}</h3>
+      <h3 className="text-base font-semibold text-foreground/90">{title}</h3>
       <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-faint">{subtitle}</p>
       <ul className="mt-3 flex flex-col gap-1.5 text-xs leading-relaxed text-muted">
         {points.map((p) => (
@@ -473,8 +473,8 @@ function FlowDiagram({ steps }: { steps: { who: string; what: string; detail: st
       {steps.map((s, i) => (
         <div key={s.what} className="flex flex-1 items-center sm:flex-row">
           <div className="glass w-full shrink-0 rounded-2xl p-4 sm:min-w-[180px]">
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-accent">{s.who}</span>
-            <p className="mt-1.5 font-mono text-xs text-white/90">{s.what}</p>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-accent-text">{s.who}</span>
+            <p className="mt-1.5 font-mono text-xs text-foreground/90">{s.what}</p>
             <p className="mt-1 text-[11px] leading-snug text-muted">{s.detail}</p>
           </div>
           {i < steps.length - 1 && (
@@ -510,7 +510,7 @@ function ArchitectureDiagram({ t }: { t: T }) {
               }
             >
               <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">RangeVault.sol</p>
-              <p className="mt-1 text-xs font-medium text-white/85">{v}</p>
+              <p className="mt-1 text-xs font-medium text-foreground/85">{v}</p>
               <p className="mt-1 text-[10px] text-muted">{t("docs.diagRangeVaultNote")}</p>
             </div>
           ))}
@@ -523,8 +523,8 @@ function ArchitectureDiagram({ t }: { t: T }) {
 function DiagramBox({ label, name, detail }: { label: string; name: string; detail: string }) {
   return (
     <div className="glass w-full max-w-sm rounded-2xl p-4 text-center">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-accent">{label}</span>
-      <p className="mt-1 font-mono text-sm text-white/90">{name}</p>
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-accent-text">{label}</span>
+      <p className="mt-1 font-mono text-sm text-foreground/90">{name}</p>
       <p className="mt-1 text-[11px] text-muted">{detail}</p>
     </div>
   );
@@ -589,7 +589,7 @@ function FlowNode({
         (small ? "opacity-80" : "")
       }
     >
-      <p className="text-xs font-medium text-white/85">{label}</p>
+      <p className="text-xs font-medium text-foreground/85">{label}</p>
       <p className="mt-0.5 text-[10px] leading-snug text-muted">{detail}</p>
     </div>
   );
@@ -619,7 +619,7 @@ function ContractBlock({
 }) {
   return (
     <div className="glass mt-6 rounded-2xl p-5 sm:p-6">
-      <h3 className="font-mono text-sm text-accent">{name}</h3>
+      <h3 className="font-mono text-sm text-accent-text">{name}</h3>
       <p className="mt-2 text-sm leading-relaxed text-muted">{desc}</p>
       {rows && <FunctionTable rows={rows} />}
       {children}
@@ -632,7 +632,7 @@ function FunctionTable({ rows }: { rows: [string, string][] }) {
     <div className="mt-3 flex flex-col gap-2">
       {rows.map(([fn, desc]) => (
         <div key={fn} className="grid gap-1 sm:grid-cols-[minmax(0,280px)_1fr] sm:gap-4">
-          <code className="break-all font-mono text-[12px] text-white/80">{fn}</code>
+          <code className="break-all font-mono text-[12px] text-foreground/80">{fn}</code>
           <p className="text-xs leading-relaxed text-muted">{desc}</p>
         </div>
       ))}
@@ -643,7 +643,7 @@ function FunctionTable({ rows }: { rows: [string, string][] }) {
 function GuardCard({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="glass rounded-2xl p-5">
-      <h3 className="text-sm font-semibold text-white/90">{title}</h3>
+      <h3 className="text-sm font-semibold text-foreground/90">{title}</h3>
       <p className="mt-2 text-xs leading-relaxed text-muted">{desc}</p>
     </div>
   );
@@ -653,13 +653,13 @@ function AddrTable({ rows }: { rows: [string, string, string][] }) {
   return (
     <div className="mt-4 flex flex-col divide-y divide-hairline overflow-hidden rounded-2xl border border-hairline">
       {rows.map(([label, address, note]) => (
-        <div key={label} className="grid gap-1 bg-white/[0.01] p-4 sm:grid-cols-[160px_1fr_auto] sm:items-center sm:gap-4">
-          <span className="text-xs font-medium text-white/80">{label}</span>
+        <div key={label} className="grid gap-1 bg-foreground/[0.01] p-4 sm:grid-cols-[160px_1fr_auto] sm:items-center sm:gap-4">
+          <span className="text-xs font-medium text-foreground/80">{label}</span>
           <a
             href={`https://celoscan.io/address/${address}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="break-all font-mono text-xs text-muted underline-offset-4 hover:text-accent hover:underline"
+            className="break-all font-mono text-xs text-muted underline-offset-4 hover:text-accent-text hover:underline"
           >
             {address} ↗
           </a>

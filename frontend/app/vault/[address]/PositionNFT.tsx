@@ -195,7 +195,7 @@ export function PositionNFT({
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center gap-3">
         <h2
-          className="text-2xl font-semibold tracking-tight text-white"
+          className="text-2xl font-semibold tracking-tight text-foreground"
           style={{ fontFamily: "var(--font-display)" }}
         >
           {t("positionNft.title", { id: String(tokenId) })}
@@ -236,7 +236,7 @@ export function PositionNFT({
               className="w-full rounded-2xl border border-hairline"
             />
           ) : (
-            <div className="grid aspect-[290/500] w-full place-items-center rounded-2xl border border-hairline bg-white/[0.02]">
+            <div className="grid aspect-[290/500] w-full place-items-center rounded-2xl border border-hairline bg-surface-1">
               <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
                 {t("positionNft.loadingNft")}
               </span>
@@ -246,7 +246,7 @@ export function PositionNFT({
             href={`${chain.explorerBaseUrl}/nft/${chain.positionManager}/${String(tokenId)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 block text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted underline-offset-4 hover:text-accent hover:underline"
+            className="mt-3 block text-center font-mono text-[11px] uppercase tracking-[0.14em] text-muted underline-offset-4 hover:text-accent-text hover:underline"
           >
             {t("positionNft.viewExplorer")}
           </a>
@@ -305,13 +305,13 @@ export function PositionNFT({
               {t("positionNft.feesEarned")}
             </span>
             <p
-              className="mt-1 text-2xl font-semibold tabular-nums text-accent"
+              className="mt-1 text-2xl font-semibold tabular-nums text-accent-text"
               style={{ fontFamily: "var(--font-display)" }}
             >
               ${feesTotal.toFixed(4)}
             </p>
             <p
-              className="mt-1 text-xl font-semibold tabular-nums text-accent"
+              className="mt-1 text-xl font-semibold tabular-nums text-accent-text"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {floatingYieldPct.toFixed(2)}%{" "}
@@ -343,7 +343,7 @@ export function PositionNFT({
               {t("positionNft.priceRange")}
             </span>
             <p
-              className="mt-1 text-xl font-semibold tabular-nums text-accent"
+              className="mt-1 text-xl font-semibold tabular-nums text-accent-text"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {rangeWidthPct.toFixed(2)}%{" "}
@@ -353,9 +353,9 @@ export function PositionNFT({
             </p>
             <RangeMeter low={rangeLow} high={rangeHigh} current={ethPrice} inRange={inRange} t={t} />
             {ethPrice !== undefined && (
-              <p className="mt-3 text-center text-sm text-white/60">
+              <p className="mt-3 text-center text-sm text-foreground/60">
                 {t("positionNft.currentPriceLabel")}{" "}
-                <span className="font-semibold tabular-nums text-white/90">${ethPrice.toFixed(2)}</span>{" "}
+                <span className="font-semibold tabular-nums text-foreground/90">${ethPrice.toFixed(2)}</span>{" "}
                 <span className="font-mono text-xs text-faint">
                   {chain.stableSymbol}/{chain.volatileSymbol}
                 </span>
@@ -421,16 +421,16 @@ function RangeMeter({
           {pct !== undefined && (
             <div
               className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-700 ease-out"
-              style={{ left: `${pct}%`, backgroundColor: statusColor, border: "3px solid #050505" }}
+              style={{ left: `${pct}%`, backgroundColor: statusColor, border: "3px solid var(--background)" }}
             />
           )}
         </div>
       </div>
       <div className="mt-2 flex items-baseline justify-between text-lg">
-        <span className="text-white/90">
+        <span className="text-foreground/90">
           {t("positionNft.min")} <span className="font-semibold">${low.toFixed(2)}</span>
         </span>
-        <span className="text-white/90">
+        <span className="text-foreground/90">
           {t("positionNft.max")} <span className="font-semibold">${high.toFixed(2)}</span>
         </span>
       </div>
@@ -440,9 +440,9 @@ function RangeMeter({
 
 function CompositionBar({ leftPct }: { leftPct: number }) {
   return (
-    <div className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+    <div className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
       <div className="h-full bg-accent" style={{ width: `${Math.min(100, Math.max(0, leftPct))}%` }} />
-      <div className="h-full flex-1 bg-white/25" />
+      <div className="h-full flex-1 bg-foreground/25" />
     </div>
   );
 }
@@ -463,7 +463,7 @@ function TokenRow({
       <span className="text-muted">
         {label} <span className="text-faint">· {pct.toFixed(1)}%</span>
       </span>
-      <span className="text-right text-white/90">
+      <span className="text-right text-foreground/90">
         ${usd.toFixed(2)} <span className="text-faint">· {native}</span>
       </span>
     </div>

@@ -51,7 +51,7 @@ export function DepositTokenSelector({
                   ? "border-black bg-black/[0.06] text-[#050505]"
                   : "border-black/15 text-black/50 hover:border-black/40"
                 : isSelected
-                  ? "border-accent bg-accent/[0.1] text-white"
+                  ? "border-accent bg-accent/[0.1] text-foreground"
                   : "border-hairline text-faint hover:border-accent/50"
             } ${size === "field" ? "text-xs" : "text-[11px]"}`}
           >

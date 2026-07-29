@@ -89,7 +89,7 @@ export default function DashboardPage() {
         {metrics.poolTypes.length > 0 && <PoolTypeChart poolTypes={metrics.poolTypes} />}
 
         <div className="mt-10 flex items-center justify-between gap-4">
-          <h2 className="text-xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {t("dashboard.historicalSeries")}
           </h2>
           <div className="flex gap-1.5 rounded-full border border-hairline p-1">
@@ -100,7 +100,7 @@ export default function DashboardPage() {
                 className={
                   granularity === g
                     ? "rounded-full bg-accent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
-                    : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
+                    : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
                 }
               >
                 {GRANULARITY_LABELS[g]}
@@ -146,7 +146,7 @@ function ChainTab({ label, active, onClick }: { label: string; active: boolean; 
       className={
         active
           ? "rounded-full bg-accent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
-          : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
+          : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
       }
     >
       {label}
@@ -169,7 +169,7 @@ function Stat({
     <div className={accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"}>
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
       <p
-        className={`mt-2 text-2xl font-semibold tabular-nums ${accent ? "text-accent" : "text-white/90"}`}
+        className={`mt-2 text-2xl font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`}
         style={{ fontFamily: "var(--font-display)" }}
       >
         {value}
@@ -226,7 +226,7 @@ function StatGrid({ metrics }: { metrics: ReturnType<typeof useProtocolMetrics> 
         label={
           <>
             {t("dashboard.statGasReimbursedPre")}
-            <span className="text-accent">{t("dashboard.statGasReimbursedHighlight")}</span>
+            <span className="text-accent-text">{t("dashboard.statGasReimbursedHighlight")}</span>
           </>
         }
         value={metrics.eventsLoading ? "…" : usd(metrics.gasReimbursedUsd)}
@@ -246,24 +246,24 @@ function PoolTypeChart({ poolTypes }: { poolTypes: ReturnType<typeof useProtocol
   const data = poolTypes.map((p) => ({ label: p.label, tvl: Number(p.tvlUsd.toFixed(2)), vaults: p.vaultCount }));
   return (
     <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
         {t("dashboard.poolTypeTitle")}
       </h2>
       <p className="mt-1 text-sm text-muted">{t("dashboard.poolTypeSubtitle")}</p>
       <div className="mt-6" style={{ width: "100%", height: 280 }}>
         <ResponsiveContainer minWidth={200} minHeight={200}>
           <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
-            <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
-            <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+            <XAxis dataKey="label" stroke="var(--faint)" fontSize={11} tickLine={false} />
+            <YAxis stroke="var(--faint)" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
             <Tooltip
-              contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+              contentStyle={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 8, fontSize: 12 }}
               formatter={(value: unknown) => [usd(Number(value)), t("dashboard.statTvl")]}
               cursor={false}
             />
-            <Bar dataKey="tvl" radius={[6, 6, 0, 0]} activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}>
+            <Bar dataKey="tvl" radius={[6, 6, 0, 0]} activeBar={{ stroke: "var(--foreground)", strokeWidth: 2 }}>
               {data.map((_, i) => (
-                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="var(--hairline)" />
               ))}
             </Bar>
           </BarChart>
@@ -285,7 +285,7 @@ function ChartShell({ title, subtitle, isLoading, empty, headerExtra, children }
   return (
     <div className="glass rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-lg font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+        <h3 className="text-lg font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
           {title}
         </h3>
         {headerExtra}
@@ -320,7 +320,7 @@ function VolumeSeriesChart({
       subtitle={
         <>
           {t("dashboard.volumeSubtitlePre")}
-          <span className="text-accent">{t("dashboard.volumeSubtitleHighlight")}</span>
+          <span className="text-accent-text">{t("dashboard.volumeSubtitleHighlight")}</span>
         </>
       }
       isLoading={isLoading}
@@ -328,19 +328,20 @@ function VolumeSeriesChart({
     >
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
-          <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
-          <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+          <XAxis dataKey="label" stroke="var(--faint)" fontSize={11} tickLine={false} />
+          <YAxis stroke="var(--faint)" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
           <Tooltip
-            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            contentStyle={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 8, fontSize: 12 }}
             formatter={(value: unknown) => [usd(Number(value)), t("dashboard.tooltipVolume")]}
             cursor={false}
           />
           <Bar
             dataKey="value"
             fill="#fcff52"
+            stroke="var(--hairline)"
             radius={[6, 6, 0, 0]}
-            activeBar={{ fill: "#fff7a8", stroke: "#ffffff", strokeWidth: 2 }}
+            activeBar={{ fill: "#fff7a8", stroke: "var(--foreground)", strokeWidth: 2 }}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -373,11 +374,11 @@ function FeesSeriesChart({
     <ChartShell title={t("dashboard.feesTitle")} subtitle={t("dashboard.feesSubtitle")} isLoading={isLoading} empty={data.length === 0}>
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
-          <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
-          <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+          <XAxis dataKey="label" stroke="var(--faint)" fontSize={11} tickLine={false} />
+          <YAxis stroke="var(--faint)" fontSize={11} tickLine={false} tickFormatter={(v) => usd(Number(v))} />
           <Tooltip
-            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            contentStyle={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 8, fontSize: 12 }}
             formatter={(value: unknown, name: unknown) => [
               usd(Number(value)),
               name === "owner" ? t("dashboard.tooltipOwner") : t("dashboard.tooltipPlatform"),
@@ -390,14 +391,14 @@ function FeesSeriesChart({
             stackId="fees"
             fill="#4ade80"
             radius={[0, 0, 0, 0]}
-            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+            activeBar={{ stroke: "var(--foreground)", strokeWidth: 2 }}
           />
           <Bar
             dataKey="platform"
             stackId="fees"
             fill="#60a5fa"
             radius={[6, 6, 0, 0]}
-            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+            activeBar={{ stroke: "var(--foreground)", strokeWidth: 2 }}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -425,32 +426,33 @@ function RebalanceSeriesChart({
       subtitle={
         <>
           {t("dashboard.rebalancesSubtitlePre")}
-          <span className="text-accent">{t("dashboard.rebalancesSubtitleHighlight")}</span>
+          <span className="text-accent-text">{t("dashboard.rebalancesSubtitleHighlight")}</span>
         </>
       }
       isLoading={isLoading}
       empty={data.length === 0}
       headerExtra={
-        <span className="rounded-full bg-accent/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-accent">
+        <span className="rounded-full bg-accent/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-accent-text">
           {t("dashboard.rebalancesTotal")}: {events.length}
         </span>
       }
     >
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
-          <XAxis dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} />
-          <YAxis stroke="#71717a" fontSize={11} tickLine={false} allowDecimals={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+          <XAxis dataKey="label" stroke="var(--faint)" fontSize={11} tickLine={false} />
+          <YAxis stroke="var(--faint)" fontSize={11} tickLine={false} allowDecimals={false} />
           <Tooltip
-            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            contentStyle={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 8, fontSize: 12 }}
             formatter={(value: unknown) => [Number(value), t("dashboard.tooltipRebalances")]}
             cursor={false}
           />
           <Bar
             dataKey="count"
             fill="#fcff52"
+            stroke="var(--hairline)"
             radius={[6, 6, 0, 0]}
-            activeBar={{ fill: "#fff7a8", stroke: "#ffffff", strokeWidth: 2 }}
+            activeBar={{ fill: "#fff7a8", stroke: "var(--foreground)", strokeWidth: 2 }}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -480,11 +482,11 @@ function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolM
     >
       <ResponsiveContainer minWidth={200} minHeight={200}>
         <BarChart data={data} layout="vertical" margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
-          <XAxis type="number" stroke="#71717a" fontSize={11} tickLine={false} allowDecimals={false} />
-          <YAxis type="category" dataKey="label" stroke="#71717a" fontSize={11} tickLine={false} width={70} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+          <XAxis type="number" stroke="var(--faint)" fontSize={11} tickLine={false} allowDecimals={false} />
+          <YAxis type="category" dataKey="label" stroke="var(--faint)" fontSize={11} tickLine={false} width={70} />
           <Tooltip
-            contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+            contentStyle={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 8, fontSize: 12 }}
             cursor={false}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -493,14 +495,14 @@ function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolM
             stackId="status"
             fill="#4ade80"
             name={t("dashboard.statusWithPosition")}
-            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+            activeBar={{ stroke: "var(--foreground)", strokeWidth: 2 }}
           />
           <Bar
             dataKey="sinPosicion"
             stackId="status"
             fill="#71717a"
             name={t("dashboard.statusNoPosition")}
-            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+            activeBar={{ stroke: "var(--foreground)", strokeWidth: 2 }}
           />
           <Bar
             dataKey="cerrados"
@@ -508,7 +510,7 @@ function VaultStatusChart({ metrics }: { metrics: ReturnType<typeof useProtocolM
             fill="#3f3f46"
             name={t("dashboard.statusClosed")}
             radius={[0, 6, 6, 0]}
-            activeBar={{ stroke: "#ffffff", strokeWidth: 2 }}
+            activeBar={{ stroke: "var(--foreground)", strokeWidth: 2 }}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -525,8 +527,8 @@ function statusLabels(t: ReturnType<typeof useTranslation>["t"]): Record<VaultSt
 }
 const STATUS_CLASS: Record<VaultStatus, string> = {
   active: "bg-positive/10 text-positive",
-  no_position: "bg-white/5 text-muted",
-  closed: "bg-white/5 text-faint",
+  no_position: "bg-foreground/5 text-muted",
+  closed: "bg-foreground/5 text-faint",
 };
 
 function formatPrice(n: number): string {
@@ -579,7 +581,7 @@ function VaultAddressCell({
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
         }}
-        className="transition-colors hover:text-accent"
+        className="transition-colors hover:text-accent-text"
         title={t("dashboard.copyVaultAddress")}
       >
         {copied ? t("dashboard.copiedAddress") : shortHash(address)}
@@ -588,7 +590,7 @@ function VaultAddressCell({
         href={`${explorerBaseUrl}/address/${address}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="transition-colors hover:text-accent"
+        className="transition-colors hover:text-accent-text"
         title={t("dashboard.viewVaultExplorer")}
       >
         ↗
@@ -618,10 +620,10 @@ function FilterHeader({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`cursor-pointer bg-transparent font-mono text-[10px] uppercase tracking-[0.12em] outline-none ${active ? "text-accent" : "text-faint"}`}
+        className={`cursor-pointer bg-transparent font-mono text-[10px] uppercase tracking-[0.12em] outline-none ${active ? "text-accent-text" : "text-faint"}`}
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-background normal-case text-white">
+          <option key={o.value} value={o.value} className="bg-background normal-case text-foreground">
             {o.label}
           </option>
         ))}
@@ -646,7 +648,7 @@ function SortableHeader({
     <th className={`px-4 py-3 font-normal ${column.align === "right" ? "text-right" : "text-left"}`}>
       <button
         onClick={() => onClick(column.key)}
-        className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors hover:text-white ${active ? "text-accent" : "text-faint"}`}
+        className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors hover:text-foreground ${active ? "text-accent-text" : "text-faint"}`}
       >
         {column.label}
         <span className="text-[9px]">{active ? (sortDir === "desc" ? "▼" : "▲") : "↕"}</span>
@@ -765,7 +767,7 @@ function VaultHistoryTable({
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
         {title ?? t("dashboard.historyTitle")}
       </h2>
       <p className="mt-1 text-sm text-muted">{subtitle ?? t("dashboard.historySubtitle")}</p>
@@ -806,7 +808,7 @@ function VaultHistoryTable({
       {filteredRows.length > 0 && (
         <div className="mt-6 max-h-[640px] overflow-auto rounded-xl border border-hairline">
           <table className="w-full min-w-[920px] border-collapse text-sm">
-            <thead className="sticky top-0 z-10" style={{ backgroundColor: "#0a0a0a" }}>
+            <thead className="sticky top-0 z-10 bg-surface">
               <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
                 <SortableHeader column={SORTABLE_COLUMNS[0]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <th className="px-4 py-3 font-normal">{t("dashboard.colAge")}</th>
@@ -855,7 +857,7 @@ function VaultHistoryTable({
             </thead>
             <tbody>
               {filteredRows.map((row) => (
-                <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-white/[0.02]">
+                <tr key={`${row.chain.id}-${row.address}`} className="border-b border-hairline/60 last:border-0 hover:bg-surface-1">
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">{formatDate(row.createdAt, locale)}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] tabular-nums text-muted">
                     {formatAge(Math.max(0, now - row.createdAt))}
@@ -865,7 +867,7 @@ function VaultHistoryTable({
                     <Link
                       href={`/vault/${row.address}`}
                       onClick={() => setSelectedChainId(row.chain.id)}
-                      className="text-white/90 underline-offset-4 hover:text-accent hover:underline"
+                      className="text-foreground/90 underline-offset-4 hover:text-accent-text hover:underline"
                     >
                       {row.poolLabel}
                     </Link>
@@ -926,7 +928,7 @@ function VaultHistoryTable({
                         href={`${row.chain.explorerBaseUrl}/tx/${row.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-mono text-[11px] text-muted underline-offset-4 hover:text-accent hover:underline"
+                        className="font-mono text-[11px] text-muted underline-offset-4 hover:text-accent-text hover:underline"
                       >
                         {shortHash(row.txHash)} ↗
                       </a>

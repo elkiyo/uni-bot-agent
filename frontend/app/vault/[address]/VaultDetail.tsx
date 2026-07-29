@@ -1156,21 +1156,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       className={
         autoCompoundFees
           ? "mt-3 flex w-full items-center justify-center gap-3 rounded-full bg-accent px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-background shadow-[0_0_20px_-4px_var(--accent)] transition-transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
-          : "mt-3 flex w-full items-center justify-center gap-3 rounded-full border-2 border-white/25 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-white/80 transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+          : "mt-3 flex w-full items-center justify-center gap-3 rounded-full border-2 border-foreground/25 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-foreground/80 transition-colors hover:border-accent hover:text-accent-text disabled:opacity-50"
       }
     >
       <span
         className={
           autoCompoundFees
             ? "relative h-6 w-11 shrink-0 rounded-full bg-background/30 transition-colors"
-            : "relative h-6 w-11 shrink-0 rounded-full bg-white/15 transition-colors"
+            : "relative h-6 w-11 shrink-0 rounded-full bg-foreground/15 transition-colors"
         }
       >
         <span
           className={
             autoCompoundFees
               ? "absolute top-0.5 left-[1.4rem] h-5 w-5 rounded-full bg-background transition-all"
-              : "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-all"
+              : "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-foreground transition-all"
           }
         />
       </span>
@@ -1728,12 +1728,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <span className="eyebrow !border-positive/40 !text-positive">{t("vaultDetail.active")}</span>
           )}
           {isCompound && !isOwner && (
-            <span className="eyebrow !border-accent/40 !text-accent">
+            <span className="eyebrow !border-accent/40 !text-accent-text">
               {autoCompoundFees ? t("vaultDetail.compoundBadgeOn") : t("vaultDetail.compoundBadgeOff")}
             </span>
           )}
           {hasPosition ? (
-            <span className="eyebrow !border-accent/40 !text-accent">
+            <span className="eyebrow !border-accent/40 !text-accent-text">
               {t("vaultDetail.positionLabel", { id: String(positionTokenId) })}
             </span>
           ) : (
@@ -1741,7 +1741,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           )}
         </div>
 
-        <h1 className="mt-5 break-all font-mono text-lg text-white/90 sm:text-xl">{address}</h1>
+        <h1 className="mt-5 break-all font-mono text-lg text-foreground/90 sm:text-xl">{address}</h1>
         <p className="mt-2 text-sm text-muted">
           {isOwner ? t("vaultDetail.ownerNote") : t("vaultDetail.readOnlyNote")}
         </p>
@@ -1844,7 +1844,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 }
                 hintClassName="mt-1 text-sm font-semibold text-positive"
                 hint2={rentLabel}
-                hint2ClassName="mt-1 font-mono text-base font-bold text-accent"
+                hint2ClassName="mt-1 font-mono text-base font-bold text-accent-text"
                 accent
               />
               <Stat
@@ -1968,15 +1968,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                   {t("vaultDetail.operator")}
                 </span>
-                <p className="mt-2 break-all font-mono text-sm text-white/90">{String(operator)}</p>
+                <p className="mt-2 break-all font-mono text-sm text-foreground/90">{String(operator)}</p>
               </div>
             </div>
 
             {/* Vault configuration — what was set at create/reconfigure time */}
             <div className="glass mt-4 rounded-2xl p-5">
-              <span className="font-mono text-sm uppercase tracking-[0.16em] text-white">
+              <span className="font-mono text-sm uppercase tracking-[0.16em] text-foreground">
                 {t("vaultDetail.agentConfigPre")}
-                <span className="text-accent">{t("vaultDetail.agentConfigHighlight")}</span>
+                <span className="text-accent-text">{t("vaultDetail.agentConfigHighlight")}</span>
               </span>
               <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
                 <ConfigRow
@@ -2051,7 +2051,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             {isOwner && (
               <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
                 <h2
-                  className="text-2xl font-semibold tracking-tight text-white"
+                  className="text-2xl font-semibold tracking-tight text-foreground"
                   style={{ fontFamily: "var(--font-display)" }}
                 >
                   {t("vaultDetail.managementTitle")}
@@ -2064,9 +2064,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     comisiones. */}
 
                 <div className="mt-8">
-                  <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
+                  <span className="font-mono text-sm uppercase tracking-[0.14em] text-foreground">
                     {t("vaultDetail.reconfigureLabelPre")}
-                    <span className="text-accent">{t("vaultDetail.reconfigureLabelHighlight")}</span>
+                    <span className="text-accent-text">{t("vaultDetail.reconfigureLabelHighlight")}</span>
                   </span>
                   <p className="mt-1 text-xs text-faint">
                     {targetConfigured
@@ -2113,7 +2113,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
 
                   {isCompound && (
                     <div className="mt-6 rounded-xl border border-accent/25 bg-accent/[0.04] p-4">
-                      <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-accent">
+                      <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-accent-text">
                         {t("vaultDetail.compoundSectionLabel")}
                       </span>
                       <div className="mt-2 flex flex-wrap items-end gap-3">
@@ -2144,7 +2144,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     type="button"
                     onClick={() => setShowRiskLimits((v) => !v)}
                     aria-expanded={showRiskLimits}
-                    className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.14em] text-white transition-colors hover:text-accent"
+                    className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.14em] text-foreground transition-colors hover:text-accent-text"
                   >
                     <svg
                       width="10"
@@ -2316,7 +2316,7 @@ function ConfigRow({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div>
       <dt className="text-xs text-faint">{k}</dt>
-      <dd className="mt-0.5 font-medium text-white/90">{v}</dd>
+      <dd className="mt-0.5 font-medium text-foreground/90">{v}</dd>
     </div>
   );
 }
@@ -2475,13 +2475,13 @@ function Stat({
     >
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
       <p
-        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent" : "text-white/90"}`}
+        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`}
         style={{ fontFamily: "var(--font-display)" }}
       >
         {value}
       </p>
       {hint && <p className={hintClassName ?? "mt-1 text-xs text-faint"}>{hint}</p>}
-      {hint2 && <p className={hint2ClassName ?? "mt-0.5 font-mono text-xs text-accent"}>{hint2}</p>}
+      {hint2 && <p className={hint2ClassName ?? "mt-0.5 font-mono text-xs text-accent-text"}>{hint2}</p>}
     </div>
   );
 }

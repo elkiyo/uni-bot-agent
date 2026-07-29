@@ -153,7 +153,7 @@ export default function AdminReferralsPage() {
     <>
       <Header />
       <main className="section flex-1 pb-24 pt-32">
-        <Link href="/admin" className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted hover:text-white">
+        <Link href="/admin" className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted hover:text-foreground">
           {t("adminReferrals.backToAdmin")}
         </Link>
         <h1
@@ -220,7 +220,7 @@ export default function AdminReferralsPage() {
                   <tr
                     key={row.referrer}
                     onClick={() => setSelected(row.referrer)}
-                    className={`cursor-pointer border-t border-white/5 transition-colors hover:bg-white/[0.03] ${
+                    className={`cursor-pointer border-t border-foreground/5 transition-colors hover:bg-surface-1 ${
                       selected === row.referrer ? "bg-accent/[0.05]" : ""
                     }`}
                   >
@@ -230,7 +230,7 @@ export default function AdminReferralsPage() {
                     <td className="px-4 py-3">
                       <span
                         className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
-                          pct >= 50 ? "bg-accent/[0.12] text-accent" : "bg-white/[0.06] text-muted"
+                          pct >= 50 ? "bg-accent/[0.12] text-accent-text" : "bg-foreground/[0.06] text-muted"
                         }`}
                       >
                         {pct}%
@@ -273,7 +273,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
     <div className={accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"}>
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
       <p
-        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent" : "text-white/90"}`}
+        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`}
         style={{ fontFamily: "var(--font-display)" }}
       >
         {value}
@@ -368,7 +368,7 @@ function ReferrerDetail({
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
             {t("adminReferrals.detailFor")}
           </span>
-          <p className="mt-1 break-all font-mono text-sm text-white/90">{referrer}</p>
+          <p className="mt-1 break-all font-mono text-sm text-foreground/90">{referrer}</p>
         </div>
         <button className="btn-secondary !px-4 !py-2.5" onClick={() => exportCsv(referrer, detail)}>
           {t("adminReferrals.exportCsv")}
@@ -377,12 +377,12 @@ function ReferrerDetail({
 
       <div className="mt-6 flex flex-col gap-3">
         {detail.referrals.map((r) => (
-          <div key={r.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <div key={r.id} className="rounded-xl border border-border-medium bg-surface-1 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="break-all font-mono text-xs text-white/80">{r.referred}</span>
+              <span className="break-all font-mono text-xs text-foreground/80">{r.referred}</span>
               <span
                 className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] ${
-                  r.activated_at ? "bg-accent/[0.12] text-accent" : "bg-white/[0.06] text-muted"
+                  r.activated_at ? "bg-accent/[0.12] text-accent-text" : "bg-foreground/[0.06] text-muted"
                 }`}
               >
                 {r.activated_at ? t("referrals.badgeActive") : t("referrals.badgeRegistered")}
@@ -392,7 +392,7 @@ function ReferrerDetail({
               {r.volumeByChain
                 .filter((v) => v.vaultCount > 0)
                 .map((v) => (
-                  <span key={v.chainId} className="rounded-lg bg-black/30 px-2.5 py-1 text-xs text-white/70">
+                  <span key={v.chainId} className="rounded-lg bg-foreground/10 px-2.5 py-1 text-xs text-foreground/70">
                     {v.chainName}: {v.totalDeposited.toFixed(2)} {v.tokenSymbol}
                   </span>
                 ))}
@@ -401,13 +401,13 @@ function ReferrerDetail({
         ))}
       </div>
 
-      <h3 className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">
+      <h3 className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-foreground">
         {t("adminReferrals.liquidationHistory")}
       </h3>
       <div className="mt-3 flex flex-col gap-2">
         {detail.liquidations.length === 0 && <p className="text-sm text-muted">{t("adminReferrals.noLiquidations")}</p>}
         {detail.liquidations.map((l) => (
-          <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-black/30 px-3 py-2 text-xs">
+          <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-foreground/10 px-3 py-2 text-xs">
             <span>
               {l.amount} {l.token_symbol} · {l.chain_name}
             </span>
@@ -415,7 +415,7 @@ function ReferrerDetail({
               href={`${getChain(l.chain_id).explorerBaseUrl}/tx/${l.tx_hash}`}
               target="_blank"
               rel="noreferrer"
-              className="text-accent hover:underline"
+              className="text-accent-text hover:underline"
             >
               {truncate(l.tx_hash)}
             </a>
@@ -426,7 +426,7 @@ function ReferrerDetail({
       </div>
 
       <div className="mt-8 border-t border-hairline pt-6">
-        <h3 className="font-mono text-sm uppercase tracking-[0.14em] text-white">
+        <h3 className="font-mono text-sm uppercase tracking-[0.14em] text-foreground">
           {t("adminReferrals.newLiquidation")}
         </h3>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -479,7 +479,7 @@ function ReferrerDetail({
         )}
         {confirming && chainDef && (
           <div className="mt-4 rounded-xl border border-accent/35 bg-accent/[0.06] p-4">
-            <p className="text-sm text-white/90">
+            <p className="text-sm text-foreground/90">
               {t("adminReferrals.confirmSummary", {
                 amount,
                 token: chainDef.stableSymbol,

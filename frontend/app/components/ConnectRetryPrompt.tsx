@@ -55,8 +55,8 @@ export function ConnectRetryPrompt() {
   if (!showRetry) return null;
 
   return (
-    <div className="fixed inset-x-4 bottom-24 z-[60] mx-auto max-w-sm rounded-2xl border border-hairline bg-black/90 p-4 text-center shadow-2xl backdrop-blur-xl sm:bottom-6">
-      <p className="text-sm text-white/80">No se pudo completar la conexión con tu wallet. Probá de nuevo.</p>
+    <div className="fixed inset-x-4 bottom-24 z-[60] mx-auto max-w-sm rounded-2xl border border-hairline bg-surface/90 p-4 text-center shadow-2xl shadow-[var(--shadow-color)] backdrop-blur-xl sm:bottom-6">
+      <p className="text-sm text-foreground/80">No se pudo completar la conexión con tu wallet. Probá de nuevo.</p>
       <div className="mt-3 flex justify-center gap-3">
         <button
           type="button"

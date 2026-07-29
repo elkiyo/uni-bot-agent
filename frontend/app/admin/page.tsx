@@ -360,7 +360,7 @@ export default function Admin() {
 
         <Link
           href="/admin/referrals"
-          className="mt-4 inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-accent hover:underline"
+          className="mt-4 inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-accent-text hover:underline"
         >
           {t("admin.referralsLink")}
         </Link>
@@ -375,8 +375,8 @@ export default function Admin() {
                 onClick={() => setSelectedChainId(c.id)}
                 className={
                   c.id === chain.id
-                    ? "rounded-full border border-accent bg-accent/[0.08] px-3 py-1.5 text-sm font-medium text-accent"
-                    : "rounded-full border border-hairline px-3 py-1.5 text-sm text-white/70 transition-colors hover:border-accent/50 hover:text-white"
+                    ? "rounded-full border border-accent bg-accent/[0.08] px-3 py-1.5 text-sm font-medium text-accent-text"
+                    : "rounded-full border border-hairline px-3 py-1.5 text-sm text-foreground/70 transition-colors hover:border-accent/50 hover:text-foreground"
                 }
               >
                 {c.name}
@@ -408,7 +408,7 @@ export default function Admin() {
 
         {data && isPendingOwner && (
           <div className="glass mt-10 rounded-2xl border-accent/35 bg-accent/[0.06] p-6 sm:p-8">
-            <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
               {t("admin.pendingTransferTitle")}
             </h2>
             <p className="mt-2 text-sm text-muted">
@@ -495,7 +495,7 @@ export default function Admin() {
               />
             </div>
 
-            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">{t("admin.vaultsLabel")}</p>
+            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-foreground">{t("admin.vaultsLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat label={t("admin.statActive")} value={String(activeVaults.length)} accent />
               <Stat label={t("admin.statClosed")} value={String(closedVaultsCount)} />
@@ -513,7 +513,7 @@ export default function Admin() {
               />
             </div>
 
-            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">{t("admin.operatorLabel")}</p>
+            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-foreground">{t("admin.operatorLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
                 label={t("admin.statGasLabel", { symbol: chain.viemChain.nativeCurrency.symbol, chain: chain.name })}
@@ -542,7 +542,7 @@ export default function Admin() {
               />
             </div>
 
-            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-white">{t("admin.configLabel")}</p>
+            <p className="mt-8 font-mono text-sm uppercase tracking-[0.14em] text-foreground">{t("admin.configLabel")}</p>
             <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat
                 label={t("admin.statCapPerVault")}
@@ -563,11 +563,11 @@ export default function Admin() {
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                   {t("admin.statDefaultOperator")}
                 </span>
-                <p className="mt-2 break-all font-mono text-xs text-white/90">{String(defaultOperator)}</p>
+                <p className="mt-2 break-all font-mono text-xs text-foreground/90">{String(defaultOperator)}</p>
               </div>
               <div className="glass rounded-2xl p-5">
                 <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{t("admin.statTreasury")}</span>
-                <p className="mt-2 break-all font-mono text-xs text-white/90">{String(treasury)}</p>
+                <p className="mt-2 break-all font-mono text-xs text-foreground/90">{String(treasury)}</p>
               </div>
               <Stat label={t("admin.statEthPrice")} value={ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"} />
             </div>
@@ -580,7 +580,7 @@ export default function Admin() {
         {isPlatformOwner && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
             <h2
-              className="text-2xl font-semibold tracking-tight text-white"
+              className="text-2xl font-semibold tracking-tight text-foreground"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {t("admin.editConfigTitle")}
@@ -685,7 +685,7 @@ export default function Admin() {
               </h3>
               <p className="mt-2 text-sm text-muted">{t("admin.transferOwnershipDesc")}</p>
               {hasPendingTransfer && (
-                <p className="mt-2 font-mono text-xs text-accent">
+                <p className="mt-2 font-mono text-xs text-accent-text">
                   {t("admin.pendingTransferBy", { address: String(pendingOwner) })}
                 </p>
               )}
@@ -723,7 +723,7 @@ export default function Admin() {
         {isPlatformOwner && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
             <h2
-              className="text-2xl font-semibold tracking-tight text-white"
+              className="text-2xl font-semibold tracking-tight text-foreground"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {t("admin.unilabCallsTitle")}
@@ -751,7 +751,7 @@ export default function Admin() {
         {isPlatformOwner && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
             <h2
-              className="text-2xl font-semibold tracking-tight text-white"
+              className="text-2xl font-semibold tracking-tight text-foreground"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {t("admin.gasDepletedTitle")}
@@ -773,7 +773,7 @@ export default function Admin() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <Link
                         href={v.kind === "compound" ? `/vault/${v.address}?kind=compound` : `/vault/${v.address}`}
-                        className="font-mono text-xs text-white/90 hover:underline"
+                        className="font-mono text-xs text-foreground/90 hover:underline"
                       >
                         {v.address}
                       </Link>
@@ -797,15 +797,15 @@ export default function Admin() {
 function UniLabCallRowView({ call, t }: { call: UniLabCallRow; t: ReturnType<typeof useTranslation>["t"] }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="rounded-xl border border-border-medium bg-surface-1 p-4">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
       >
-        <span className="font-mono text-xs text-white/80">{call.endpoint}</span>
+        <span className="font-mono text-xs text-foreground/80">{call.endpoint}</span>
         <span className="break-all font-mono text-[11px] text-muted">{call.vault}</span>
         <span
-          className={`font-mono text-[11px] uppercase tracking-[0.12em] ${call.ok ? "text-accent" : "text-negative"}`}
+          className={`font-mono text-[11px] uppercase tracking-[0.12em] ${call.ok ? "text-accent-text" : "text-negative"}`}
         >
           {call.ok ? t("admin.okLabel") : t("admin.errorShortLabel")} · {call.http_status} · {call.duration_ms}ms
         </span>
@@ -817,7 +817,7 @@ function UniLabCallRowView({ call, t }: { call: UniLabCallRow; t: ReturnType<typ
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">{t("admin.requestLabel")}</span>
-            <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-black/40 p-3 text-[11px] text-white/70">
+            <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-[#0a0a0a] p-3 text-[11px] text-white/70">
               {JSON.stringify(call.request, null, 2)}
             </pre>
           </div>
@@ -825,7 +825,7 @@ function UniLabCallRowView({ call, t }: { call: UniLabCallRow; t: ReturnType<typ
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
               {call.ok ? t("admin.responseLabel") : t("admin.errorLabel")}
             </span>
-            <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-black/40 p-3 text-[11px] text-white/70">
+            <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-[#0a0a0a] p-3 text-[11px] text-white/70">
               {JSON.stringify(call.ok ? call.response : call.error, null, 2)}
             </pre>
           </div>
@@ -859,7 +859,7 @@ function Stat({
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
       <p
         className={`mt-2 text-lg font-semibold tabular-nums ${
-          negative ? "text-negative" : accent ? "text-accent" : "text-white/90"
+          negative ? "text-negative" : accent ? "text-accent-text" : "text-foreground/90"
         }`}
         style={{ fontFamily: "var(--font-display)" }}
       >

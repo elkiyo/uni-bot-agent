@@ -162,11 +162,11 @@ function ReferralsDashboard({
         {session && (
           <>
             <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-              <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
+              <span className="font-mono text-sm uppercase tracking-[0.14em] text-foreground">
                 {t("referrals.yourLink")}
               </span>
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <code className="flex-1 break-all rounded-xl border border-hairline bg-white/[0.02] px-4 py-3 text-xs text-white/80">
+                <code className="flex-1 break-all rounded-xl border border-hairline bg-surface-1 px-4 py-3 text-xs text-foreground/80">
                   {referralLink}
                 </code>
                 <button onClick={copyLink} className="btn-secondary !px-4 !py-2.5">
@@ -194,7 +194,7 @@ function ReferralsDashboard({
             </div>
 
             <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-              <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+              <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
                 {t("referrals.listTitle")}
               </h2>
               {stats && stats.referrals.length === 0 && (
@@ -219,7 +219,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
     <div className={accent ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5" : "glass rounded-2xl p-5"}>
       <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
       <p
-        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent" : "text-white/90"}`}
+        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`}
         style={{ fontFamily: "var(--font-display)" }}
       >
         {value}
@@ -231,12 +231,12 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 function ReferralRowView({ row, t }: { row: ReferralRow; t: ReturnType<typeof useTranslation>["t"] }) {
   const active = Boolean(row.activated_at);
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="rounded-xl border border-border-medium bg-surface-1 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="break-all font-mono text-xs text-white/80">{row.referred}</span>
+        <span className="break-all font-mono text-xs text-foreground/80">{row.referred}</span>
         <span
           className={`rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] ${
-            active ? "bg-accent/[0.12] text-accent" : "bg-white/[0.06] text-muted"
+            active ? "bg-accent/[0.12] text-accent-text" : "bg-foreground/[0.06] text-muted"
           }`}
         >
           {active ? t("referrals.badgeActive") : t("referrals.badgeRegistered")}
@@ -247,7 +247,7 @@ function ReferralRowView({ row, t }: { row: ReferralRow; t: ReturnType<typeof us
         {row.volumeByChain
           .filter((v) => v.vaultCount > 0)
           .map((v) => (
-            <div key={v.chainId} className="rounded-lg bg-black/30 px-3 py-2 text-xs text-white/70">
+            <div key={v.chainId} className="rounded-lg bg-foreground/10 px-3 py-2 text-xs text-foreground/70">
               {v.chainName}: {v.totalDeposited.toFixed(2)} {v.tokenSymbol}
             </div>
           ))}

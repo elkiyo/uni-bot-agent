@@ -120,7 +120,7 @@ export function ReinjectionHistory({
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
         {t("reinjectionHistory.title")}
       </h2>
       <p className="mt-1 text-sm text-muted">{t("reinjectionHistory.subtitle")}</p>
@@ -160,14 +160,14 @@ export function ReinjectionHistory({
               return (
                 <tr key={r.txHash} className="border-b border-hairline/60 last:border-0">
                   <td className="whitespace-nowrap py-3 pr-4">
-                    <div className="font-mono text-xs text-white/90">{fmtDate(r.blockTimestamp)}</div>
+                    <div className="font-mono text-xs text-foreground/90">{fmtDate(r.blockTimestamp)}</div>
                     {r.positionId !== undefined && (
                       <span className="eyebrow mt-1 inline-block !px-2 !py-0.5 !text-[10px]">
                         {t("reinjectionHistory.positionLabel", { id: r.positionId.toString() })}
                       </span>
                     )}
                   </td>
-                  <td className="py-3 pr-4 text-white/90">
+                  <td className="py-3 pr-4 text-foreground/90">
                     {fmtStable(r.claimedStable)}
                     {r.claimedVolatile > 0n ? ` + ${fmtVolatile(r.claimedVolatile)}` : ""}
                   </td>
@@ -178,7 +178,7 @@ export function ReinjectionHistory({
                       {r.reinjectedVolatile > 0n ? ` + ${fmtVolatile(r.reinjectedVolatile)}` : ""}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap py-3 pr-4 font-mono text-white/80">
+                  <td className="whitespace-nowrap py-3 pr-4 font-mono text-foreground/80">
                     {r.gasUsd !== undefined ? fmtUsd4(r.gasUsd) : t("reinjectionHistory.gasUnknown")}
                   </td>
                   <td className="whitespace-nowrap py-3 pr-4">
@@ -187,7 +187,7 @@ export function ReinjectionHistory({
                     ) : (
                       <span
                         className={`font-mono font-semibold ${
-                          unprofitable ? "text-negative" : marginal ? "text-accent" : "text-positive"
+                          unprofitable ? "text-negative" : marginal ? "text-accent-text" : "text-positive"
                         }`}
                         title={t("reinjectionHistory.profitabilityHint")}
                       >
@@ -200,7 +200,7 @@ export function ReinjectionHistory({
                       href={`${chain.explorerBaseUrl}/tx/${r.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"
+                      className="font-mono text-[11px] text-faint underline-offset-4 hover:text-accent-text hover:underline"
                     >
                       {r.txHash.slice(0, 8)}…{r.txHash.slice(-6)} ↗
                     </a>

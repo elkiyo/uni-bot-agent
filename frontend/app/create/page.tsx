@@ -1070,7 +1070,7 @@ export default function CreateVault() {
                 onClick={() => setVaultKind("standard")}
                 className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
                   vaultKind === "standard"
-                    ? "border-accent bg-accent/[0.08] text-white"
+                    ? "border-accent bg-accent/[0.08] text-foreground"
                     : "border-hairline text-muted hover:border-accent/50"
                 }`}
               >
@@ -1081,7 +1081,7 @@ export default function CreateVault() {
                 onClick={() => setVaultKind("compound")}
                 className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
                   vaultKind === "compound"
-                    ? "border-accent bg-accent/[0.08] text-white"
+                    ? "border-accent bg-accent/[0.08] text-foreground"
                     : "border-hairline text-muted hover:border-accent/50"
                 }`}
               >
@@ -1096,7 +1096,7 @@ export default function CreateVault() {
 
         {isConnected && (
           <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
-            <span className="font-mono text-sm uppercase tracking-[0.14em] text-white">
+            <span className="font-mono text-sm uppercase tracking-[0.14em] text-foreground">
               {t("create.choosePoolLabel")}
             </span>
             <p className="mt-1 text-xs text-faint">{t("create.choosePoolHint")}</p>
@@ -1134,17 +1134,17 @@ export default function CreateVault() {
                       ) : (
                         <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-1 font-mono text-xs text-muted">
                           <span>
-                            {t("create.tvl")} <b className="text-white/80">{formatUsdCompact(p.tvlUsd)}</b>
+                            {t("create.tvl")} <b className="text-foreground/80">{formatUsdCompact(p.tvlUsd)}</b>
                           </span>
                           <span>
-                            {t("create.recentVolume")} <b className="text-white/80">{formatUsdCompact(p.volumeStable)}</b>
+                            {t("create.recentVolume")} <b className="text-foreground/80">{formatUsdCompact(p.volumeStable)}</b>
                           </span>
                           <span>
-                            {t("create.recentSwaps")} <b className="text-white/80">{p.swapCount}</b>
+                            {t("create.recentSwaps")} <b className="text-foreground/80">{p.swapCount}</b>
                           </span>
                           <span>
                             {t("create.feePerLiquidity")}{" "}
-                            <b className="text-white/80">
+                            <b className="text-foreground/80">
                               {p.feeRevenuePerLiquidity !== undefined ? p.feeRevenuePerLiquidity.toExponential(2) : "—"}
                             </b>
                           </span>
@@ -1152,7 +1152,7 @@ export default function CreateVault() {
                       )}
 
                       {isSelected && (
-                        <span className="shrink-0 font-mono text-[10px] uppercase text-accent">{t("create.chosen")}</span>
+                        <span className="shrink-0 font-mono text-[10px] uppercase text-accent-text">{t("create.chosen")}</span>
                       )}
                     </button>
 
@@ -1165,7 +1165,7 @@ export default function CreateVault() {
                             setCopiedPool(p.pool);
                             setTimeout(() => setCopiedPool((cur) => (cur === p.pool ? null : cur)), 1500);
                           }}
-                          className="transition-colors hover:text-accent"
+                          className="transition-colors hover:text-accent-text"
                           title={t("create.copyPoolAddress")}
                         >
                           {copiedPool === p.pool ? t("create.copied") : `${p.pool.slice(0, 6)}…${p.pool.slice(-4)}`}
@@ -1174,7 +1174,7 @@ export default function CreateVault() {
                           href={`${chain.explorerBaseUrl}/address/${p.pool}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="transition-colors hover:text-accent"
+                          className="transition-colors hover:text-accent-text"
                           title={t("create.viewExplorer")}
                         >
                           ↗
@@ -1196,7 +1196,7 @@ export default function CreateVault() {
 
         {resumableVaultAddress && (
           <div className="glass mt-8 rounded-2xl border-accent/35 bg-accent/[0.06] p-5">
-            <p className="text-sm text-white/90">
+            <p className="text-sm text-foreground/90">
               {t("create.resumeBannerText", { address: resumableVaultAddress })}
             </p>
             <button
@@ -1255,7 +1255,7 @@ export default function CreateVault() {
                     label={
                       <>
                         {t("create.fieldGasReservePre")}
-                        <span className="text-accent">{t("create.fieldGasReserveHighlight")}</span>
+                        <span className="text-accent-text">{t("create.fieldGasReserveHighlight")}</span>
                       </>
                     }
                     suffix={isCompound ? undefined : chain.stableSymbol}
@@ -1299,7 +1299,7 @@ export default function CreateVault() {
                   type="button"
                   onClick={() => setShowAdvanced((v) => !v)}
                   aria-expanded={showAdvanced}
-                  className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.16em] text-white transition-colors hover:text-accent"
+                  className="flex items-center gap-2 font-mono text-sm uppercase tracking-[0.16em] text-foreground transition-colors hover:text-accent-text"
                 >
                   <svg
                     width="10"
@@ -1396,7 +1396,7 @@ export default function CreateVault() {
                 </p>
               )}
               {busy && isSafeApp && safeConfirmations && (
-                <p className="mt-3 text-center text-sm text-accent">
+                <p className="mt-3 text-center text-sm text-accent-text">
                   {t("create.safeWaitingMsg", {
                     submitted: String(safeConfirmations.submitted),
                     required: String(safeConfirmations.required),
@@ -1418,7 +1418,7 @@ export default function CreateVault() {
             {/* Live summary */}
             <aside className="flex flex-col gap-4">
               <div className="glass rounded-2xl border-accent/35 bg-accent/[0.06] p-6">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent-text">
                   {t("create.summaryTitle")}
                 </span>
                 <dl className="mt-4 flex flex-col gap-3 text-sm">
@@ -1587,11 +1587,11 @@ function PriceRangeSlider({
   return (
     <div className="mt-8">
       <div className="flex flex-col items-center text-center">
-        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-white">
+        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-foreground">
           {t("positionNft.priceRange")}
         </span>
         {rangeWidthPct !== undefined && (
-          <span className="mt-1 font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+          <span className="mt-1 font-mono text-[11px] uppercase tracking-[0.16em] text-accent-text">
             {rangeWidthPct.toFixed(2)}% {t("positionNft.rangeWidth")}
           </span>
         )}
@@ -1602,13 +1602,13 @@ function PriceRangeSlider({
             className="pointer-events-none absolute top-0 flex -translate-x-1/2 flex-col items-center"
             style={{ left: `${currentPct}%` }}
           >
-            <span className="whitespace-nowrap rounded-md bg-white/10 px-3 py-1 font-mono text-base font-semibold text-white">
+            <span className="whitespace-nowrap rounded-md bg-foreground/10 px-3 py-1 font-mono text-base font-semibold text-foreground">
               ${current!.toFixed(2)}
             </span>
             <span className="h-2 w-px" style={{ backgroundColor: "var(--positive)" }} />
           </div>
         )}
-        <div className="relative h-1.5 w-full rounded-full bg-white/10">
+        <div className="relative h-1.5 w-full rounded-full bg-foreground/10">
           {lowerPct !== undefined && upperPct !== undefined && (
             <div
               className="absolute top-0 h-full rounded-full bg-accent/60"
@@ -1624,17 +1624,17 @@ function PriceRangeSlider({
           {currentPct !== undefined && (
             <div
               className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
-              style={{ left: `${currentPct}%`, backgroundColor: "var(--positive)", borderColor: "#050505" }}
+              style={{ left: `${currentPct}%`, backgroundColor: "var(--positive)", borderColor: "var(--background)" }}
             />
           )}
         </div>
       </div>
       <div className="mt-2 flex items-baseline justify-between text-sm">
-        <span className="text-white/90">
+        <span className="text-foreground/90">
           {t("positionNft.min")}{" "}
           <span className="font-semibold">{lower !== undefined ? `$${lower.toFixed(2)}` : "…"}</span>
         </span>
-        <span className="text-white/90">
+        <span className="text-foreground/90">
           {t("positionNft.max")}{" "}
           <span className="font-semibold">{upper !== undefined ? `$${upper.toFixed(2)}` : "…"}</span>
         </span>
@@ -1644,14 +1644,14 @@ function PriceRangeSlider({
           {stableSymbol}/{volatileSymbol}
         </p>
       )}
-      <p className="mt-3 whitespace-nowrap text-center text-sm text-white/80">
+      <p className="mt-3 whitespace-nowrap text-center text-sm text-foreground/80">
         <span className="text-faint">{t("create.summaryComposition")}: </span>
         {composition
           ? `${composition.stablePct.toFixed(0)}% ${stableSymbol} · ${composition.volatilePct.toFixed(0)}% ${volatileSymbol} (${composition.volatileQty.toFixed(4)} ${volatileSymbol})`
           : "…"}
       </p>
-      <p className="mt-4 rounded-xl border border-accent/20 bg-accent/[0.05] px-3 py-2 text-center text-xs leading-relaxed text-white/70">
-        <span className="font-semibold text-accent">{t("create.compositionTipLabel")}</span>{" "}
+      <p className="mt-4 rounded-xl border border-accent/20 bg-accent/[0.05] px-3 py-2 text-center text-xs leading-relaxed text-foreground/70">
+        <span className="font-semibold text-accent-text">{t("create.compositionTipLabel")}</span>{" "}
         {t("create.compositionTipBody", { stableSymbol, volatileSymbol })}
       </p>
     </div>
@@ -1706,7 +1706,7 @@ function SummaryRow({ k, v, strong }: { k: string; v: React.ReactNode; strong?: 
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt className="text-muted">{k}</dt>
-      <dd className={strong ? "font-semibold text-accent" : "font-medium text-white/90"}>{v}</dd>
+      <dd className={strong ? "font-semibold text-accent-text" : "font-medium text-foreground/90"}>{v}</dd>
     </div>
   );
 }
@@ -1750,14 +1750,14 @@ function SignatureStepper({
                     : done
                       ? "bg-accent text-black"
                       : active
-                        ? "border border-accent text-accent"
+                        ? "border border-accent text-accent-text"
                         : "border border-hairline text-faint"
                 }`}
               >
                 {failed ? "!" : done ? "✓" : i + 1}
               </span>
               <div>
-                <p className={`text-sm font-medium ${active ? "text-accent" : "text-white/90"}`}>{s.title}</p>
+                <p className={`text-sm font-medium ${active ? "text-accent-text" : "text-foreground/90"}`}>{s.title}</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted">{s.desc}</p>
                 {failed && <p className="mt-1 text-xs text-negative">{t("create.failedHere")}</p>}
               </div>

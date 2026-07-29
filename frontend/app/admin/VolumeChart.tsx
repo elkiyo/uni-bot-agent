@@ -49,9 +49,9 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
     <div className="glass mt-8 rounded-2xl p-6 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {t("volumeChart.titlePre")}
-            <span className="text-accent">{t("volumeChart.titleHighlight")}</span>
+            <span className="text-accent-text">{t("volumeChart.titleHighlight")}</span>
           </h2>
           <p className="mt-1 text-sm text-muted">{t("volumeChart.subtitle")}</p>
         </div>
@@ -63,7 +63,7 @@ export function VolumeChart({ vaultAddresses, chain }: { vaultAddresses: Address
               className={
                 granularity === g
                   ? "rounded-full bg-accent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
-                  : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
+                  : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
               }
             >
               {granularityLabels[g]}
@@ -141,12 +141,12 @@ function BarChart({ events, granularity, t }: { events: VolumeEvent[]; granulari
     <div className="mt-8">
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
         {t("volumeChart.periodTotal")}
-        <span className="text-accent">${total.toFixed(2)}</span>
+        <span className="text-accent-text">${total.toFixed(2)}</span>
       </p>
       <div className="mt-4 flex items-end gap-2 overflow-x-auto pb-2" style={{ minHeight: 180 }}>
         {sorted.map((b) => (
           <div key={b.label + b.sortKey} className="flex min-w-[36px] flex-1 flex-col items-center gap-2">
-            <span className="font-mono text-[10px] tabular-nums text-white/70">
+            <span className="font-mono text-[10px] tabular-nums text-foreground/70">
               {b.usd > 0 ? `$${b.usd < 10 ? b.usd.toFixed(1) : Math.round(b.usd)}` : ""}
             </span>
             <div

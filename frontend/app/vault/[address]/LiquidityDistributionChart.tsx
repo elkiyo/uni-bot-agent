@@ -103,19 +103,19 @@ export function LiquidityDistributionChart({
             <span className="inline-block h-2 w-2 rounded-full bg-accent" /> {volatileSymbol}
           </span>
           <span className="flex items-center gap-1.5 text-muted">
-            <span className="inline-block h-2 w-2 rounded-full bg-[#5ee6ff]" /> {stableSymbol}
+            <span className="inline-block h-2 w-2 rounded-full bg-chart-stable" /> {stableSymbol}
           </span>
         </div>
       </div>
       <div className="mt-3" style={{ width: "100%", height: 240 }}>
         <ResponsiveContainer minWidth={200} minHeight={200}>
           <ComposedChart data={curve} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1b1b1b" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
             <XAxis
               dataKey="price"
               type="number"
               domain={["dataMin", "dataMax"]}
-              stroke="#71717a"
+              stroke="var(--faint)"
               fontSize={11}
               tickLine={false}
               tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
@@ -123,7 +123,7 @@ export function LiquidityDistributionChart({
             <YAxis
               yAxisId="volatile"
               orientation="left"
-              stroke="#fcff52"
+              stroke="var(--accent-text)"
               fontSize={11}
               tickLine={false}
               tickFormatter={(v) => Number(v).toFixed(3)}
@@ -131,13 +131,13 @@ export function LiquidityDistributionChart({
             <YAxis
               yAxisId="stable"
               orientation="right"
-              stroke="#5ee6ff"
+              stroke="var(--chart-stable)"
               fontSize={11}
               tickLine={false}
               tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
             />
             <Tooltip
-              contentStyle={{ background: "#0a0a0a", border: "1px solid #1b1b1b", borderRadius: 8, fontSize: 12 }}
+              contentStyle={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 8, fontSize: 12 }}
               labelFormatter={(v) => `${t("positionNft.currentPriceLabel")}: $${Number(v).toFixed(2)}`}
               formatter={(value: unknown, name: unknown) =>
                 name === volatileSymbol
@@ -145,22 +145,22 @@ export function LiquidityDistributionChart({
                   : [`$${Number(value).toFixed(2)}`, stableSymbol]
               }
             />
-            <ReferenceLine x={rangeLow} yAxisId="volatile" stroke="#8b8b8b" strokeDasharray="4 4" />
-            <ReferenceLine x={rangeHigh} yAxisId="volatile" stroke="#8b8b8b" strokeDasharray="4 4" />
+            <ReferenceLine x={rangeLow} yAxisId="volatile" stroke="var(--muted)" strokeDasharray="4 4" />
+            <ReferenceLine x={rangeHigh} yAxisId="volatile" stroke="var(--muted)" strokeDasharray="4 4" />
             <ReferenceLine
               x={currentPrice}
               yAxisId="volatile"
-              stroke="#ffffff"
+              stroke="var(--foreground)"
               strokeWidth={1.5}
-              label={{ value: t("positionNft.currentLabel"), position: "top", fill: "#ffffff", fontSize: 11 }}
+              label={{ value: t("positionNft.currentLabel"), position: "top", fill: "var(--foreground)", fontSize: 11 }}
             />
             <Area
               yAxisId="volatile"
               type="stepAfter"
               dataKey="volatile"
               name={volatileSymbol}
-              stroke="#fcff52"
-              fill="#fcff52"
+              stroke="var(--accent-text)"
+              fill="var(--accent-text)"
               fillOpacity={0.15}
               strokeWidth={2}
             />
@@ -169,8 +169,8 @@ export function LiquidityDistributionChart({
               type="stepAfter"
               dataKey="stable"
               name={stableSymbol}
-              stroke="#5ee6ff"
-              fill="#5ee6ff"
+              stroke="var(--chart-stable)"
+              fill="var(--chart-stable)"
               fillOpacity={0.12}
               strokeWidth={2}
             />
@@ -178,25 +178,25 @@ export function LiquidityDistributionChart({
         </ResponsiveContainer>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-        <div className="rounded-xl border border-hairline bg-white/[0.02] p-3">
+        <div className="rounded-xl border border-hairline bg-surface-1 p-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
             {t("positionNft.atLowerLimit", { price: rangeLow.toFixed(2) })}
           </p>
-          <p className="mt-1 tabular-nums text-white/90">
+          <p className="mt-1 tabular-nums text-foreground/90">
             {atLow.volatile.toFixed(6)} {volatileSymbol}
           </p>
-          <p className="tabular-nums text-white/60">
+          <p className="tabular-nums text-foreground/60">
             {atLow.stable.toFixed(2)} {stableSymbol}
           </p>
         </div>
-        <div className="rounded-xl border border-hairline bg-white/[0.02] p-3">
+        <div className="rounded-xl border border-hairline bg-surface-1 p-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
             {t("positionNft.atUpperLimit", { price: rangeHigh.toFixed(2) })}
           </p>
-          <p className="mt-1 tabular-nums text-white/90">
+          <p className="mt-1 tabular-nums text-foreground/90">
             {atHigh.volatile.toFixed(6)} {volatileSymbol}
           </p>
-          <p className="tabular-nums text-white/60">
+          <p className="tabular-nums text-foreground/60">
             {atHigh.stable.toFixed(2)} {stableSymbol}
           </p>
         </div>

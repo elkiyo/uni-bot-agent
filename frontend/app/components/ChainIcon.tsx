@@ -44,5 +44,5 @@ export function ChainIcon({ chainId, size = 22, className = "" }: { chainId: num
       </svg>
     );
   }
-  return <div className={`shrink-0 rounded-full bg-white/10 ${className}`} style={{ width: size, height: size }} />;
+  return <div className={`shrink-0 rounded-full bg-foreground/10 ${className}`} style={{ width: size, height: size }} />;
 }

@@ -16,7 +16,7 @@ const timeline = [
 const pillClass: Record<string, string> = {
   init: "!border-hairline !text-faint",
   sky: "!border-sky-400/40 !text-sky-400",
-  accent: "!border-accent/40 !text-accent",
+  accent: "!border-accent/40 !text-accent-text",
   negative: "!border-negative/40 !text-negative",
 };
 
@@ -29,7 +29,7 @@ const caseBorder: Record<string, string> = {
 const caseTagColor: Record<string, string> = {
   sky: "!border-sky-400/45 !text-sky-400",
   negative: "!border-negative/45 !text-negative",
-  accent: "!border-accent/45 !text-accent",
+  accent: "!border-accent/45 !text-accent-text",
 };
 
 export default function RecursosPage() {
@@ -131,22 +131,22 @@ export default function RecursosPage() {
           style={{ fontFamily: "var(--font-display)" }}
         >
           {t("recursos.titlePre")}
-          <span className="text-accent">{t("recursos.titleHighlight")}</span>
+          <span className="text-accent-text">{t("recursos.titleHighlight")}</span>
           {t("recursos.titlePost")}
         </h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">{t("recursos.subtitle")}</p>
 
         {/* §1 fields */}
         <section className="mt-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section1Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section1Subtitle")}</p>
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {fields.map((f) => (
               <div key={f.name} className="glass rounded-2xl p-5">
-                <p className="font-mono text-xs text-accent">{f.name}</p>
-                <p className="mt-2 text-sm leading-relaxed text-white/90">{f.what}</p>
+                <p className="font-mono text-xs text-accent-text">{f.name}</p>
+                <p className="mt-2 text-sm leading-relaxed text-foreground/90">{f.what}</p>
                 <p className="mt-3 border-t border-hairline pt-3 font-mono text-xs text-faint">
                   <b className="text-muted">{t("recursos.exampleLabel")}</b> {f.example}
                 </p>
@@ -155,27 +155,27 @@ export default function RecursosPage() {
           </div>
           <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted">
             {t("recursos.seventhFieldPre")}
-            <code className="text-white/80">minRebalanceInterval</code>
+            <code className="text-foreground/80">minRebalanceInterval</code>
             {t("recursos.seventhFieldMid")}
-            <code className="text-white/80">0</code>
+            <code className="text-foreground/80">0</code>
             {t("recursos.seventhFieldPost")}
           </p>
         </section>
 
         {/* §2 decision order */}
         <section className="mt-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section2Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section2Subtitle")}</p>
           <ol className="mt-6 flex flex-col gap-5">
             {steps.map((s, i) => (
               <li key={s.title} className="flex gap-4">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-accent font-mono text-xs text-accent">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-accent font-mono text-xs text-accent-text">
                   {i + 1}
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-white/90">{s.title}</p>
+                  <p className="text-sm font-medium text-foreground/90">{s.title}</p>
                   <p className="mt-1 text-sm text-muted">{s.body}</p>
                   <p
                     className={`mt-1.5 font-mono text-xs ${
@@ -192,7 +192,7 @@ export default function RecursosPage() {
 
         {/* §3 cases */}
         <section className="mt-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section3Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section3Subtitle")}</p>
@@ -200,15 +200,15 @@ export default function RecursosPage() {
             {cases.map((c) => (
               <div key={c.name} className={`glass rounded-2xl border-l-4 ${caseBorder[c.color]} p-6`}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-base font-semibold text-white/90">{c.name}</span>
+                  <span className="text-base font-semibold text-foreground/90">{c.name}</span>
                   <span className={`eyebrow !px-3 !py-1 ${caseTagColor[c.color]}`}>{c.trigger}</span>
                 </div>
                 <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{c.desc}</p>
-                <div className="mt-4 rounded-xl border border-hairline bg-white/[0.02] p-4">
+                <div className="mt-4 rounded-xl border border-hairline bg-surface-1 p-4">
                   <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
                     {t("recursos.exampleLabelUpper")}
                   </p>
-                  <p className="mt-2 break-words font-mono text-xs text-white/80">{c.example}</p>
+                  <p className="mt-2 break-words font-mono text-xs text-foreground/80">{c.example}</p>
                 </div>
               </div>
             ))}
@@ -217,14 +217,14 @@ export default function RecursosPage() {
 
         {/* §4 timeline */}
         <section className="mt-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section4Title")}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">{t("recursos.section4Subtitle")}</p>
           <div className="mt-5 overflow-x-auto rounded-2xl border border-hairline">
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-hairline bg-white/[0.02]">
+                <tr className="border-b border-hairline bg-surface-1">
                   {(
                     [
                       t("recursos.colEvento"),
@@ -264,28 +264,28 @@ export default function RecursosPage() {
 
         {/* §5 pitfall */}
         <section className="mt-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {t("recursos.section5Title")}
           </h2>
           <div className="mt-5 rounded-2xl border border-negative/35 bg-negative/[0.06] p-6">
             <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-negative">
               {t("recursos.pitfallConfirmed")}
             </p>
-            <p className="mt-3 text-sm text-white/90">
+            <p className="mt-3 text-sm text-foreground/90">
               <b>{t("recursos.pitfallSymptomLabel")}</b> {t("recursos.pitfallSymptomText")}
             </p>
-            <p className="mt-2 text-sm text-white/90">
+            <p className="mt-2 text-sm text-foreground/90">
               <b>{t("recursos.pitfallCauseLabel")}</b> <code>maxRebalances = 0</code>
               {t("recursos.pitfallCauseMid")}
             </p>
-            <p className="mt-2 text-sm text-white/90">
+            <p className="mt-2 text-sm text-foreground/90">
               <b>{t("recursos.pitfallHowLabel")}</b> {t("recursos.pitfallHowPre")}
               <code>0</code>
               {t("recursos.pitfallHowMid")}
               <code>0</code>
               {t("recursos.pitfallHowPost")}
             </p>
-            <p className="mt-2 text-sm text-white/90">
+            <p className="mt-2 text-sm text-foreground/90">
               <b>{t("recursos.pitfallFixLabel")}</b> {t("recursos.pitfallFixText")}
             </p>
           </div>

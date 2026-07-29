@@ -52,24 +52,24 @@ export default function Home() {
               className="mt-6 text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Auto<span className="text-accent">Range</span>
+              Auto<span className="text-accent-text">Range</span>
             </h1>
-            <p className="mt-2 font-mono text-xs uppercase tracking-[0.22em] text-accent">
+            <p className="mt-2 font-mono text-xs uppercase tracking-[0.22em] text-accent-text">
               AI Agent
             </p>
             <p
-              className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-white/90 sm:text-2xl"
+              className="mt-5 max-w-xl text-balance text-xl font-medium leading-snug text-foreground/90 sm:text-2xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {t("home.heroSubtitle")}
             </p>
-            <p className="mt-4 max-w-xl text-base font-medium leading-relaxed text-accent">
+            <p className="mt-4 max-w-xl text-base font-medium leading-relaxed text-accent-text">
               {t("home.heroHighlight")}
             </p>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
-              {t("home.heroBodyPre")} <span className="text-white/80">{chain.stableSymbol}</span>
+              {t("home.heroBodyPre")} <span className="text-foreground/80">{chain.stableSymbol}</span>
               {t("home.heroBodyMid", { pair })}
-              <span className="text-white/80">{t("home.heroBodyHighlight")}</span>
+              <span className="text-foreground/80">{t("home.heroBodyHighlight")}</span>
               {t("home.heroBodyPost")}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -82,22 +82,22 @@ export default function Home() {
             </div>
 
             {/* Live snapshot */}
-            <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4 rounded-2xl border border-hairline bg-white/[0.02] px-6 py-4">
+            <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4 rounded-2xl border border-hairline bg-surface-1 px-6 py-4">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">{t("home.snapshotEthPrice")}</p>
-                <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
+                <p className="mt-1 font-mono text-lg text-foreground/90 tabular-nums">
                   {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
                 </p>
               </div>
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">{t("home.snapshotVaultsCreated")}</p>
-                <p className="mt-1 font-mono text-lg text-white/90 tabular-nums">
+                <p className="mt-1 font-mono text-lg text-foreground/90 tabular-nums">
                   {vaultCount !== undefined ? String(vaultCount) : "…"}
                 </p>
               </div>
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">{t("home.snapshotPool")}</p>
-                <p className="mt-1 font-mono text-lg text-white/90">
+                <p className="mt-1 font-mono text-lg text-foreground/90">
                   {chain.stableSymbol}/{chain.volatileSymbol} · {chain.feeTier / 10_000}%
                 </p>
               </div>
@@ -117,20 +117,20 @@ export default function Home() {
                 {t("home.illustrativeRange")}
               </span>
               <p
-                className="mt-2 text-2xl font-semibold tabular-nums text-white/90"
+                className="mt-2 text-2xl font-semibold tabular-nums text-foreground/90"
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 {ethPrice !== undefined ? `$${ethPrice.toFixed(2)}` : "…"}
               </p>
               <p className="mt-0.5 text-xs text-muted">{t("home.currentPrice", { pair })}</p>
 
-              <div className="relative mt-6 h-1.5 rounded-full bg-white/10">
+              <div className="relative mt-6 h-1.5 rounded-full bg-foreground/10">
                 <div className="absolute inset-y-0 left-[10%] right-[10%] rounded-full bg-accent/25" />
                 <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_12px_rgba(252,255,82,0.55)]" />
               </div>
               <div className="mt-2.5 flex items-center justify-between font-mono text-[11px] text-faint">
                 <span>{ethPrice !== undefined ? `$${(ethPrice * 0.95).toFixed(0)}` : "…"}</span>
-                <span className="text-accent">{t("home.inRange")}</span>
+                <span className="text-accent-text">{t("home.inRange")}</span>
                 <span>{ethPrice !== undefined ? `$${(ethPrice * 1.05).toFixed(0)}` : "…"}</span>
               </div>
 
@@ -152,7 +152,7 @@ export default function Home() {
               title: (
                 <>
                   {t("home.step2TPre")}
-                  <span className="text-accent">{t("home.step2THighlight")}</span>
+                  <span className="text-accent-text">{t("home.step2THighlight")}</span>
                   {t("home.step2TPost")}
                 </>
               ),
@@ -166,7 +166,7 @@ export default function Home() {
           ].map(({ n, title, d }, i, arr) => (
             <div key={n} className="flex flex-1 items-stretch">
               <div className="glass flex-1 rounded-2xl p-5">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+                <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent-text">
                   {n}
                 </span>
                 <h3 className="mt-3 text-lg font-semibold" style={{ fontFamily: "var(--font-display)" }}>
@@ -184,10 +184,10 @@ export default function Home() {
         </div>
 
         {/* Cómo decide el agente */}
-        <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
+        <div className="mt-20 rounded-3xl border border-hairline bg-surface-1 p-6 sm:p-8">
           <span className="eyebrow">
             {t("home.decisionEyebrowPre")}
-            <span className="text-accent">{t("home.decisionEyebrowHighlight")}</span>
+            <span className="text-accent-text">{t("home.decisionEyebrowHighlight")}</span>
           </span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
@@ -205,11 +205,11 @@ export default function Home() {
               { n: "4", title: t("home.decision4T"), d: t("home.decision4D") },
             ].map(({ n, title, d }, i, arr) => (
               <li key={n} className="flex flex-1 items-stretch">
-                <div className="glass flex-1 rounded-2xl p-5" style={{ backgroundColor: "#0a0a0a" }}>
-                  <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent">
+                <div className="glass flex-1 rounded-2xl bg-surface p-5">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-accent-text">
                     {t("home.decisionStepLabel", { n })}
                   </span>
-                  <h3 className="mt-3 text-base font-semibold text-white/90">{title}</h3>
+                  <h3 className="mt-3 text-base font-semibold text-foreground/90">{title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
                 </div>
                 {i < arr.length - 1 && (
@@ -223,7 +223,7 @@ export default function Home() {
 
           <Link
             href="/recursos"
-            className="mt-6 inline-flex items-center gap-1.5 text-sm text-accent underline-offset-4 hover:underline"
+            className="mt-6 inline-flex items-center gap-1.5 text-sm text-accent-text underline-offset-4 hover:underline"
           >
             {t("home.decisionLink")}
           </Link>
@@ -249,14 +249,14 @@ export default function Home() {
                 href={`${chain.explorerBaseUrl}/address/${chain.pool}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1.5 block break-all font-mono text-xs text-white/80 underline-offset-4 hover:text-accent hover:underline"
+                className="mt-1.5 block break-all font-mono text-xs text-foreground/80 underline-offset-4 hover:text-accent-text hover:underline"
               >
                 {chain.pool} ↗
               </a>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
                 {t("home.feeTierLabel")}
               </p>
-              <p className="mt-1 text-sm text-white/80">{chain.feeTier / 10_000}%</p>
+              <p className="mt-1 text-sm text-foreground/80">{chain.feeTier / 10_000}%</p>
             </div>
             <div className="glass rounded-2xl p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
@@ -266,7 +266,7 @@ export default function Home() {
                 href={`${chain.explorerBaseUrl}/address/${chain.stableToken}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1.5 block break-all font-mono text-xs text-white/80 underline-offset-4 hover:text-accent hover:underline"
+                className="mt-1.5 block break-all font-mono text-xs text-foreground/80 underline-offset-4 hover:text-accent-text hover:underline"
               >
                 {chain.stableToken} ↗
               </a>
@@ -277,7 +277,7 @@ export default function Home() {
                 href={`${chain.explorerBaseUrl}/address/${chain.volatileToken}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1.5 block break-all font-mono text-xs text-white/80 underline-offset-4 hover:text-accent hover:underline"
+                className="mt-1.5 block break-all font-mono text-xs text-foreground/80 underline-offset-4 hover:text-accent-text hover:underline"
               >
                 {chain.volatileToken} ↗
               </a>
@@ -290,7 +290,7 @@ export default function Home() {
               href={`${chain.explorerBaseUrl}/address/${chain.positionManager}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline-offset-4 hover:text-accent hover:underline"
+              className="underline-offset-4 hover:text-accent-text hover:underline"
             >
               NonfungiblePositionManager
             </a>
@@ -299,7 +299,7 @@ export default function Home() {
               href={`${chain.explorerBaseUrl}/address/${chain.swapRouter02}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline-offset-4 hover:text-accent hover:underline"
+              className="underline-offset-4 hover:text-accent-text hover:underline"
             >
               SwapRouter02
             </a>
@@ -322,14 +322,14 @@ export default function Home() {
               <h3 className="text-sm font-semibold text-muted">{t("home.archOthersTitle")}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">
                 {t("home.archOthersDPre")}
-                <span className="text-white/80">{t("home.archOthersDHighlight")}</span>
+                <span className="text-foreground/80">{t("home.archOthersDHighlight")}</span>
               </p>
             </div>
-            <div className="glass rounded-2xl p-5" style={{ borderColor: "rgba(252,255,82,0.25)" }}>
-              <h3 className="text-sm font-semibold text-accent">{t("home.archUsTitle")}</h3>
+            <div className="glass rounded-2xl p-5" style={{ borderColor: "var(--accent-glow-border)" }}>
+              <h3 className="text-sm font-semibold text-accent-text">{t("home.archUsTitle")}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">
                 {t("home.archUsDPre")}
-                <span className="text-white/80">{t("home.archUsDHighlight")}</span>
+                <span className="text-foreground/80">{t("home.archUsDHighlight")}</span>
                 {t("home.archUsDPost")}
               </p>
             </div>
@@ -337,7 +337,7 @@ export default function Home() {
         </div>
 
         {/* Garantías no-custodiales */}
-        <div className="mt-20 rounded-3xl border border-hairline bg-white/[0.015] p-6 sm:p-8">
+        <div className="mt-20 rounded-3xl border border-hairline bg-surface-1 p-6 sm:p-8">
           <span className="eyebrow">{t("home.custodyEyebrow")}</span>
           <h2
             className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl"
@@ -353,8 +353,8 @@ export default function Home() {
               { title: t("home.custody3T"), d: t("home.custody3D") },
               { title: t("home.custody4T"), d: t("home.custody4D") },
             ].map(({ title, d }) => (
-              <div key={title} className="glass rounded-2xl p-5" style={{ backgroundColor: "#0a0a0a" }}>
-                <h3 className="text-base font-semibold text-white/90">{title}</h3>
+              <div key={title} className="glass rounded-2xl bg-surface p-5">
+                <h3 className="text-base font-semibold text-foreground/90">{title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{d}</p>
               </div>
             ))}
@@ -372,7 +372,7 @@ export default function Home() {
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             {t("home.revenueSubtitlePre")}
-            <span className="text-white/80">{t("home.revenueSubtitleHighlight")}</span>
+            <span className="text-foreground/80">{t("home.revenueSubtitleHighlight")}</span>
             {t("home.revenueSubtitlePost")}
           </p>
 
@@ -381,7 +381,7 @@ export default function Home() {
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
                 {t("home.revenueWithoutLabel")}
               </p>
-              <div className="mt-3 flex h-8 overflow-hidden rounded-md bg-white/[0.03]">
+              <div className="mt-3 flex h-8 overflow-hidden rounded-md bg-surface-1">
                 <div
                   className="flex w-full items-center justify-end rounded-md pr-3"
                   style={{ backgroundColor: "#b08f14" }}
@@ -394,7 +394,7 @@ export default function Home() {
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
                 {t("home.revenueWithLabel")}
               </p>
-              <div className="mt-3 flex h-8 gap-0.5 overflow-hidden rounded-md bg-white/[0.03]">
+              <div className="mt-3 flex h-8 gap-0.5 overflow-hidden rounded-md bg-surface-1">
                 <div
                   className="flex items-center justify-end rounded-l-md pr-3"
                   style={{ backgroundColor: "#b08f14", flexGrow: 900 }}

@@ -66,7 +66,7 @@ export function ActivityFeed({
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
       <div className="flex items-center gap-3">
         <h2
-          className="text-2xl font-semibold tracking-tight text-white"
+          className="text-2xl font-semibold tracking-tight text-foreground"
           style={{ fontFamily: "var(--font-display)" }}
         >
           {t("activity.feedTitle")}
@@ -90,7 +90,7 @@ export function ActivityFeed({
                 <span
                   className={`font-mono text-[10px] uppercase tracking-[0.14em] ${
                     item.kind === "agent"
-                      ? "text-accent"
+                      ? "text-accent-text"
                       : item.kind === "money"
                         ? "text-positive"
                         : "text-muted"
@@ -98,7 +98,7 @@ export function ActivityFeed({
                 >
                   {item.kind === "agent" ? t("activity.kindAgent") : item.kind === "money" ? t("activity.kindMoney") : t("activity.kindConfig")}
                 </span>
-                <span className="font-medium text-white/90">{item.title}</span>
+                <span className="font-medium text-foreground/90">{item.title}</span>
               </div>
               <p className="mt-1 text-sm text-muted">{item.detail}</p>
               <div className="mt-1.5 flex flex-wrap gap-x-4 font-mono text-[11px] text-faint">
@@ -114,7 +114,7 @@ export function ActivityFeed({
                   href={`${chain.explorerBaseUrl}/tx/${item.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline-offset-4 hover:text-accent hover:underline"
+                  className="underline-offset-4 hover:text-accent-text hover:underline"
                 >
                   {item.txHash.slice(0, 10)}…{item.txHash.slice(-6)} ↗
                 </a>

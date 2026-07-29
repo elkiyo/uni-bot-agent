@@ -75,8 +75,8 @@ export function MobileBottomNav() {
               href={href}
               className={
                 active
-                  ? "flex flex-1 flex-col items-center justify-center gap-1 text-accent"
-                  : "flex flex-1 flex-col items-center justify-center gap-1 text-white/50 transition-colors hover:text-white"
+                  ? "flex flex-1 flex-col items-center justify-center gap-1 text-accent-text"
+                  : "flex flex-1 flex-col items-center justify-center gap-1 text-foreground/50 transition-colors hover:text-foreground"
               }
             >
               {icon(active)}

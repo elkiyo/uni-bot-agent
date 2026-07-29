@@ -90,7 +90,7 @@ function ChainTab({ label, active, onClick }: { label: string; active: boolean; 
       className={
         active
           ? "rounded-full bg-accent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-background"
-          : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-white"
+          : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
       }
     >
       {label}
@@ -236,7 +236,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
       {closedVaults.length > 0 && (
         <div className="mt-12">
           <h2
-            className="text-xl font-semibold tracking-tight text-white"
+            className="text-xl font-semibold tracking-tight text-foreground"
             style={{ fontFamily: "var(--font-display)" }}
           >
             {t("vaults.closedTitle")}
@@ -487,7 +487,7 @@ function VaultCard({
         <PairIcon volatileSymbol={volatileSymbol} stableSymbol={stableSymbol} size={36} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-base font-semibold text-white">
+            <span className="text-base font-semibold text-foreground">
               {stableSymbol} / {volatileSymbol}
             </span>
             <span className="rounded-md border border-hairline px-1.5 py-0.5 font-mono text-[11px] text-faint">
@@ -498,7 +498,7 @@ function VaultCard({
               {chain.name}
             </span>
             {showAsCompound && (
-              <span className="eyebrow !border-accent/40 !px-2.5 !py-0.5 !text-accent">
+              <span className="eyebrow !border-accent/40 !px-2.5 !py-0.5 !text-accent-text">
                 {t("vaults.compoundBadge")}
               </span>
             )}
@@ -527,7 +527,7 @@ function VaultCard({
             {createdOnLabel && <span>{createdOnLabel}</span>}
           </p>
         </div>
-        <span className="hidden shrink-0 text-xs text-faint transition-colors group-hover:text-accent sm:block">
+        <span className="hidden shrink-0 text-xs text-faint transition-colors group-hover:text-accent-text sm:block">
           {t("vaults.viewDetail")}
         </span>
       </div>
@@ -536,21 +536,21 @@ function VaultCard({
           wrapping down on narrower screens. Color is reserved for what it
           actually means — accent on the headline position value, green/red
           only on genuine gain/loss figures, everything else neutral. */}
-      <div className="grid grid-cols-2 gap-4 border-t border-hairline bg-white/[0.02] px-5 py-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 border-t border-hairline bg-surface-1 px-5 py-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCell label={t("vaults.positionValue")}>
-          <p className="text-lg font-semibold tabular-nums text-accent" style={{ fontFamily: "var(--font-display)" }}>
+          <p className="text-lg font-semibold tabular-nums text-accent-text" style={{ fontFamily: "var(--font-display)" }}>
             {hasPosition && positionValueUsd !== undefined ? `$${positionValueUsd.toFixed(2)}` : "—"}
           </p>
         </StatCell>
 
         <StatCell label={t("vaults.range")}>
-          <p className="font-mono text-xs text-white/80">
+          <p className="font-mono text-xs text-foreground/80">
             {hasPosition && rangeLabel ? rangeLabel : t("vaults.noOpenPosition")}
           </p>
         </StatCell>
 
         <StatCell label={t("vaults.freeCapital")}>
-          <p className="text-sm font-medium text-white/90">
+          <p className="text-sm font-medium text-foreground/90">
             {formatUnits(idleCapital, stableDecimals)} {stableSymbol}
           </p>
           {idleWethRaw > 0n && (
@@ -562,7 +562,7 @@ function VaultCard({
         </StatCell>
 
         <StatCell label={t("vaults.rebalances")}>
-          <p className="text-sm font-medium text-white/90">
+          <p className="text-sm font-medium text-foreground/90">
             {String(rebalanceCount ?? 0)} / {String(maxRebalances ?? 0)}
           </p>
         </StatCell>
@@ -580,7 +580,7 @@ function VaultCard({
               ? ` + ${Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)).toFixed(6)} ${volatileSymbol}`
               : ""}
           </p>
-          <p className="mt-0.5 font-mono text-xs text-white/50">{rentLabel}</p>
+          <p className="mt-0.5 font-mono text-xs text-foreground/50">{rentLabel}</p>
         </StatCell>
 
         <StatCell label={t("vaults.floatingReturn")}>

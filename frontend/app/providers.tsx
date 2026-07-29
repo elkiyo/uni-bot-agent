@@ -5,6 +5,7 @@ import { WagmiProvider } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi";
 import { SelectedChainProvider } from "@/lib/useSelectedChain";
 import { LanguageProvider } from "@/lib/i18n/LanguageProvider";
+import { ThemeProvider } from "@/lib/useTheme";
 
 const queryClient = new QueryClient();
 
@@ -13,12 +14,14 @@ const queryClient = new QueryClient();
 // createAppKit() call in lib/wagmi.ts (theming lives there too).
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <LanguageProvider>
-          <SelectedChainProvider>{children}</SelectedChainProvider>
-        </LanguageProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <ThemeProvider>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
+          <LanguageProvider>
+            <SelectedChainProvider>{children}</SelectedChainProvider>
+          </LanguageProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </ThemeProvider>
   );
 }

@@ -66,13 +66,13 @@ export function RebalanceCountdown({
         {t("rebalanceCountdown.nextRebalance")}
       </span>
       <p
-        className="mt-1 text-lg font-semibold tabular-nums text-white/90"
+        className="mt-1 text-lg font-semibold tabular-nums text-foreground/90"
         style={{ fontFamily: "var(--font-display)" }}
       >
         {statusText}
       </p>
       {periodicEnabled && !paused && !atRebalanceLimit && (
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
           <div className="h-full bg-accent transition-all" style={{ width: `${progress}%` }} />
         </div>
       )}

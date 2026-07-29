@@ -31,13 +31,13 @@ export function InversionistasContent() {
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5">
           <a
             href="/inversionistas/AutoRange-Presentacion-Inversionistas.pdf"
-            className="text-xs text-muted underline-offset-4 hover:text-accent hover:underline"
+            className="text-xs text-muted underline-offset-4 hover:text-accent-text hover:underline"
           >
             {t("investors.downloadPdfHorizontal")}
           </a>
           <a
             href="/inversionistas/AutoRange-Presentacion-Inversionistas-Movil.pdf"
-            className="text-xs text-muted underline-offset-4 hover:text-accent hover:underline"
+            className="text-xs text-muted underline-offset-4 hover:text-accent-text hover:underline"
           >
             {t("investors.downloadPdfVertical")}
           </a>
@@ -54,7 +54,7 @@ export function InversionistasContent() {
 
         <p className="mt-6 max-w-2xl text-sm leading-relaxed text-muted">
           {t("investors.footerPre")}
-          <Link href="/recursos" className="text-accent underline-offset-4 hover:underline">
+          <Link href="/recursos" className="text-accent-text underline-offset-4 hover:underline">
             {t("investors.footerLink")}
           </Link>
         </p>

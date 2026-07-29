@@ -201,7 +201,7 @@ export function PositionHistory({
 
   return (
     <div className="glass mt-10 rounded-2xl p-6 sm:p-8">
-      <h2 className="text-2xl font-semibold tracking-tight text-white" style={{ fontFamily: "var(--font-display)" }}>
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
         {t("positionHistory.title")}
       </h2>
       <p className="mt-1 text-sm text-muted">{t("positionHistory.subtitle")}</p>
@@ -240,7 +240,7 @@ export function PositionHistory({
             {positions.map((p) => (
               <tr key={p.tokenId.toString()} className="border-b border-hairline/60 last:border-0">
                 <td className="py-3 pr-4">
-                  <span className="font-mono text-xs text-white/90">
+                  <span className="font-mono text-xs text-foreground/90">
                     {t("positionHistory.positionLabel", {
                       id: p.tokenId.toString(),
                       min: p.minPrice.toFixed(2),
@@ -257,8 +257,8 @@ export function PositionHistory({
                     )}
                   </div>
                 </td>
-                <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs text-white/90">{fmtDate(p.createdAt)}</td>
-                <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs text-white/90">
+                <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs text-foreground/90">{fmtDate(p.createdAt)}</td>
+                <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs text-foreground/90">
                   {p.isOpen ? "—" : fmtDate(p.closedAt)}
                 </td>
                 <td className="py-3 pr-4">
@@ -277,7 +277,7 @@ export function PositionHistory({
                   )}
                 </td>
                 <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs">
-                  <div className="text-white/80">
+                  <div className="text-foreground/80">
                     {t("positionHistory.gasOpen")}: {p.openGasUsd !== null ? fmtUsd(p.openGasUsd) : "—"}
                   </div>
                   <div className="mt-0.5 text-muted">
@@ -290,7 +290,7 @@ export function PositionHistory({
                   ) : (
                     <span
                       className={`font-mono font-semibold ${
-                        p.gasPct >= 100 ? "text-negative" : p.gasPct >= 25 ? "text-accent" : "text-positive"
+                        p.gasPct >= 100 ? "text-negative" : p.gasPct >= 25 ? "text-accent-text" : "text-positive"
                       }`}
                       title={t("positionHistory.profitabilityHint")}
                     >
@@ -298,7 +298,7 @@ export function PositionHistory({
                     </span>
                   )}
                 </td>
-                <td className="whitespace-nowrap py-3 pr-4 text-white/90">
+                <td className="whitespace-nowrap py-3 pr-4 text-foreground/90">
                   {p.reinjectedUsdt > 0n
                     ? `${formatUnits(p.reinjectedUsdt, chain.stableDecimals)} ${chain.stableSymbol}`
                     : t("positionHistory.noReinjection")}
@@ -308,7 +308,7 @@ export function PositionHistory({
                     href={`${chain.explorerBaseUrl}/tx/${p.createdTxHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-mono text-[11px] text-faint underline-offset-4 hover:text-accent hover:underline"
+                    className="font-mono text-[11px] text-faint underline-offset-4 hover:text-accent-text hover:underline"
                   >
                     {p.createdTxHash.slice(0, 8)}…{p.createdTxHash.slice(-6)} ↗
                   </a>

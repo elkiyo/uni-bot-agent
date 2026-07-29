@@ -55,7 +55,7 @@ export function NetworkSelector({
           setQuery("");
         }}
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-full border border-hairline bg-white/[0.02] px-3 py-1.5 text-sm font-medium text-white transition-colors hover:border-accent/50"
+        className="flex items-center gap-2 rounded-full border border-hairline bg-surface-1 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:border-accent/50"
       >
         {selected && <ChainIcon chainId={selected.id} size={18} />}
         <span>{selected?.name}</span>
@@ -65,16 +65,13 @@ export function NetworkSelector({
       </button>
 
       {open && (
-        <div
-          className="absolute left-0 top-full z-20 mt-2 w-72 rounded-2xl border border-hairline p-3 shadow-2xl shadow-black/60"
-          style={{ backgroundColor: "#0a0a0a" }}
-        >
+        <div className="absolute left-0 top-full z-20 mt-2 w-72 rounded-2xl border border-hairline bg-surface p-3 shadow-2xl shadow-[var(--shadow-color)]">
           <input
             ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("create.searchNetworks")}
-            className="w-full rounded-xl border border-white/[0.18] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-faint focus:border-accent/50 focus:outline-none"
+            className="w-full rounded-xl border border-border-strong bg-surface-1 px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-accent/50 focus:outline-none"
           />
           <div className="mt-2 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
             {filtered.length === 0 && (
@@ -88,7 +85,7 @@ export function NetworkSelector({
                   onSelect(c.id);
                   setOpen(false);
                 }}
-                className="flex items-center gap-3 rounded-xl px-2 py-2 text-left text-sm text-white/90 transition-colors hover:bg-white/5"
+                className="flex items-center gap-3 rounded-xl px-2 py-2 text-left text-sm text-foreground/90 transition-colors hover:bg-surface-hover"
               >
                 <ChainIcon chainId={c.id} />
                 <span className="flex-1">{c.name}</span>
