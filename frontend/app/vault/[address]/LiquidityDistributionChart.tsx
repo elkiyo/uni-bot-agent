@@ -109,7 +109,11 @@ export function LiquidityDistributionChart({
       </div>
       <div className="mt-3" style={{ width: "100%", height: 240 }}>
         <ResponsiveContainer minWidth={200} minHeight={200}>
-          <ComposedChart data={curve} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          {/* top: 24, not 8 — the "Current" ReferenceLine label sits above
+              the plot area (position="top"); 8px clipped its ascenders/cap
+              against the SVG's own edge (confirmed visually, most obvious
+              against a light canvas where the clipped sliver still shows). */}
+          <ComposedChart data={curve} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
             <XAxis
               dataKey="price"
