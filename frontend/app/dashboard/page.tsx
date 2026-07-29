@@ -99,8 +99,8 @@ export default function DashboardPage() {
                 onClick={() => setGranularity(g)}
                 className={
                   granularity === g
-                    ? "rounded-full bg-accent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-accent-contrast"
-                    : "rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
+                    ? "rounded-full border border-accent-fill-border bg-accent-fill-bg px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-accent-fill-text"
+                    : "rounded-full border border-transparent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
                 }
               >
                 {GRANULARITY_LABELS[g]}
@@ -145,8 +145,8 @@ function ChainTab({ label, active, onClick }: { label: string; active: boolean; 
       onClick={onClick}
       className={
         active
-          ? "rounded-full bg-accent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-accent-contrast"
-          : "rounded-full px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
+          ? "rounded-full border border-accent-fill-border bg-accent-fill-bg px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-accent-fill-text"
+          : "rounded-full border border-transparent px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-foreground"
       }
     >
       {label}

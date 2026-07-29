@@ -1155,21 +1155,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       title={t("vaultDetail.autoCompoundToggleHint")}
       className={
         autoCompoundFees
-          ? "mt-3 flex w-full items-center justify-center gap-3 rounded-full bg-accent px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-accent-contrast shadow-[0_0_20px_-4px_var(--accent)] transition-transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+          ? "mt-3 flex w-full items-center justify-center gap-3 rounded-full border-2 border-accent-fill-border bg-accent-fill-bg px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-accent-fill-text shadow-[0_0_20px_-4px_var(--accent-shadow)] transition-transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
           : "mt-3 flex w-full items-center justify-center gap-3 rounded-full border-2 border-foreground/25 px-4 py-3 font-mono text-sm font-semibold uppercase tracking-[0.1em] text-foreground/80 transition-colors hover:border-accent hover:text-accent-text disabled:opacity-50"
       }
     >
       <span
         className={
           autoCompoundFees
-            ? "relative h-6 w-11 shrink-0 rounded-full bg-background/30 transition-colors"
+            ? "relative h-6 w-11 shrink-0 rounded-full bg-accent-fill-text/30 transition-colors"
             : "relative h-6 w-11 shrink-0 rounded-full bg-foreground/15 transition-colors"
         }
       >
         <span
           className={
             autoCompoundFees
-              ? "absolute top-0.5 left-[1.4rem] h-5 w-5 rounded-full bg-background transition-all"
+              ? "absolute top-0.5 left-[1.4rem] h-5 w-5 rounded-full bg-accent-fill-text transition-all"
               : "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-foreground transition-all"
           }
         />

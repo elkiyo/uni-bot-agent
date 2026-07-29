@@ -90,7 +90,7 @@ export function NetworkSelector({
                 <ChainIcon chainId={c.id} />
                 <span className="flex-1">{c.name}</span>
                 {c.id === selectedId && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-accent-contrast">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-accent-fill-border bg-accent-fill-bg text-accent-fill-text">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                       <path d="M1.5 5L4 7.5L8.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>

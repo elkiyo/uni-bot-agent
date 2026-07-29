@@ -35,6 +35,19 @@
   --accent-glow-border-strong: rgba(252, 255, 82, 0.4);
   --accent-focus-bg: rgba(252, 255, 82, 0.03);
   --accent-focus-border: rgba(252, 255, 82, 0.45);
+  /* Solid-fill CTAs/active states (.btn-primary, active tabs, the
+     compounding toggle) — a fully opaque yellow fill reads as "neon
+     accent on black", the intended look here, so this just IS --accent
+     with dark text. Light mode overrides this to a muted tint instead
+     (see that block) — solid opaque yellow on a near-white canvas looks
+     glaring, not like a brand color, confirmed against real screenshots
+     2026-07-29. --accent-shadow is the matching hover/idle glow color;
+     same reasoning applies to box-shadow blur, which doesn't fade against
+     a light canvas the way it does against a dark one. */
+  --accent-fill-bg: var(--accent);
+  --accent-fill-border: transparent;
+  --accent-fill-text: var(--accent-contrast);
+  --accent-shadow: rgba(252, 255, 82, 0.55);
   --positive: #4ade80;
   --negative: #f87171;
   --negative-bg: rgba(248, 113, 113, 0.06);
@@ -69,6 +82,10 @@
   --accent-glow-border-strong: rgba(122, 105, 0, 0.45);
   --accent-focus-bg: rgba(122, 105, 0, 0.05);
   --accent-focus-border: rgba(122, 105, 0, 0.5);
+  --accent-fill-bg: rgba(122, 105, 0, 0.12);
+  --accent-fill-border: rgba(122, 105, 0, 0.4);
+  --accent-fill-text: var(--accent-text);
+  --accent-shadow: rgba(122, 105, 0, 0.22);
   --positive: #16a34a;
   --negative: #dc2626;
   --negative-bg: rgba(220, 38, 38, 0.06);
@@ -105,6 +122,9 @@
   --color-accent-glow-bg-strong: var(--accent-glow-bg-strong);
   --color-accent-glow-border: var(--accent-glow-border);
   --color-accent-glow-border-strong: var(--accent-glow-border-strong);
+  --color-accent-fill-bg: var(--accent-fill-bg);
+  --color-accent-fill-border: var(--accent-fill-border);
+  --color-accent-fill-text: var(--accent-fill-text);
   --color-chart-stable: var(--chart-stable);
   --font-sans: var(--font-inter);
   --font-display: var(--font-inter-tight);
@@ -200,19 +220,20 @@ body {
   justify-content: center;
   gap: 0.5rem;
   border-radius: 9999px;
-  background-color: #fcff52;
+  border: 1px solid var(--accent-fill-border);
+  background-color: var(--accent-fill-bg);
   padding: 0.875rem 1.5rem;
   font-size: 0.875rem;
   line-height: 1.25rem;
   font-weight: 600;
-  color: #050505;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, opacity 0.2s ease;
+  color: var(--accent-fill-text);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   box-shadow: 0 0 0 0 rgba(252, 255, 82, 0);
   cursor: pointer;
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 14px 44px -10px rgba(252, 255, 82, 0.55);
+  box-shadow: 0 14px 44px -10px var(--accent-shadow);
 }
 .btn-primary:disabled {
   opacity: 0.4;
