@@ -1057,6 +1057,14 @@ async function computeRebalanceParams(
   abi: Abi = chain.vaultAbi as Abi,
   targetFunctionName: string = "rebalance",
   simulateAsAccount?: Address,
+  // Owner-forced rebalances only (see computeOwnerRebalanceParams) — skips
+  // the periodic-pin below even though the position is still in range, so
+  // D1 recenters via recenterMarginBps under the LIVE price right now. The
+  // whole point of forcing a rebalance is usually "I just changed the
+  // margin, apply it now" (or similar) — pinning to the OLD floor (the
+  // keeper's own periodic behavior) would silently ignore that until a real
+  // out-of-range-bottom break happened on its own, defeating the feature.
+  forceRecenter: boolean = false,
 ): Promise<{
   newTickLower: number;
   newTickUpper: number;
@@ -1134,7 +1142,7 @@ async function computeRebalanceParams(
   // (InsufficientInvestableBalance) — silently blocking every cycle forever.
   // Confirmed in production 2026-07-16, vault 0x721e1B69...C94C37: stuck for
   // 5+ hours, no tx sent, no alert.
-  const stillInRangeForPeriodicPin = reason === "periodic" && tick <= floorTick;
+  const stillInRangeForPeriodicPin = reason === "periodic" && tick <= floorTick && !forceRecenter;
   // recenterMarginBps is the owner-set "how far below live price" for a
   // from-scratch floor (RangeVault.sol) — 500 == 5%, same shape as
   // maxSlippageBps/maxRangeDeviationBps elsewhere in this file.
@@ -1505,12 +1513,24 @@ async function runRebalanceViaUniLab(
  * back to the vault's OWNER to sign with their own wallet, paying their own
  * gas.
  *
- * Always uses reason="periodic": the owner is choosing to act now (e.g.
- * right after changing recenterMarginBps), not recovering from a specific
- * out-of-range-bottom break — same as a real periodic cycle, this never
- * reinjects reserve. Simulated against ownerRebalance() itself, as the
- * vault's real owner (not the operator) — see simulateAttempt's own
- * docstring on why that distinction matters for an onlyOwner function.
+ * Uses reason="periodic" (never reinjects reserve — the owner didn't ask for
+ * that, same as a real periodic cycle) but forceRecenter=true: D1 recenters
+ * via recenterMarginBps under the LIVE price even though the position is
+ * still comfortably in range, instead of pinning to the existing floor like
+ * the keeper's own periodic cycle does. This is deliberately DIFFERENT from
+ * a real periodic cycle — the whole point of the owner forcing a rebalance
+ * is usually "I just changed recenterMarginBps (or another agent
+ * parameter), apply it right now" (see CLAUDE.md's own design note for this
+ * feature) — pinning to the OLD floor would silently ignore that until a
+ * real out-of-range-bottom break happened on its own. Confirmed correct
+ * 2026-07-29: recentering here doesn't risk the ~100%-one-sided-position
+ * swap-math bug forceRecenter's own docstring guards against in
+ * computeRebalanceParams, since that only applies to an ALREADY out-of-range
+ * position — an in-range one (the only kind ownerRebalance() can even be
+ * called against without reverting anyway) always holds both legs.
+ * Simulated against ownerRebalance() itself, as the vault's real owner (not
+ * the operator) — see simulateAttempt's own docstring on why that
+ * distinction matters for an onlyOwner function.
  */
 export async function computeOwnerRebalanceParams(
   chain: ChainRuntime,
@@ -1528,7 +1548,7 @@ export async function computeOwnerRebalanceParams(
   | { ok: false }
 > {
   const owner = (await vaultContract(chain, vaultAddress, abi).read.owner()) as Address;
-  const params = await computeRebalanceParams(chain, vaultAddress, store, "periodic", abi, "ownerRebalance", owner);
+  const params = await computeRebalanceParams(chain, vaultAddress, store, "periodic", abi, "ownerRebalance", owner, true);
   if (!params) return { ok: false };
   return { ok: true, ...params };
 }
