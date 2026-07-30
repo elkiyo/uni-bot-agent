@@ -5,6 +5,7 @@ import { vaultContract, uniswapV3PoolAbi, positionManagerAbi } from "./serverCon
 import { erc20Abi } from "../contracts";
 import { ethPriceFromTick } from "../priceMath";
 import { estimatePositionValueUsd } from "./swapMath";
+import { uncollectedFeesRaw } from "../positionMath";
 import { resolveVaultPair, applyVaultPair } from "./pairInfo";
 import type { Store, VaultRecord } from "./store";
 
@@ -98,7 +99,20 @@ export async function checkVault(chain: ChainRuntime, record: VaultRecord, store
     args: [positionTokenId],
   })) as readonly [bigint, Address, Address, Address, number, number, number, bigint, bigint, bigint, bigint, bigint];
 
-  const [, , , , , tickLower, tickUpper, liquidity, , , tokensOwed0, tokensOwed1] = positions;
+  const [
+    ,
+    ,
+    ,
+    ,
+    ,
+    tickLower,
+    tickUpper,
+    liquidity,
+    feeGrowthInside0LastX128,
+    feeGrowthInside1LastX128,
+    tokensOwed0,
+    tokensOwed1,
+  ] = positions;
   // The vault's own pool — NOT necessarily chain.pool, the chain's "default"
   // pool. createVault() lets the owner pick any fee-tier pool for the pair;
   // a vault on a different one had its out-of-range check (and, before this
@@ -145,10 +159,46 @@ export async function checkVault(chain: ChainRuntime, record: VaultRecord, store
   // there's nothing to schedule, fees just accumulate for the next
   // rebalance's default payout, same as a plain RangeVaultArb vault.
   if (vaultKind === "compound") {
-    const claimDue = await checkFeeClaimDue(vault, {
+    // Live feeGrowth reads — only needed here (threshold-based claim check),
+    // so gated behind vaultKind === "compound" rather than fetched
+    // unconditionally for every vault every tick. See checkFeeClaimDue's own
+    // docstring for why tokensOwed0/1 alone (already in `positions` above)
+    // isn't enough: it only updates on a mint/burn/collect "poke", which
+    // never happens on its own for a vault sitting happily in range with
+    // periodicRebalanceInterval/feeClaimIntervalSeconds both at 0 — the
+    // threshold check would otherwise stay blind to real, growing fees
+    // forever instead of "eventually self-correcting" as originally assumed.
+    const [feeGrowthGlobal0X128, feeGrowthGlobal1X128, tickLowerData, tickUpperData] = (await Promise.all([
+      chain.publicClient.readContract({ address: vaultPool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128" }),
+      chain.publicClient.readContract({ address: vaultPool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128" }),
+      chain.publicClient.readContract({ address: vaultPool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [tickLower] }),
+      chain.publicClient.readContract({ address: vaultPool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [tickUpper] }),
+    ])) as [bigint, bigint, readonly bigint[], readonly bigint[]];
+
+    const { fees0Raw, fees1Raw } = uncollectedFeesRaw({
       liquidity,
       tokensOwed0,
       tokensOwed1,
+      feeGrowthInside0LastX128,
+      feeGrowthInside1LastX128,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      tickLowerOutside0X128: tickLowerData[2],
+      tickLowerOutside1X128: tickLowerData[3],
+      tickUpperOutside0X128: tickUpperData[2],
+      tickUpperOutside1X128: tickUpperData[3],
+      currentTick,
+      tickLower,
+      tickUpper,
+    });
+
+    const claimDue = await checkFeeClaimDue(vault, {
+      liquidity,
+      // Live-computed (see above), not the position's own possibly-frozen
+      // tokensOwed0/1 — real accrued fees regardless of when this position
+      // was last "poked".
+      tokensOwed0: BigInt(Math.max(0, Math.floor(fees0Raw))),
+      tokensOwed1: BigInt(Math.max(0, Math.floor(fees1Raw))),
       currentTick,
       tickLower,
       tickUpper,
@@ -190,15 +240,25 @@ export async function checkVault(chain: ChainRuntime, record: VaultRecord, store
  * Compound-only due-check for the scheduled/threshold fee auto-claim. No
  * on-chain enforcement exists for either knob (see checkVault's own comment
  * at the call site) — this is the entire decision. Threshold is measured as
- * accrued-but-uncollected fees (Uniswap's own `tokensOwed0`/`tokensOwed1` on
- * the position, already fetched by the caller — no extra RPC round-trip)
- * against the position's CURRENT value, per the confirmed design (% of
- * position value, not an absolute amount). `tokensOwed0/1` undercounts fees
- * accrued since the position's last "poke" (any mint/burn/collect touching
- * it) — the standard, well-understood Uniswap V3 caveat, self-correcting on
- * the next cycle that pokes the position (a rebalance, another claim) —
- * acceptable imprecision for a threshold trigger, same tolerance swapMath.ts
- * already accepts for its own sizing.
+ * accrued-but-uncollected fees against the position's CURRENT value, per the
+ * confirmed design (% of position value, not an absolute amount).
+ *
+ * tokensOwed0/tokensOwed1 here are the caller's LIVE-computed values
+ * (uncollectedFeesRaw, same feeGrowthGlobal/feeGrowthOutside formula
+ * PositionNFT.tsx's own "unclaimed fees" figure already uses) — NOT the
+ * position's raw on-chain tokensOwed0/1 fields, which only update on a
+ * mint/burn/collect "poke". This used to read the raw fields directly and
+ * assumed the resulting staleness would "self-correct on the next cycle
+ * that pokes the position" — true for a vault that regularly rebalances,
+ * but confirmed WRONG in production 2026-07-29 for a vault sitting happily
+ * in range with periodicRebalanceInterval and feeClaimIntervalSeconds both
+ * at 0 (i.e. threshold-only): nothing ever pokes it, so the raw tokensOwed
+ * stayed frozen at ~0 from the initial mint forever, permanently blind to
+ * real fees that had already grown past the configured threshold (0.42%)
+ * per the frontend's own live estimate. Fixed by having the caller compute
+ * real values first — costs 3 extra RPC reads (feeGrowthGlobal0/1X128,
+ * ticks(tickLower), ticks(tickUpper)) per compound vault per tick, gated
+ * behind vaultKind === "compound" so a standard vault never pays for it.
  */
 async function checkFeeClaimDue(
   vault: ReturnType<typeof vaultContract>,
