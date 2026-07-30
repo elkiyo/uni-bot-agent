@@ -21,6 +21,7 @@ import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { ReinjectionHistory } from "./ReinjectionHistory";
+import { CapitalLedger } from "./CapitalLedger";
 import { RebalanceCountdown } from "./RebalanceCountdown";
 import { erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
 import type { ChainDef } from "@/lib/chains";
@@ -2323,6 +2324,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               </div>
             )}
 
+            <CapitalLedger address={address} chain={chain} vaultAbi={vaultAbi} a1Usd={a1Usd} b1Usd={cumulativeInvestmentUsd} />
             <PositionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
             <ReinjectionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
             <ActivityFeed address={address} chain={chain} vaultAbi={vaultAbi} />

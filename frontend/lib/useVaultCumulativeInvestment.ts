@@ -1,8 +1,23 @@
 "use client";
 
 import type { Abi } from "viem";
-import { useVaultEventLogs } from "./useVaultEventLogs";
+import { useVaultEventLogs, type VaultEventLog } from "./useVaultEventLogs";
 import type { ChainDef } from "./chains";
+
+export interface CapitalLedgerEntry {
+  txHash: `0x${string}`;
+  blockNumber: bigint;
+  timestamp: number;
+  eventName: string;
+  /** This event's own signed effect on B1, raw stable-decimal units — never
+   * 0 (rows where the event didn't move B1 at all, e.g. a periodic
+   * Rebalanced with no reinjection/fold-in, are left out of the ledger
+   * entirely by walkCapitalLedger below). */
+  deltaRaw: bigint;
+  /** B1 total right after this event, clamped like the final total below —
+   * never negative. */
+  runningB1Raw: bigint;
+}
 
 /**
  * B1 — every dollar that has ever actually entered this vault's working
@@ -48,47 +63,93 @@ import type { ChainDef } from "./chains";
  * stable-decimal bigint once resolved (never negative — same defensive
  * clamp as the server-side version).
  */
+/**
+ * Walks a vault's full event history ONCE, applying every rule from this
+ * file's own docstring above, and returns one row per event that actually
+ * moved B1 (deposits, top-ups, reinjections, withdrawals — never a bare
+ * periodic rebalance with nothing to reinject/fold in). Shared by both hooks
+ * below so useVaultCumulativeInvestment (just the final number) and
+ * useVaultCapitalLedger (the row-by-row "control de capital" dashboard
+ * table) can never drift apart from each other — they already have to stay
+ * in sync BY HAND with rebalancer.ts's server-side
+ * getCumulativeInvestmentUsd; no reason to also risk drifting internally.
+ *
+ * `total` itself is never clamped mid-walk (only the exposed runningB1Raw
+ * per row, and the final return value, are) — clamping the accumulator
+ * itself would corrupt any later event that legitimately brings the true
+ * total back up, since it wouldn't be adding on top of the real prior value
+ * anymore.
+ */
+function walkCapitalLedger(logs: VaultEventLog[]): CapitalLedgerEntry[] {
+  const entries: CapitalLedgerEntry[] = [];
+  let total = 0n;
+  // See this file's own docstring — protects an already-counted
+  // PositionIncreased leftover from being added to B1 a second time
+  // when it later folds into the position via Rebalanced/IdleDustSwept.
+  let pendingFromIncreasePosition = 0n;
+  for (const log of logs) {
+    const args = log.args as Record<string, unknown>;
+    let delta = 0n;
+    if (log.eventName === "Deposited") {
+      if ((args.positionAlreadyExists as boolean | undefined) !== true) {
+        delta = (args.investableAmount as bigint | undefined) ?? 0n;
+      }
+    } else if (log.eventName === "PositionIncreased") {
+      const usdtAmount = (args.usdtAmount as bigint | undefined) ?? 0n;
+      delta = usdtAmount;
+      // V1 has no consumedUncounted field — falls back to usdtAmount
+      // (fully "consumed" this cycle), so leftover is always 0 and
+      // this shadow counter never grows for a V1 vault.
+      const consumedThisCycle = (args.consumedUncounted as bigint | undefined) ?? usdtAmount;
+      if (usdtAmount > consumedThisCycle) pendingFromIncreasePosition += usdtAmount - consumedThisCycle;
+    } else if (log.eventName === "Rebalanced" || log.eventName === "IdleDustSwept") {
+      if (log.eventName === "Rebalanced") delta += (args.reinjectedAmount as bigint | undefined) ?? 0n;
+      const consumed = (args.consumedUncounted as bigint | undefined) ?? 0n;
+      const protectedAmount = consumed < pendingFromIncreasePosition ? consumed : pendingFromIncreasePosition;
+      pendingFromIncreasePosition -= protectedAmount;
+      delta += consumed - protectedAmount;
+    } else if (log.eventName === "ReinjectedIntoPosition") {
+      delta = (args.amount as bigint | undefined) ?? 0n;
+    } else if (log.eventName === "FeesReinjected") {
+      delta = (args.netFeeUsd as bigint | undefined) ?? 0n;
+    } else if (log.eventName === "Withdrawn" || log.eventName === "EmergencyWithdraw") {
+      delta = -((args.principalUsd as bigint | undefined) ?? 0n);
+    } else {
+      continue;
+    }
+    if (delta === 0n) continue;
+    total += delta;
+    entries.push({
+      txHash: log.transactionHash,
+      blockNumber: log.blockNumber,
+      timestamp: log.blockTimestamp,
+      eventName: log.eventName,
+      deltaRaw: delta,
+      runningB1Raw: total < 0n ? 0n : total,
+    });
+  }
+  return entries;
+}
+
 export function useVaultCumulativeInvestment(address: `0x${string}` | undefined, chain: ChainDef, abi: Abi = chain.vaultAbi) {
   const { data: logs, ...rest } = useVaultEventLogs(address, chain, abi);
+  const data: bigint | undefined = logs ? (walkCapitalLedger(logs).at(-1)?.runningB1Raw ?? 0n) : undefined;
+  return { ...rest, data };
+}
 
-  const data: bigint | undefined = logs
-    ? (() => {
-        let total = 0n;
-        // See this file's own docstring — protects an already-counted
-        // PositionIncreased leftover from being added to B1 a second time
-        // when it later folds into the position via Rebalanced/IdleDustSwept.
-        let pendingFromIncreasePosition = 0n;
-        for (const log of logs) {
-          const args = log.args as Record<string, unknown>;
-          if (log.eventName === "Deposited") {
-            if ((args.positionAlreadyExists as boolean | undefined) !== true) {
-              total += (args.investableAmount as bigint | undefined) ?? 0n;
-            }
-          } else if (log.eventName === "PositionIncreased") {
-            const usdtAmount = (args.usdtAmount as bigint | undefined) ?? 0n;
-            total += usdtAmount;
-            // V1 has no consumedUncounted field — falls back to usdtAmount
-            // (fully "consumed" this cycle), so leftover is always 0 and
-            // this shadow counter never grows for a V1 vault.
-            const consumedThisCycle = (args.consumedUncounted as bigint | undefined) ?? usdtAmount;
-            if (usdtAmount > consumedThisCycle) pendingFromIncreasePosition += usdtAmount - consumedThisCycle;
-          } else if (log.eventName === "Rebalanced" || log.eventName === "IdleDustSwept") {
-            if (log.eventName === "Rebalanced") total += (args.reinjectedAmount as bigint | undefined) ?? 0n;
-            const consumed = (args.consumedUncounted as bigint | undefined) ?? 0n;
-            const protectedAmount = consumed < pendingFromIncreasePosition ? consumed : pendingFromIncreasePosition;
-            pendingFromIncreasePosition -= protectedAmount;
-            total += consumed - protectedAmount;
-          } else if (log.eventName === "ReinjectedIntoPosition") {
-            total += (args.amount as bigint | undefined) ?? 0n;
-          } else if (log.eventName === "FeesReinjected") {
-            total += (args.netFeeUsd as bigint | undefined) ?? 0n;
-          } else if (log.eventName === "Withdrawn" || log.eventName === "EmergencyWithdraw") {
-            total -= (args.principalUsd as bigint | undefined) ?? 0n;
-          }
-        }
-        return total < 0n ? 0n : total;
-      })()
-    : undefined;
-
+/**
+ * Row-by-row capital ledger for the "control de capital" dashboard table
+ * (CapitalLedger.tsx) — every event that ever moved B1, in order, with the
+ * running B1 total right after each one. Deliberately excludes A1: unlike
+ * B1, A1 is never cumulative — it's the position's LIVE value, recomputed
+ * fresh from current liquidity+ticks+price (see PositionNFT.tsx), not
+ * something individual past events add up to. A per-row "A1 at the time"
+ * would require a historical on-chain read at every single past block
+ * (archive-node pricing, one extra RPC round-trip per row) for a number
+ * that's only ever meaningful "right now" anyway.
+ */
+export function useVaultCapitalLedger(address: `0x${string}` | undefined, chain: ChainDef, abi: Abi = chain.vaultAbi) {
+  const { data: logs, ...rest } = useVaultEventLogs(address, chain, abi);
+  const data: CapitalLedgerEntry[] | undefined = logs ? walkCapitalLedger(logs) : undefined;
   return { ...rest, data };
 }
