@@ -926,6 +926,25 @@ async function getCumulativeInvestmentUsd(
   const events = parseEventLogs({ abi, logs });
 
   let totalRaw = 0n;
+  // Tracks PositionIncreased leftovers that were ALREADY counted in full via
+  // usdtAmount below, but didn't fold into the NFT that same cycle — sitting
+  // in investableUsdt, pooled into the SAME on-chain uncountedInvestable
+  // counter a bare deposit()/depositToken() top-up would also use. When a
+  // LATER Rebalanced/IdleDustSwept folds that pool in and reports
+  // consumedUncounted, this off-chain shadow counter is what lets us tell
+  // "this amount was already counted (protect it, don't add again)" apart
+  // from "this is a genuine bare top-up being counted for the first time
+  // (add it)" — the contract itself can't distinguish the two provenances
+  // (uncountedInvestable is a single pooled uint256), so this is the closest
+  // off-chain approximation: consume the PositionIncreased-sourced shadow
+  // balance FIRST, only counting whatever consumedUncounted exceeds it.
+  // Bug found live 2026-07-29 (vault 0x7186CE90...4D78c7): a $10 top-up
+  // (usdtAmount=10, consumedUncounted=7.017287 that same cycle) left
+  // $2.982713 sitting in investableUsdt, already counted via usdtAmount
+  // above — a LATER IdleDustSwept folded part of it in
+  // (consumedUncounted=0.221142) and, before this fix, added it to B1 a
+  // SECOND time.
+  let pendingFromIncreasePosition = 0n;
   for (const ev of events) {
     const args = ev.args as Record<string, unknown>;
     if (ev.eventName === "Deposited") {
@@ -964,18 +983,26 @@ async function getCumulativeInvestmentUsd(
       // on for this event, before consumedUncounted briefly changed it.
       // Real vault confirmed this the same day: usdtAmount=10,
       // consumedUncounted=7.017287 — B1 must count the full 10, not 7.02.
-      totalRaw += args.usdtAmount as bigint;
-    } else if (ev.eventName === "Rebalanced") {
-      totalRaw += args.reinjectedAmount as bigint;
-      // V2 only — how much of this cycle's fold-in was a previously-pending
-      // investable top-up (see uncountedInvestable's own docstring).
-      totalRaw += (args.consumedUncounted as bigint | undefined) ?? 0n;
-    } else if (ev.eventName === "IdleDustSwept") {
-      // V2 only — sweepIdleDust() can fold a pending top-up into the real
-      // position; V1's IdleDustSwept is correctly never summed at all here
-      // (its used0/used1 are always genuine swap dust on V1, already
-      // counted whenever it first entered).
-      totalRaw += (args.consumedUncounted as bigint | undefined) ?? 0n;
+      const usdtAmount = args.usdtAmount as bigint;
+      totalRaw += usdtAmount;
+      // V1 has no consumedUncounted field at all — falls back to usdtAmount
+      // (fully "consumed" this same cycle), so leftover is always 0 and this
+      // shadow counter never grows for a V1 vault, matching its untouched
+      // original behavior exactly.
+      const consumedThisCycle = (args.consumedUncounted as bigint | undefined) ?? usdtAmount;
+      if (usdtAmount > consumedThisCycle) pendingFromIncreasePosition += usdtAmount - consumedThisCycle;
+    } else if (ev.eventName === "Rebalanced" || ev.eventName === "IdleDustSwept") {
+      if (ev.eventName === "Rebalanced") totalRaw += args.reinjectedAmount as bigint;
+      // V2 only — how much of this cycle's fold-in was previously-pending
+      // investable (see uncountedInvestable's own docstring). Protect
+      // whatever's still owed to a PositionIncreased leftover (already
+      // counted above) FIRST — only the excess, if any, is a genuine
+      // never-yet-counted bare deposit()/depositToken() top-up finally
+      // folding in.
+      const consumed = (args.consumedUncounted as bigint | undefined) ?? 0n;
+      const protectedAmount = consumed < pendingFromIncreasePosition ? consumed : pendingFromIncreasePosition;
+      pendingFromIncreasePosition -= protectedAmount;
+      totalRaw += consumed - protectedAmount;
     } else if (ev.eventName === "ReinjectedIntoPosition") {
       totalRaw += args.amount as bigint;
     } else if (ev.eventName === "FeesReinjected") {
