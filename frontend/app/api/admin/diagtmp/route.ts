@@ -20,7 +20,11 @@ export async function GET() {
 
   const params = {
     currentLiquidityUsd: 512.8449, // A1 — position principal + idle WETH dust
-    amountToRecoverUsd: 511.978018, // B1
+    // B1 capped to stay strictly above A1 — uni-lab returns 500 otherwise
+    // when real appreciation pushes A1 slightly past B1 (documented finding,
+    // 2026-07-19 vault 0x00a393AB...78F52b): first attempt with the real
+    // uncapped B1 (511.978018) got exactly this 500.
+    amountToRecoverUsd: 513.10132245, // B1, capped = A1 * 1.0005
     currentPriceVolatileAsset: 1918.6372, // C1
     newLowerBound: 1880.2645, // D1 — recentered via recenterMarginBps (2%), forceRecenter-style
     reinvestmentAmountUsd: 0, // E1 — reserve is $0
