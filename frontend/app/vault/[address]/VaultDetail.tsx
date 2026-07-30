@@ -99,9 +99,30 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     chainId: chain.id,
     query: { enabled: !kindParamSaysCompound && Boolean(chain.compoundVaultAbi), retry: false },
   });
-  const isCompound =
-    Boolean(chain.compoundVaultAbi) && (kindParamSaysCompound || probedAsCompound) && isCompoundBetaWallet(connected);
-  const vaultAbi = isCompound ? chain.compoundVaultAbi! : chain.vaultAbi;
+  // Intrinsic, on-chain fact — which contract this vault actually runs.
+  // Deliberately NOT gated on the connected wallet: it decides which ABI
+  // decodes this vault's real events (vaultAbi below feeds every read AND
+  // every event-log decode: useVaultEventLogs/useVaultCumulativeInvestment/
+  // PositionHistory/ReinjectionHistory/ActivityFeed all inherit it). Gating
+  // this on isCompoundBetaWallet was a real production bug (confirmed
+  // 2026-07-30): a disconnected visitor — or any non-beta wallet — opening
+  // a genuine compound vault's page fell back to the standard ABI, which
+  // lacks V2-only event fields (consumedUncounted, positionAlreadyExists,
+  // ...). deserializeArgs (lib/eventArgsCodec.ts) silently leaves those
+  // fields as raw strings instead of bigint when the ABI doesn't define
+  // them; `total += (args.x as bigint)` then does bigint+string, which JS's
+  // `+` operator string-concatenates instead of throwing, corrupting B1
+  // into a string with no visible error — until that "bigint" hits viem's
+  // formatUnits() elsewhere, which does real bigint arithmetic and throws
+  // "Cannot mix BigInt and other types", crashing the whole page. Root-
+  // caused by reproducing the crash against production with Playwright
+  // (100% repeatable) and diffing it against a wallet-connected-as-owner
+  // run that also failed identically, then tracing deserializeArgs itself.
+  const vaultIsCompoundContract = Boolean(chain.compoundVaultAbi) && (kindParamSaysCompound || probedAsCompound);
+  const vaultAbi = vaultIsCompoundContract ? chain.compoundVaultAbi! : chain.vaultAbi;
+  // UI/action gating only (owner controls, deposit-token selector, etc.) —
+  // this one's supposed to depend on the wallet, see compoundBeta.ts.
+  const isCompound = vaultIsCompoundContract && isCompoundBetaWallet(connected);
 
   // This vault's OWN pair (see lib/useVaultPairInfo.ts) — every vault already
   // supported the chain's single default pair, this is what makes reading a
