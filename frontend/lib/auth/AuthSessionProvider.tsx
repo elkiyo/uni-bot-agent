@@ -62,6 +62,15 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     setSigningIn(true);
     try {
       const nonceRes = await fetch("/api/auth/nonce");
+      // fetch() only rejects on a network failure, never on a non-2xx
+      // status — without this check, a server misconfiguration (confirmed
+      // in production 2026-07-30: AUTH_JWT_SECRET missing, a plain 500 here)
+      // fell straight through to signMessageAsync with a malformed
+      // nonce:"undefined" message, prompting a real wallet signature for a
+      // sign-in that could never actually complete — and since session never
+      // resolves truthy, the effect below just re-triggers it again on the
+      // next relevant change. Bail out clean instead.
+      if (!nonceRes.ok) throw new Error(`nonce fetch failed: ${nonceRes.status}`);
       const { nonce } = await nonceRes.json();
       const message = buildSiweMessage({
         domain: window.location.host,
