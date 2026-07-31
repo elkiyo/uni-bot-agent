@@ -1873,7 +1873,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               {chain.supportsGasReserve && (
                 <Stat
                   label={t("vaultDetail.statGasSpent")}
-                  value={`$${Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals)).toFixed(2)}`}
+                  value={`$${Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals)).toFixed(4)}`}
                   hint={t("vaultDetail.gasSpentHint", { count: feesSummary?.gasReimbursedCount ?? 0 })}
                   longHint={t("vaultDetail.gasSpentLongHint")}
                   hint2={
