@@ -664,7 +664,14 @@ function SortableHeader({
  * hash. Everything vaultRows already carries from useProtocolMetrics — this
  * component is purely presentational.
  */
-type SortKey = "createdAt" | "valueUsd" | "feesUsd" | "yieldPct" | "rangeWidthPct" | "rebalanceCount";
+type SortKey =
+  | "createdAt"
+  | "valueUsd"
+  | "feesUsd"
+  | "yieldPct"
+  | "rangeWidthPct"
+  | "rebalanceCount"
+  | "netOperatingProfitUsd";
 
 function sortableColumns(
   t: ReturnType<typeof useTranslation>["t"],
@@ -676,6 +683,12 @@ function sortableColumns(
     { key: "yieldPct", label: t("dashboard.colYield"), align: "right" },
     { key: "rangeWidthPct", label: t("dashboard.colRangeWidth"), align: "right" },
     { key: "rebalanceCount", label: t("dashboard.colRebalances"), align: "right" },
+    // Appended rather than inserted in visual order — every other index
+    // above is referenced positionally (SORTABLE_COLUMNS[n]) at its own
+    // spot in the header JSX, so adding this at the end avoids re-numbering
+    // every existing reference just to place it visually between Yield and
+    // Rebalances (see the header JSX below for where it actually renders).
+    { key: "netOperatingProfitUsd", label: t("dashboard.colNetProfit"), align: "right" },
   ];
 }
 
@@ -807,7 +820,7 @@ function VaultHistoryTable({
 
       {filteredRows.length > 0 && (
         <div className="mt-6 max-h-[640px] overflow-auto rounded-xl border border-hairline">
-          <table className="w-full min-w-[920px] border-collapse text-sm">
+          <table className="w-full min-w-[1020px] border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-surface">
               <tr className="border-b border-hairline text-left font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
                 <SortableHeader column={SORTABLE_COLUMNS[0]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
@@ -843,6 +856,7 @@ function VaultHistoryTable({
                 <SortableHeader column={SORTABLE_COLUMNS[1]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[2]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortableHeader column={SORTABLE_COLUMNS[6]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[5]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <FilterHeader
                   value={statusFilter}
@@ -913,6 +927,17 @@ function VaultHistoryTable({
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                     {eventsLoading || snapshotLoading ? "…" : row.valueUsd > 0 ? `${row.yieldPct.toFixed(2)}%` : "—"}
+                  </td>
+                  <td
+                    className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${
+                      eventsLoading ? "" : row.netOperatingProfitUsd >= 0 ? "text-positive" : "text-negative"
+                    }`}
+                  >
+                    {eventsLoading
+                      ? "…"
+                      : row.netOperatingProfitUsd >= 0
+                        ? usd(row.netOperatingProfitUsd)
+                        : `-${usd(-row.netOperatingProfitUsd)}`}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                     {snapshotLoading ? "…" : row.rebalanceCount}

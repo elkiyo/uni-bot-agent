@@ -69,6 +69,10 @@ export interface VaultRow {
    * proxy for return (fees generated relative to what's deployed right now,
    * NOT a time-weighted or annualized APY). 0 when valueUsd is 0. */
   yieldPct: number;
+  /** feesUsd minus cumulative gas reimbursed to the keeper — same "ignore
+   * price/IL" metric as VaultDetail.tsx's Ganancia neta de operación stat,
+   * just derived here from this dashboard's own per-chain event scan. */
+  netOperatingProfitUsd: number;
   rebalanceCount: number;
   status: VaultStatus;
 }
@@ -444,6 +448,14 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     const vaultFeesByAddress = new Map<string, number>();
     const addFee = (address: string, usd: number) =>
       vaultFeesByAddress.set(address.toLowerCase(), (vaultFeesByAddress.get(address.toLowerCase()) ?? 0) + usd);
+    // Per-vault gas the keeper has reimbursed itself — paired with
+    // vaultFeesByAddress below to derive netOperatingProfitUsd (fees minus
+    // gas, same "ignore price/IL" metric as VaultDetail.tsx's Ganancia neta
+    // de operación, just aggregated per-row here instead of from one
+    // vault's own event log).
+    const vaultGasByAddress = new Map<string, number>();
+    const addGas = (address: string, usd: number) =>
+      vaultGasByAddress.set(address.toLowerCase(), (vaultGasByAddress.get(address.toLowerCase()) ?? 0) + usd);
     // Per-vault B1 (cumulative invested capital) — mirrors
     // lib/useVaultCumulativeInvestment.ts's walkCapitalLedger exactly (same
     // event set/rules, see that file's own docstring): every dollar that
@@ -496,6 +508,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         } else if (row.event_name === "KeeperGasReimbursed") {
           const usd = Number(asBigIntField(args.amountUsd)) * 1e-6;
           gasReimbursedUsd += usd;
+          addGas(row.address, usd);
           rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: usd });
         } else if (row.event_name === "Deposited") {
           const investable = asBigIntField(args.investableAmount);
@@ -542,6 +555,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         const ledgerValue = v.closed ? 0 : Number(v.investableUsdt + v.reserveBalance + v.gasReserveBalance) * 1e-6;
         const valueUsd = ledgerValue + positionValue;
         const feesUsd = vaultFeesByAddress.get(v.record.address.toLowerCase()) ?? 0;
+        const gasUsd = vaultGasByAddress.get(v.record.address.toLowerCase()) ?? 0;
         const b1Raw = b1ByAddress.get(v.record.address.toLowerCase()) ?? 0n;
         const cumulativeInvestmentUsd = Number(b1Raw < 0n ? 0n : b1Raw) * 1e-6;
         const status: VaultStatus = v.closed ? "closed" : v.positionTokenId > 0n ? "active" : "no_position";
@@ -558,6 +572,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           inRange: inRangeByVault.get(v.record.address) ?? null,
           feesUsd,
           yieldPct: cumulativeInvestmentUsd > 0 ? (feesUsd / cumulativeInvestmentUsd) * 100 : 0,
+          netOperatingProfitUsd: feesUsd - gasUsd,
           rebalanceCount: Number(v.rebalanceCount),
           status,
         };

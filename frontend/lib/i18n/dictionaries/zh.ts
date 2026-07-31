@@ -674,6 +674,7 @@ const zh: Dictionary = {
     colVersion: "版本",
     colRange: "区间",
     colRangeWidth: "区间宽度",
+    colNetProfit: "净收益",
     colRebalances: "再平衡次数",
     colStatus: "状态",
     colHash: "哈希",

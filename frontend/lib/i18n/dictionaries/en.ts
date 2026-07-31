@@ -681,6 +681,7 @@ const en: Dictionary = {
     colVersion: "Version",
     colRange: "Range",
     colRangeWidth: "Width",
+    colNetProfit: "Net profit",
     colRebalances: "Rebalances",
     colStatus: "Status",
     colHash: "Hash",
