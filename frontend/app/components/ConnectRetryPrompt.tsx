@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useReconnect } from "wagmi";
-import { useAppKit } from "@reown/appkit/react";
+import { useAppKit, useAppKitState } from "@reown/appkit/react";
 
 // On mobile, approving a WalletConnect pairing from the wallet app can lose
 // the session entirely if the browser tab gets backgrounded mid-handshake —
@@ -17,6 +17,15 @@ export function ConnectRetryPrompt() {
   const { isConnected, isConnecting, isReconnecting } = useAccount();
   const { reconnect } = useReconnect();
   const { open: openConnectModal } = useAppKit();
+  // AppKit picks a wallet and starts the WalletConnect pairing (the step
+  // that deep-links to MetaMask) inside its own controller, independently
+  // of wagmi's connector state — wagmi's isConnecting can still be false at
+  // the exact moment the tab backgrounds to open the wallet app, which was
+  // making the visibilitychange handler below never see a "pending" attempt
+  // and silently skip the retry prompt. connectingWallet is set as soon as
+  // AppKit starts that pairing, before wagmi catches up, so it's the more
+  // reliable signal for "an attempt that could get stranded."
+  const { connectingWallet } = useAppKitState();
   const [showRetry, setShowRetry] = useState(false);
   const pendingRef = useRef(false);
   const isConnectedRef = useRef(isConnected);
@@ -30,8 +39,8 @@ export function ConnectRetryPrompt() {
   }, [isConnected]);
 
   useEffect(() => {
-    if (isConnecting || isReconnecting) pendingRef.current = true;
-  }, [isConnecting, isReconnecting]);
+    if (isConnecting || isReconnecting || connectingWallet) pendingRef.current = true;
+  }, [isConnecting, isReconnecting, connectingWallet]);
 
   useEffect(() => {
     function onVisibilityChange() {
