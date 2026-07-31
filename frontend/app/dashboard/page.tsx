@@ -19,7 +19,12 @@ import { bucketByTime, type Granularity } from "@/lib/dashboard/bucket";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
-const CHART_COLORS = ["#fcff52", "#4ade80", "#60a5fa", "#f472b6", "#fb923c", "#a78bfa"];
+// First entry is var(--accent-text), not a raw hex like the rest — the
+// brand yellow (#fcff52) is unreadable against light mode's near-white
+// card background (same fix as the Volume/Rebalances bar charts above);
+// --accent-text swaps to a darker gold there while staying #fcff52 in
+// dark mode, so this palette never visibly changes there.
+const CHART_COLORS = ["var(--accent-text)", "#4ade80", "#60a5fa", "#f472b6", "#fb923c", "#a78bfa"];
 
 function granularityLabels(t: ReturnType<typeof useTranslation>["t"]): Record<Granularity, string> {
   return {
