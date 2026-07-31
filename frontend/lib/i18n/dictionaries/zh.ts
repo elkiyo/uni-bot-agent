@@ -475,6 +475,8 @@ const zh: Dictionary = {
     statGasBudget: "Gas 预算",
     gasBudgetHint:
       "每次再平衡时都会扣减——降至 0 后，智能体仍会继续运作，但不再向运营方支付任何报销",
+    statGasSpent: "已花费 Gas",
+    gasSpentHint: "已在 {{count}} 次再平衡中报销给运营方",
     statRebalances: "再平衡次数",
     statFees: "已产生手续费",
     statFeesClaimed: "已领取手续费",

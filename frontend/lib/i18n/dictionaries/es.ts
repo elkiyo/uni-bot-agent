@@ -479,6 +479,8 @@ const es = {
     statGasBudget: "Presupuesto de gas",
     gasBudgetHint:
       "Se descuenta en cada rebalanceo — si llega a 0, el agente sigue operando pero no le reembolsa nada al operador",
+    statGasSpent: "Gas gastado",
+    gasSpentHint: "reembolsado al operador en {{count}} rebalanceos",
     statRebalances: "Rebalanceos",
     statFees: "Comisiones generadas",
     statFeesClaimed: "Comisiones reclamadas",

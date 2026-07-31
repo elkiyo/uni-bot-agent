@@ -17,6 +17,14 @@ export interface VaultFeesSummary {
   // split (the contract only ever reports the combined USD figure).
   reinjectedUsdRaw: bigint;
   reinjectionCount: number;
+  // Cumulative gas the keeper has reimbursed itself from the vault's
+  // gasReserveBalance, one KeeperGasReimbursed event per rebalance that
+  // actually had budget to draw from (see RangeVaultArb.sol's
+  // _reimburseKeeperGas — silently skipped, not reverted, once the
+  // reserve hits 0). amountUsd is already stable-decimal USD, same
+  // denomination as gasReserveBalance itself.
+  gasReimbursedUsdRaw: bigint;
+  gasReimbursedCount: number;
 }
 
 /**
@@ -44,6 +52,8 @@ export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: C
         let payoutCount = 0;
         let reinjectedUsdRaw = 0n;
         let reinjectionCount = 0;
+        let gasReimbursedUsdRaw = 0n;
+        let gasReimbursedCount = 0;
         for (const log of logs) {
           if (log.eventName === "LpFeesPaidToOwner" || log.eventName === "FeesCollected") {
             const args = log.args as { amount0?: bigint; amount1?: bigint };
@@ -58,9 +68,21 @@ export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: C
               reinjectedUsdRaw += args.netFeeUsd ?? 0n;
               reinjectionCount += 1;
             }
+          } else if (log.eventName === "KeeperGasReimbursed") {
+            const args = log.args as { amountUsd?: bigint };
+            gasReimbursedUsdRaw += args.amountUsd ?? 0n;
+            gasReimbursedCount += 1;
           }
         }
-        return { totalUsdt, totalWeth, payoutCount, reinjectedUsdRaw, reinjectionCount };
+        return {
+          totalUsdt,
+          totalWeth,
+          payoutCount,
+          reinjectedUsdRaw,
+          reinjectionCount,
+          gasReimbursedUsdRaw,
+          gasReimbursedCount,
+        };
       })()
     : undefined;
 

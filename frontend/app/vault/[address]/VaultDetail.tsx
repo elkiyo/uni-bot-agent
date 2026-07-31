@@ -1848,6 +1848,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   hint={t("vaultDetail.gasBudgetHint")}
                 />
               )}
+              {chain.supportsGasReserve && (
+                <Stat
+                  label={t("vaultDetail.statGasSpent")}
+                  value={`$${Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals)).toFixed(2)}`}
+                  hint={t("vaultDetail.gasSpentHint", { count: feesSummary?.gasReimbursedCount ?? 0 })}
+                />
+              )}
               <Stat
                 label={t("vaultDetail.statRebalances")}
                 value={`${rebalanceCount ?? 0} / ${maxRebalances ?? 0}`}

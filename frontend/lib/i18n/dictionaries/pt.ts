@@ -481,6 +481,8 @@ const pt: Dictionary = {
     statGasBudget: "Orçamento de gas",
     gasBudgetHint:
       "É descontado a cada rebalanceamento — se chegar a 0, o agente continua operando, mas não reembolsa mais nada ao operador",
+    statGasSpent: "Gas gasto",
+    gasSpentHint: "reembolsado ao operador em {{count}} rebalanceamentos",
     statRebalances: "Rebalanceamentos",
     statFees: "Comissões geradas",
     statFeesClaimed: "Comissões resgatadas",
