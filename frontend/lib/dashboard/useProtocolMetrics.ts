@@ -65,6 +65,12 @@ export interface VaultRow {
    * position range — null when there's no open position to check (never
    * initialized, or closed), same convention as priceRange. */
   inRange: boolean | null;
+  /** LpFeesPaidToOwner + FeesCollected only — what the OWNER actually
+   * received, net of the platform's performance-fee cut. Deliberately
+   * excludes PerformanceFeeCollected so this matches VaultDetail.tsx's own
+   * "Comisiones generadas" card exactly (useVaultFeesSummary's
+   * totalUsdt/totalWeth) — the platform's cut is still tracked separately
+   * in platformFeesUsd above, just not folded into this per-vault figure. */
   feesUsd: number;
   /** feesUsd as a % of the vault's current value — a coarse, non-annualized
    * proxy for return (fees generated relative to what's deployed right now,
@@ -635,7 +641,13 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
           const usd = Number(asBigIntField(stableRaw)) * 1e-6 + Number(asBigIntField(volatileRaw)) * 1e-18 * ethPrice;
           platformFeesUsd += usd;
-          addFee(row.address, usd);
+          // Deliberately NOT fed into vaultFeesByAddress/addFee — that map
+          // backs the per-vault "Comisiones"/"Ganancia neta de operación"
+          // columns, which need to match VaultDetail.tsx's own definition
+          // (useVaultFeesSummary's totalUsdt/totalWeth): what the OWNER
+          // actually received, net of the platform's cut. Still counted in
+          // the protocol-wide platformFeesUsd total above and in feeEvents
+          // below — this only affects the per-vault row figures.
           feeEvents.push({ timestamp: ts, ownerUsd: 0, platformUsd: usd });
         } else if (row.event_name === "KeeperGasReimbursed") {
           const usd = Number(asBigIntField(args.amountUsd)) * 1e-6;
