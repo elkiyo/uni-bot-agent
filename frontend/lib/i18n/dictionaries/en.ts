@@ -481,8 +481,10 @@ const en: Dictionary = {
     statGasBudget: "Gas budget",
     gasBudgetHint:
       "Deducted on every rebalance — if it reaches 0, the agent keeps operating but stops reimbursing the operator",
+    gasBudgetAddedHint: "Total added: {{amount}} {{symbol}} over {{count}} deposits",
     statGasSpent: "Gas spent",
     gasSpentHint: "reimbursed to the operator over {{count}} rebalances",
+    gasSpentAvgHint: "${{amount}} average per rebalance",
     statRebalances: "Rebalances",
     statFees: "Fees generated",
     statFeesClaimed: "Fees claimed",

@@ -25,17 +25,27 @@ export interface VaultFeesSummary {
   // denomination as gasReserveBalance itself.
   gasReimbursedUsdRaw: bigint;
   gasReimbursedCount: number;
+  // Cumulative gasReserveAmount across EVERY Deposited event (not just the
+  // first — a later deposit() top-up can fund the gas reserve again), so
+  // "Presupuesto de gas" can show the running total added alongside the
+  // current gasReserveBalance (which only reflects what's left after
+  // reimbursements).
+  gasReserveAddedRaw: bigint;
+  gasReserveAddedCount: number;
 }
 
 /**
  * Sums every LpFeesPaidToOwner (paid out during a keeper rebalance),
- * FeesCollected (owner's manual collectFees() claim), and FeesReinjected
- * (compound-only — reinjected into the position instead of paid out) event a
- * vault has ever emitted, derived from useVaultEventLogs's shared event
- * fetch (see that file for why this used to run its own independent
- * full-history scan and no longer does). The first two already report the
- * NET amount the owner actually received (performanceFeeBps is deducted
- * before any of the three fires — see RangeVault.sol's _splitPerformanceFee),
+ * FeesCollected (owner's manual collectFees() claim), FeesReinjected
+ * (compound-only — reinjected into the position instead of paid out),
+ * KeeperGasReimbursed, and Deposited.gasReserveAmount event a vault has
+ * ever emitted, derived from useVaultEventLogs's shared event fetch (see
+ * that file for why this used to run its own independent full-history
+ * scan and no longer does). Despite the name, this now covers the vault's
+ * whole fee+gas economics, not just fees — kept as one hook since it's
+ * already walking the same log stream. The first two fee fields already
+ * report the NET amount the owner actually received (performanceFeeBps is
+ * deducted before any of the three fires — see RangeVault.sol's _splitPerformanceFee),
  * so totalUsdt/totalWeth is exactly what landed in the owner's wallet, not
  * the gross Uniswap fee. Only vaults built from the post-2026-07 RangeVault
  * implementation emit these events at all (older clones mixed fees into
@@ -54,8 +64,16 @@ export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: C
         let reinjectionCount = 0;
         let gasReimbursedUsdRaw = 0n;
         let gasReimbursedCount = 0;
+        let gasReserveAddedRaw = 0n;
+        let gasReserveAddedCount = 0;
         for (const log of logs) {
-          if (log.eventName === "LpFeesPaidToOwner" || log.eventName === "FeesCollected") {
+          if (log.eventName === "Deposited") {
+            const args = log.args as { gasReserveAmount?: bigint };
+            if ((args.gasReserveAmount ?? 0n) > 0n) {
+              gasReserveAddedRaw += args.gasReserveAmount ?? 0n;
+              gasReserveAddedCount += 1;
+            }
+          } else if (log.eventName === "LpFeesPaidToOwner" || log.eventName === "FeesCollected") {
             const args = log.args as { amount0?: bigint; amount1?: bigint };
             // amount0/amount1 are Uniswap's real token0/token1 — route to
             // stable/volatile based on this chain's actual order.
@@ -82,6 +100,8 @@ export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: C
           reinjectionCount,
           gasReimbursedUsdRaw,
           gasReimbursedCount,
+          gasReserveAddedRaw,
+          gasReserveAddedCount,
         };
       })()
     : undefined;

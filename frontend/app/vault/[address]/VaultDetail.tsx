@@ -1846,6 +1846,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   label={t("vaultDetail.statGasBudget")}
                   value={`${formatUnits(gasReserveBalance, stableDecimals)} ${stableSymbol}`}
                   hint={t("vaultDetail.gasBudgetHint")}
+                  hint2={
+                    (feesSummary?.gasReserveAddedRaw ?? 0n) > 0n
+                      ? t("vaultDetail.gasBudgetAddedHint", {
+                          amount: formatUnits(feesSummary?.gasReserveAddedRaw ?? 0n, stableDecimals),
+                          symbol: stableSymbol,
+                          count: feesSummary?.gasReserveAddedCount ?? 0,
+                        })
+                      : undefined
+                  }
                 />
               )}
               {chain.supportsGasReserve && (
@@ -1853,6 +1862,16 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   label={t("vaultDetail.statGasSpent")}
                   value={`$${Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals)).toFixed(2)}`}
                   hint={t("vaultDetail.gasSpentHint", { count: feesSummary?.gasReimbursedCount ?? 0 })}
+                  hint2={
+                    (feesSummary?.gasReimbursedCount ?? 0) > 0
+                      ? t("vaultDetail.gasSpentAvgHint", {
+                          amount: (
+                            Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals)) /
+                            (feesSummary?.gasReimbursedCount ?? 1)
+                          ).toFixed(4),
+                        })
+                      : undefined
+                  }
                 />
               )}
               <Stat
