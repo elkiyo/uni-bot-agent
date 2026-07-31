@@ -694,7 +694,7 @@ const pt: Dictionary = {
     noneMatchFilters: "Nenhum vault corresponde a esses filtros.",
 
     footnote:
-      "TVL é um valor ao vivo (ledgers + posição aberta ao preço atual do pool) — não uma série histórica, para não multiplicar as leituras on-chain a cada ponto do gráfico. Comissões são avaliadas ao preço atual do ETH, não ao preço exato do momento de cada evento — uma aproximação razoável dado o volume. Rendimento é comissões geradas ÷ valor atual do vault — uma referência simples, não um APY anualizado.",
+      "TVL é um valor ao vivo (ledgers + posição aberta ao preço atual do pool) — não uma série histórica, para não multiplicar as leituras on-chain a cada ponto do gráfico. Comissões são avaliadas ao preço atual do ETH, não ao preço exato do momento de cada evento — uma aproximação razoável dado o volume. Rendimento é comissões geradas ÷ capital investido acumulado (B1) — uma referência simples, não um APY anualizado.",
   },
   investors: {
     eyebrow: "Recursos · Para investidores",

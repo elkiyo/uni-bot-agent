@@ -694,7 +694,7 @@ const en: Dictionary = {
     noneMatchFilters: "No vault matches these filters.",
 
     footnote:
-      "TVL is a live value (ledgers + open position at the pool's current price) — not a historical series, so as not to multiply on-chain reads for every point on the chart. Fees are valued at the current ETH price, not the exact price at the time of each event — a reasonable approximation given the volume. Yield is fees generated ÷ the vault's current value — a simple reference, not an annualized APY.",
+      "TVL is a live value (ledgers + open position at the pool's current price) — not a historical series, so as not to multiply on-chain reads for every point on the chart. Fees are valued at the current ETH price, not the exact price at the time of each event — a reasonable approximation given the volume. Yield is fees generated ÷ cumulative invested capital (B1) — a simple reference, not an annualized APY.",
   },
   investors: {
     eyebrow: "Resources · For investors",

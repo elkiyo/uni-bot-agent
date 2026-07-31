@@ -699,7 +699,7 @@ const es = {
     noClosedVaultsYet: "Todavía no hay vaults cerrados.",
 
     footnote:
-      "TVL es un valor en vivo (ledgers + posición abierta al precio actual del pool) — no una serie histórica, para no multiplicar las lecturas on-chain por cada punto del gráfico. Comisiones se valoran al precio actual de ETH, no al precio exacto del momento de cada evento — una aproximación razonable dado el volumen. Rendimiento es comisiones generadas ÷ valor actual del vault — una referencia simple, no un APY anualizado.",
+      "TVL es un valor en vivo (ledgers + posición abierta al precio actual del pool) — no una serie histórica, para no multiplicar las lecturas on-chain por cada punto del gráfico. Comisiones se valoran al precio actual de ETH, no al precio exacto del momento de cada evento — una aproximación razonable dado el volumen. Rendimiento es comisiones generadas ÷ capital invertido acumulado (B1) — una referencia simple, no un APY anualizado.",
   },
   investors: {
     eyebrow: "Recursos · Para inversionistas",

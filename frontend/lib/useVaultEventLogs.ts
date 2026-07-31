@@ -33,8 +33,8 @@ interface ApiEventRow {
 
 /**
  * Single shared fetch of a vault's ENTIRE event history. ActivityFeed,
- * PositionHistory, useVaultFeesSummary, and useVaultDepositSummary all need
- * this same underlying data (just filtered/derived differently) — same
+ * PositionHistory, useVaultFeesSummary, and useVaultCumulativeInvestment all
+ * need this same underlying data (just filtered/derived differently) — same
  * queryKey means React Query dedupes concurrent callers into one request.
  *
  * Used to run its own full-history eth_getLogs scan straight from the

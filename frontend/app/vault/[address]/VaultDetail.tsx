@@ -29,7 +29,6 @@ import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/pr
 import { uncollectedFeesRaw } from "@/lib/positionMath";
 import { sizeRebalanceSwap, estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
-import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
 import { useVaultCumulativeInvestment } from "@/lib/useVaultCumulativeInvestment";
 import { useVaultCreatedAt } from "@/lib/useVaultCreatedAt";
 import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
@@ -256,7 +255,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const autoCompoundFees = Boolean(autoCompoundFeesRaw);
 
   const { data: feesSummary } = useVaultFeesSummary(address, chain, vaultAbi);
-  const { data: depositSummary } = useVaultDepositSummary(address, chain, vaultAbi);
   // B1 — see useVaultCumulativeInvestment's own docstring. Raw stable-decimal
   // bigint; converted to a display USD number right where it's used, in
   // PositionNFT's own "invertido vs. valor actual" comparison.
@@ -301,12 +299,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const reinjectedUsd = Number(formatUnits(feesSummary?.reinjectedUsdRaw ?? 0n, stableDecimals));
   const feesUsdTotal = claimedUsd !== undefined ? claimedUsd + reinjectedUsd : undefined;
 
-  // Rentabilidad = comisiones (USD) sobre el monto depositado al crear el
-  // vault — mismo cálculo simple que la tarjeta en /vaults, no anualizado.
-  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, stableDecimals));
+  // Rentabilidad = comisiones (USD) sobre B1 (capital invertido acumulado,
+  // ver useVaultCumulativeInvestment) — no el depósito inicial solo, que
+  // infla el % en cualquier vault que recibió capital después de crearse
+  // (top-up, increasePosition, reinyección). No anualizado.
   const rentLabel =
-    feesUsdTotal !== undefined && initialInvestmentUsd > 0
-      ? t("vaults.returnLabel", { pct: ((feesUsdTotal / initialInvestmentUsd) * 100).toFixed(2) })
+    feesUsdTotal !== undefined && cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
+      ? t("vaults.returnLabel", { pct: ((feesUsdTotal / cumulativeInvestmentUsd) * 100).toFixed(2) })
       : undefined;
 
   const isOwner = Boolean(

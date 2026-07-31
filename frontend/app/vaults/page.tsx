@@ -15,7 +15,7 @@ import { uncollectedFeesRaw } from "@/lib/positionMath";
 import { useVaultFeesSummary } from "@/lib/useVaultFeesSummary";
 import { useVaultPairInfo } from "@/lib/useVaultPairInfo";
 import { isCompoundBetaWallet } from "@/lib/compoundBeta";
-import { useVaultDepositSummary } from "@/lib/useVaultDepositSummary";
+import { useVaultCumulativeInvestment } from "@/lib/useVaultCumulativeInvestment";
 import { fetchVaultCreationTimes } from "@/lib/useVaultCreationTimes";
 import { useAvailableChains, useSelectedChain } from "@/lib/useSelectedChain";
 import type { ChainDef } from "@/lib/chains";
@@ -449,20 +449,23 @@ function VaultCard({
   const idleWethUsd = ethPrice !== undefined ? Number(idleWethRaw) * 10 ** -volatileDecimals * ethPrice : undefined;
 
   // Rentabilidad = comisiones acumuladas (reclamadas + reinyectadas,
-  // convertidas a USD) sobre el monto depositado cuando se creó el vault —
-  // no el total histórico (top-ups posteriores no cuentan) ni el capital
-  // libre actual (que baja cada vez que se abre/reinyecta una posición), ni
-  // anualizado. Debe coincidir con VaultDetail.tsx's feesUsdTotal — mismo
+  // convertidas a USD) sobre B1 (capital invertido acumulado — ver
+  // useVaultCumulativeInvestment) — no el depósito inicial solo, que infla
+  // el % en cualquier vault que recibió capital después de crearse
+  // (top-up, increasePosition, reinyección), ni el capital libre actual
+  // (que baja cada vez que se abre/reinyecta una posición), ni anualizado.
+  // Debe coincidir con VaultDetail.tsx's feesUsdTotal/rentLabel — mismo
   // vault, misma cuenta, en las dos pantallas.
-  const { data: depositSummary } = useVaultDepositSummary(vaultAddress, chain, vaultAbi);
+  const { data: cumulativeInvestmentRaw } = useVaultCumulativeInvestment(vaultAddress, chain, vaultAbi);
+  const cumulativeInvestmentUsd =
+    cumulativeInvestmentRaw !== undefined ? Number(formatUnits(cumulativeInvestmentRaw, stableDecimals)) : undefined;
   const feesUsdEquivalent =
     Number(formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)) +
     (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice : 0) +
     Number(formatUnits(feesSummary?.reinjectedUsdRaw ?? 0n, stableDecimals));
-  const initialInvestmentUsd = Number(formatUnits(depositSummary?.initialInvestmentUsdt ?? 0n, stableDecimals));
   const rentLabel =
-    initialInvestmentUsd > 0
-      ? t("vaults.returnLabel", { pct: ((feesUsdEquivalent / initialInvestmentUsd) * 100).toFixed(2) })
+    cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
+      ? t("vaults.returnLabel", { pct: ((feesUsdEquivalent / cumulativeInvestmentUsd) * 100).toFixed(2) })
       : "—";
 
   const floatingLabel =

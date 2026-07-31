@@ -444,50 +444,92 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
     const vaultFeesByAddress = new Map<string, number>();
     const addFee = (address: string, usd: number) =>
       vaultFeesByAddress.set(address.toLowerCase(), (vaultFeesByAddress.get(address.toLowerCase()) ?? 0) + usd);
-    // Per-vault initial investment (investable + reserve from the FIRST
-    // Deposited event only, no gas reserve) — the same denominator
-    // VaultDetail.tsx and /vaults use for "rentabilidad" (fees / initial
-    // investment), so this dashboard's yieldPct actually matches what each
-    // vault's own page shows instead of diluting/inflating it against
-    // current value, which drifts with price and top-up deposits.
-    const initialInvestmentByAddress = new Map<string, number>();
+    // Per-vault B1 (cumulative invested capital) — mirrors
+    // lib/useVaultCumulativeInvestment.ts's walkCapitalLedger exactly (same
+    // event set/rules, see that file's own docstring): every dollar that
+    // ever actually entered the vault's position, counted once, minus
+    // anything withdrawn. This is the correct denominator for
+    // "rentabilidad" (fees ÷ capital invertido) — the old version only
+    // looked at the FIRST Deposited event, which inflated the % for any
+    // vault that received capital after creation (top-up, increasePosition,
+    // reinjection).
+    //
+    // This chain's event stream also carries rows from compound (V2)
+    // vaults (indexer.ts tracks both factories), but chain.vaultAbi below
+    // is always the STANDARD abi — deserializeArgs silently leaves a
+    // compound-only field (consumedUncounted, principalUsd) as a raw
+    // string when decoding a compound vault's event through the standard
+    // abi, since that field isn't part of the standard event's own
+    // definition. asBigIntField guards every one of those specific fields
+    // so a stray compound-vault row can never throw (bigint/string mix)
+    // and break the whole page — compound vaults aren't in `ledgers`
+    // anyway (vaultDirectory.ts only scans the standard factory), so
+    // anything computed here for their address is inert, never looked up
+    // below.
+    const asBigIntField = (v: unknown): bigint => (typeof v === "bigint" ? v : 0n);
+    const b1ByAddress = new Map<string, bigint>();
+    const b1PendingIncreaseByAddress = new Map<string, bigint>();
 
     chains.forEach((chain, i) => {
       const rows = eventQueries[i].data ?? [];
       const ethPrice = ethPriceByChain.get(chain.id) ?? 0;
       for (const row of rows) {
         const ts = Math.floor(new Date(row.block_timestamp).getTime() / 1000);
-        const args = deserializeArgs(chain.vaultAbi, row.event_name, row.args) as Record<string, bigint | undefined>;
+        const args = deserializeArgs(chain.vaultAbi, row.event_name, row.args) as Record<string, unknown>;
+        const addrKey = row.address.toLowerCase();
+        const addB1 = (delta: bigint) => b1ByAddress.set(addrKey, (b1ByAddress.get(addrKey) ?? 0n) + delta);
 
         if (row.event_name === "LpFeesPaidToOwner" || row.event_name === "FeesCollected") {
           const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
           const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
-          const usd = Number(stableRaw ?? 0n) * 1e-6 + Number(volatileRaw ?? 0n) * 1e-18 * ethPrice;
+          const usd = Number(asBigIntField(stableRaw)) * 1e-6 + Number(asBigIntField(volatileRaw)) * 1e-18 * ethPrice;
           ownerFeesUsd += usd;
           addFee(row.address, usd);
           feeEvents.push({ timestamp: ts, ownerUsd: usd, platformUsd: 0 });
         } else if (row.event_name === "PerformanceFeeCollected") {
           const stableRaw = chain.stableIsToken0 ? args.amount0 : args.amount1;
           const volatileRaw = chain.stableIsToken0 ? args.amount1 : args.amount0;
-          const usd = Number(stableRaw ?? 0n) * 1e-6 + Number(volatileRaw ?? 0n) * 1e-18 * ethPrice;
+          const usd = Number(asBigIntField(stableRaw)) * 1e-6 + Number(asBigIntField(volatileRaw)) * 1e-18 * ethPrice;
           platformFeesUsd += usd;
           addFee(row.address, usd);
           feeEvents.push({ timestamp: ts, ownerUsd: 0, platformUsd: usd });
         } else if (row.event_name === "KeeperGasReimbursed") {
-          const usd = Number(args.amountUsd ?? 0n) * 1e-6;
+          const usd = Number(asBigIntField(args.amountUsd)) * 1e-6;
           gasReimbursedUsd += usd;
           rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: usd });
         } else if (row.event_name === "Deposited") {
-          const total = Number((args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n) + (args.gasReserveAmount ?? 0n));
-          depositedTotalUsd += total * 1e-6;
-          const addrKey = row.address.toLowerCase();
-          if (!initialInvestmentByAddress.has(addrKey)) {
-            const investOnly = Number((args.investableAmount ?? 0n) + (args.reserveAmount ?? 0n));
-            initialInvestmentByAddress.set(addrKey, investOnly * 1e-6);
+          const investable = asBigIntField(args.investableAmount);
+          const reserve = asBigIntField(args.reserveAmount);
+          const gasReserve = asBigIntField(args.gasReserveAmount);
+          depositedTotalUsd += Number(investable + reserve + gasReserve) * 1e-6;
+          // V2-only field, always undefined for a genuine standard vault —
+          // see walkCapitalLedger's own Deposited handling.
+          if (args.positionAlreadyExists !== true) addB1(investable);
+        } else if (row.event_name === "PositionIncreased") {
+          const usdtAmount = asBigIntField(args.usdtAmount);
+          addB1(usdtAmount);
+          const consumedThisCycle = args.consumedUncounted !== undefined ? asBigIntField(args.consumedUncounted) : usdtAmount;
+          if (usdtAmount > consumedThisCycle) {
+            b1PendingIncreaseByAddress.set(
+              addrKey,
+              (b1PendingIncreaseByAddress.get(addrKey) ?? 0n) + (usdtAmount - consumedThisCycle),
+            );
           }
-        } else if (row.event_name === "Rebalanced") {
-          rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: 0 });
-          if (row.usd_value !== null) mintVolumeEvents.push({ timestamp: ts, usd: Number(row.usd_value) });
+        } else if (row.event_name === "Rebalanced" || row.event_name === "IdleDustSwept") {
+          if (row.event_name === "Rebalanced") {
+            rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: 0 });
+            if (row.usd_value !== null) mintVolumeEvents.push({ timestamp: ts, usd: Number(row.usd_value) });
+            addB1(asBigIntField(args.reinjectedAmount));
+          }
+          const consumed = asBigIntField(args.consumedUncounted);
+          const pending = b1PendingIncreaseByAddress.get(addrKey) ?? 0n;
+          const protectedAmount = consumed < pending ? consumed : pending;
+          b1PendingIncreaseByAddress.set(addrKey, pending - protectedAmount);
+          addB1(consumed - protectedAmount);
+        } else if (row.event_name === "ReinjectedIntoPosition") {
+          addB1(asBigIntField(args.amount));
+        } else if (row.event_name === "Withdrawn" || row.event_name === "EmergencyWithdraw") {
+          addB1(-asBigIntField(args.principalUsd));
         } else if (row.event_name === "PositionInitialized") {
           if (row.usd_value !== null) mintVolumeEvents.push({ timestamp: ts, usd: Number(row.usd_value) });
         }
@@ -500,7 +542,8 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         const ledgerValue = v.closed ? 0 : Number(v.investableUsdt + v.reserveBalance + v.gasReserveBalance) * 1e-6;
         const valueUsd = ledgerValue + positionValue;
         const feesUsd = vaultFeesByAddress.get(v.record.address.toLowerCase()) ?? 0;
-        const initialInvestmentUsd = initialInvestmentByAddress.get(v.record.address.toLowerCase()) ?? 0;
+        const b1Raw = b1ByAddress.get(v.record.address.toLowerCase()) ?? 0n;
+        const cumulativeInvestmentUsd = Number(b1Raw < 0n ? 0n : b1Raw) * 1e-6;
         const status: VaultStatus = v.closed ? "closed" : v.positionTokenId > 0n ? "active" : "no_position";
         return {
           address: v.record.address,
@@ -514,7 +557,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           priceRange: priceRangeByVault.get(v.record.address) ?? null,
           inRange: inRangeByVault.get(v.record.address) ?? null,
           feesUsd,
-          yieldPct: initialInvestmentUsd > 0 ? (feesUsd / initialInvestmentUsd) * 100 : 0,
+          yieldPct: cumulativeInvestmentUsd > 0 ? (feesUsd / cumulativeInvestmentUsd) * 100 : 0,
           rebalanceCount: Number(v.rebalanceCount),
           status,
         };
