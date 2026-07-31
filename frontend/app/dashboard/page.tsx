@@ -338,10 +338,10 @@ function VolumeSeriesChart({
           />
           <Bar
             dataKey="value"
-            fill="#fcff52"
+            fill="var(--accent-text)"
             stroke="var(--hairline)"
             radius={[6, 6, 0, 0]}
-            activeBar={{ fill: "#fff7a8", stroke: "var(--foreground)", strokeWidth: 2 }}
+            activeBar={{ fill: "var(--accent)", stroke: "var(--foreground)", strokeWidth: 2 }}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -449,10 +449,10 @@ function RebalanceSeriesChart({
           />
           <Bar
             dataKey="count"
-            fill="#fcff52"
+            fill="var(--accent-text)"
             stroke="var(--hairline)"
             radius={[6, 6, 0, 0]}
-            activeBar={{ fill: "#fff7a8", stroke: "var(--foreground)", strokeWidth: 2 }}
+            activeBar={{ fill: "var(--accent)", stroke: "var(--foreground)", strokeWidth: 2 }}
           />
         </BarChart>
       </ResponsiveContainer>
