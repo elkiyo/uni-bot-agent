@@ -463,13 +463,29 @@ function VaultCard({
     Number(formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)) +
     (ethPrice !== undefined ? Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)) * ethPrice : 0) +
     Number(formatUnits(feesSummary?.reinjectedUsdRaw ?? 0n, stableDecimals));
-  const rentLabel =
-    cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
-      ? t("vaults.returnLabel", { pct: ((feesUsdEquivalent / cumulativeInvestmentUsd) * 100).toFixed(2) })
-      : "—";
 
-  const floatingLabel =
-    hasPosition && feeYieldPct !== undefined ? t("vaults.floatingReturnLabel", { pct: feeYieldPct.toFixed(2) }) : "—";
+  // "Comisiones netas" / "Ganancia neta de operación" — same blended formula
+  // as the Dashboard's "Historial de vaults" table (useProtocolMetrics.ts's
+  // netFeesUsd/netOperatingProfitPct), copied here rather than shared code
+  // since that hook scans every vault on every chain at once while this page
+  // reads one vault's own contracts/events per card — deliberately kept in
+  // sync BY HAND, same convention as B1's own server/client duplication.
+  // Realized (claimed + reinjected fees − gas reimbursed) ÷ B1, plus a
+  // 90%-discounted credit for fees already accrued on the OPEN position but
+  // not yet collected (feeYieldPct above) — two terms with DIFFERENT
+  // denominators (B1 vs. current position value), not one ratio over a
+  // single base.
+  const gasSpentUsd = Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals));
+  const netOperatingProfitUsd = feesUsdEquivalent - gasSpentUsd;
+  const unrealizedFeesUsd = hasPosition ? unclaimedFeesUsd : 0;
+  const unrealizedPct = hasPosition ? (feeYieldPct ?? 0) : 0;
+  const netFeesUsd = netOperatingProfitUsd + 0.9 * unrealizedFeesUsd;
+  const realizedPct =
+    cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
+      ? (netOperatingProfitUsd / cumulativeInvestmentUsd) * 100
+      : 0;
+  const netOperatingProfitPct =
+    cumulativeInvestmentUsd !== undefined ? realizedPct + 0.9 * unrealizedPct : undefined;
 
   const createdOnLabel =
     createdAt !== undefined && createdAt > 0
@@ -570,30 +586,21 @@ function VaultCard({
           </p>
         </StatCell>
 
-        <StatCell label={t("vaults.fees")}>
-          {/* Headline is the TRUE total in USD (claimed + reinjected) — was
-              showing just the raw stable-leg amount before, with no overall
-              total anywhere on this card, unlike VaultDetail.tsx's own
-              "Comisiones generadas" stat which leads with the $ total. Same
-              claimed-only raw breakdown kept as the secondary hint below. */}
-          <p className="text-sm font-medium text-positive">${feesUsdEquivalent.toFixed(2)}</p>
-          <p className="mt-0.5 font-mono text-xs text-positive/70">
-            {formatUnits(feesSummary?.totalUsdt ?? 0n, stableDecimals)} {stableSymbol}
-            {(feesSummary?.totalWeth ?? 0n) > 0n
-              ? ` + ${Number(formatUnits(feesSummary?.totalWeth ?? 0n, volatileDecimals)).toFixed(6)} ${volatileSymbol}`
-              : ""}
+        <StatCell label={t("dashboard.colNetFees")}>
+          <p className={`text-sm font-medium ${netFeesUsd >= 0 ? "text-positive" : "text-negative"}`}>
+            {netFeesUsd >= 0 ? "+" : ""}${netFeesUsd.toFixed(2)}
           </p>
-          <p className="mt-0.5 font-mono text-xs text-foreground/50">{rentLabel}</p>
         </StatCell>
 
-        <StatCell label={t("vaults.floatingReturn")}>
-          {/* Same pairing as PositionNFT.tsx's own card: the $ unclaimed-fees
-              amount alongside the % it represents of the position's value —
-              showing only the % here (with no $ figure anywhere on this
-              card) was its own source of confusion. */}
-          <p className="text-sm font-medium text-positive">${unclaimedFeesUsd.toFixed(2)}</p>
-          <p className={`mt-0.5 font-mono text-xs ${(feeYieldPct ?? 0) >= 0 ? "text-positive/70" : "text-negative"}`}>
-            {floatingLabel}
+        <StatCell label={t("dashboard.colNetProfit")}>
+          <p
+            className={`text-sm font-medium ${
+              netOperatingProfitPct === undefined ? "text-foreground/50" : netOperatingProfitPct >= 0 ? "text-positive" : "text-negative"
+            }`}
+          >
+            {netOperatingProfitPct === undefined
+              ? "—"
+              : `${netOperatingProfitPct >= 0 ? "+" : ""}${netOperatingProfitPct.toFixed(2)}%`}
           </p>
         </StatCell>
       </div>

@@ -272,11 +272,8 @@ const pt: Dictionary = {
     noOpenPosition: "sem posição aberta",
     freeCapital: "Capital livre",
     rebalances: "Rebalanceamentos",
-    fees: "Comissões",
     returnLabel: "{{pct}}% de rent.",
     range: "Faixa",
-    floatingReturn: "Rendimento de comissões (posição atual)",
-    floatingReturnLabel: "{{pct}}%",
     createdOn: "Criado em {{date}}",
   },
   positionNft: {

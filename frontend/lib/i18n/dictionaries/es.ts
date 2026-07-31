@@ -270,11 +270,8 @@ const es = {
     noOpenPosition: "sin posición abierta",
     freeCapital: "Capital libre",
     rebalances: "Rebalanceos",
-    fees: "Comisiones",
     returnLabel: "{{pct}}% rent.",
     range: "Rango",
-    floatingReturn: "Rendimiento de comisiones (posición actual)",
-    floatingReturnLabel: "{{pct}}%",
     createdOn: "Creado el {{date}}",
   },
   positionNft: {

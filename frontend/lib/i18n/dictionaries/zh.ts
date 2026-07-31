@@ -268,11 +268,8 @@ const zh: Dictionary = {
     noOpenPosition: "无持仓",
     freeCapital: "闲置资金",
     rebalances: "再平衡次数",
-    fees: "手续费",
     returnLabel: "{{pct}}% 收益率",
     range: "区间",
-    floatingReturn: "手续费收益率（当前仓位）",
-    floatingReturnLabel: "{{pct}}%",
     createdOn: "创建于 {{date}}",
   },
   positionNft: {
