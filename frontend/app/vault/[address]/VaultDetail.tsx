@@ -1889,15 +1889,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               {chain.supportsGasReserve && (
                 <Stat
                   label={t("vaultDetail.statNetOperatingProfit")}
-                  value={netOperatingProfitUsd !== undefined ? `$${netOperatingProfitUsd.toFixed(2)}` : "—"}
-                  longHint={t("vaultDetail.netOperatingProfitHint")}
-                  hint2={
+                  value={
                     netOperatingProfitPct !== undefined
                       ? `${netOperatingProfitPct >= 0 ? "+" : ""}${netOperatingProfitPct.toFixed(2)}%`
-                      : undefined
+                      : "—"
                   }
-                  hint2ClassName={`mt-1 text-sm font-semibold ${(netOperatingProfitPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}
-                  accent={(netOperatingProfitUsd ?? 0) >= 0}
+                  valueClassName={`mt-1.5 text-base font-semibold tabular-nums ${(netOperatingProfitPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}
+                  longHint={t("vaultDetail.netOperatingProfitHint")}
+                  hint2={netOperatingProfitUsd !== undefined ? `$${netOperatingProfitUsd.toFixed(2)}` : undefined}
+                  hint2ClassName="mt-1 text-xs text-faint"
                 />
               )}
               <Stat
@@ -2527,6 +2527,7 @@ function Stat({
   hint2,
   longHint,
   accent,
+  valueClassName,
   hintClassName,
   hint2ClassName,
 }: {
@@ -2542,6 +2543,9 @@ function Stat({
    * identically on tap (mobile) and click (desktop). */
   longHint?: string;
   accent?: boolean;
+  /** Overrides the default value styling — e.g. a profit/loss stat wants
+   * genuine green/red by sign instead of the generic accent/plain toggle. */
+  valueClassName?: string;
   /** Overrides the default hint styling — e.g. the fees card wants its
    * USDT/WETH breakdown in green and larger than the other stats' hints. */
   hintClassName?: string;
@@ -2572,7 +2576,10 @@ function Stat({
         )}
       </span>
       <p
-        className={`mt-1.5 text-base font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`}
+        className={
+          valueClassName ??
+          `mt-1.5 text-base font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`
+        }
         style={{ fontFamily: "var(--font-display)" }}
       >
         {value}
