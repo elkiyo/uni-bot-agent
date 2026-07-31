@@ -397,6 +397,20 @@ const pt: Dictionary = {
     eventWithdrawn: "Saque",
     eventEmergencyWithdraw: "Saque de emergência",
   },
+  gasBreakdown: {
+    title: "Detalhamento do gas gasto",
+    subtitle:
+      "Cada reembolso de gas ao operador, agrupado pela ação que o gerou — por isso a contagem de rebalanceamentos em Gas gasto pode diferir do total de Rebalanceamentos: aqui também entram a abertura da posição e as varreduras de sobra.",
+    colAction: "Ação",
+    colCount: "Quantidade",
+    colTotal: "Total",
+    colAverage: "Média",
+    total: "Total",
+    actionInitPosition: "Abertura da posição",
+    actionRebalance: "Rebalanceamento",
+    actionReinjectIntoPosition: "Reinjeção manual de reserva",
+    actionSweepIdleDust: "Varredura de sobra",
+  },
   reinjectionHistory: {
     title: "Histórico de reinjeções",
     subtitle: "Cada vez que o agente reinjetou comissões na posição em vez de pagá-las à sua carteira.",
@@ -483,7 +497,9 @@ const pt: Dictionary = {
       "É descontado a cada rebalanceamento — se chegar a 0, o agente continua operando, mas não reembolsa mais nada ao operador",
     gasBudgetAddedHint: "Total adicionado: {{amount}} {{symbol}} em {{count}} depósitos",
     statGasSpent: "Gas gasto",
-    gasSpentHint: "reembolsado ao operador em {{count}} rebalanceamentos",
+    gasSpentHint: "reembolsado ao operador em {{count}} transações",
+    gasSpentLongHint:
+      "Não são só rebalanceamentos — o gas também é reembolsado ao abrir a posição, ao reinjetar reserva manualmente e ao varrer sobra solta. Veja o detalhamento completo abaixo.",
     gasSpentAvgHint: "média de ${{amount}} por rebalanceamento",
     statNetOperatingProfit: "Lucro operacional líquido",
     netOperatingProfitHint: "Comissões menos gas reembolsado, sem contar a variação de preço do par",

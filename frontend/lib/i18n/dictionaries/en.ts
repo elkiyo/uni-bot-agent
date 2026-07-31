@@ -397,6 +397,20 @@ const en: Dictionary = {
     eventWithdrawn: "Withdrawal",
     eventEmergencyWithdraw: "Emergency withdrawal",
   },
+  gasBreakdown: {
+    title: "Gas spent breakdown",
+    subtitle:
+      "Every gas reimbursement to the operator, grouped by which action triggered it — this is why the rebalance count on Gas spent can differ from the Rebalances stat: it also includes opening the position and idle-dust sweeps.",
+    colAction: "Action",
+    colCount: "Count",
+    colTotal: "Total",
+    colAverage: "Average",
+    total: "Total",
+    actionInitPosition: "Position opened",
+    actionRebalance: "Rebalance",
+    actionReinjectIntoPosition: "Manual reserve reinjection",
+    actionSweepIdleDust: "Idle dust sweep",
+  },
   reinjectionHistory: {
     title: "Reinjection history",
     subtitle: "Every time the agent reinjected fees into the position instead of paying them to your wallet.",
@@ -483,7 +497,9 @@ const en: Dictionary = {
       "Deducted on every rebalance — if it reaches 0, the agent keeps operating but stops reimbursing the operator",
     gasBudgetAddedHint: "Total added: {{amount}} {{symbol}} over {{count}} deposits",
     statGasSpent: "Gas spent",
-    gasSpentHint: "reimbursed to the operator over {{count}} rebalances",
+    gasSpentHint: "reimbursed to the operator over {{count}} transactions",
+    gasSpentLongHint:
+      "Not just rebalances — gas is also reimbursed when opening the position, manually reinjecting reserve, and sweeping idle dust. See the full breakdown below.",
     gasSpentAvgHint: "${{amount}} average per rebalance",
     statNetOperatingProfit: "Net operating profit",
     netOperatingProfitHint: "Fees minus gas reimbursed, excluding the pair's price movement",

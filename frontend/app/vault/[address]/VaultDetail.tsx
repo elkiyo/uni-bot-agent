@@ -22,6 +22,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
 import { ReinjectionHistory } from "./ReinjectionHistory";
 import { CapitalLedger } from "./CapitalLedger";
+import { GasBreakdown } from "./GasBreakdown";
 import { RebalanceCountdown } from "./RebalanceCountdown";
 import { erc20Abi, uniswapV3PoolAbi, positionManagerAbi, platformConfigAbi } from "@/lib/contracts";
 import type { ChainDef } from "@/lib/chains";
@@ -1874,6 +1875,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   label={t("vaultDetail.statGasSpent")}
                   value={`$${Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals)).toFixed(2)}`}
                   hint={t("vaultDetail.gasSpentHint", { count: feesSummary?.gasReimbursedCount ?? 0 })}
+                  longHint={t("vaultDetail.gasSpentLongHint")}
                   hint2={
                     (feesSummary?.gasReimbursedCount ?? 0) > 0
                       ? t("vaultDetail.gasSpentAvgHint", {
@@ -2376,6 +2378,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             )}
 
             <CapitalLedger address={address} chain={chain} vaultAbi={vaultAbi} a1Usd={a1Usd} b1Usd={cumulativeInvestmentUsd} />
+            <GasBreakdown address={address} chain={chain} vaultAbi={vaultAbi} />
             <PositionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
             <ReinjectionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
             <ActivityFeed address={address} chain={chain} vaultAbi={vaultAbi} />
