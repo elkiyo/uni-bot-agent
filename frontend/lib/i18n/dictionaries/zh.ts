@@ -682,7 +682,7 @@ const zh: Dictionary = {
     colDate: "日期",
     colAge: "存续时间",
     colValue: "价值",
-    colFees: "手续费",
+    colNetFees: "净手续费",
     colChain: "链",
     colPool: "资金池",
     colVersion: "版本",

@@ -691,7 +691,7 @@ const en: Dictionary = {
     colDate: "Date",
     colAge: "Age",
     colValue: "Value",
-    colFees: "Fees",
+    colNetFees: "Net fees",
     colChain: "Chain",
     colPool: "Pool",
     colVersion: "Version",

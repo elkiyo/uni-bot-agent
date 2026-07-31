@@ -65,14 +65,15 @@ export interface VaultRow {
    * position range — null when there's no open position to check (never
    * initialized, or closed), same convention as priceRange. */
   inRange: boolean | null;
-  /** LpFeesPaidToOwner + FeesCollected only — what the OWNER actually
-   * received, net of the platform's performance-fee cut. Deliberately
-   * excludes PerformanceFeeCollected so this matches VaultDetail.tsx's own
-   * "Comisiones generadas" card exactly (useVaultFeesSummary's
-   * totalUsdt/totalWeth) — the platform's cut is still tracked separately
-   * in platformFeesUsd above, just not folded into this per-vault figure. */
-  feesUsd: number;
-  /** feesUsd minus cumulative gas reimbursed to the keeper — realized only
+  /** Net fees in USD — the same blended formula as netOperatingProfitPct
+   * below, just kept in dollar terms instead of normalized into a %:
+   * (fees claimed − gas reimbursed) + 90% of the unrealized/uncollected
+   * fees still sitting on the open position. Replaces a plain "fees
+   * claimed" figure so this column tells the same story as the %
+   * column next to it, just in USD. */
+  netFeesUsd: number;
+  /** LpFeesPaidToOwner + FeesCollected only, minus cumulative gas
+   * reimbursed to the keeper — realized only
    * (claimed/reinjected fees, not what's still accruing in an open
    * position). Same "ignore price/IL" metric as VaultDetail.tsx's Ganancia
    * neta de operación stat, just derived here from this dashboard's own
@@ -131,7 +132,7 @@ export interface ProtocolMetrics {
    * historical position+pool read that used to make this the slowest part
    * of the hook now happens once, server-side, at index time). */
   mintVolumeLoading: boolean;
-  /** One row per vault ever created, newest first — feesUsd needs
+  /** One row per vault ever created, newest first — netFeesUsd needs
    * eventsLoading, valueUsd/priceRange need snapshotLoading, so this is only
    * fully accurate once BOTH have resolved (see vaultRowsLoading). */
   vaultRows: VaultRow[];
@@ -374,9 +375,10 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
   // comisiones (posición actual)" metric app/vaults/page.tsx already shows
   // per-card) are computed in one pass since they share liquidity/tickLower/
   // tickUpper/currentTick/ethPrice — no reason to iterate openPositions twice.
-  const { positionValueByVault, feeYieldPctByVault } = useMemo(() => {
+  const { positionValueByVault, feeYieldPctByVault, feeYieldUsdByVault } = useMemo(() => {
     const valueMap = new Map<string, number>();
     const feeYieldMap = new Map<string, number>();
+    const feeYieldUsdMap = new Map<string, number>();
     openPositions.forEach(({ chain, record }, i) => {
       const position = positionData?.[i]?.result as
         | readonly [bigint, string, string, string, number, number, number, bigint, bigint, bigint, bigint, bigint]
@@ -440,8 +442,9 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
       const owedVolatileRaw = chain.stableIsToken0 ? owed1 : owed0;
       const unclaimedFeesUsd = Number(owedStableRaw) * 1e-6 + Number(owedVolatileRaw) * 1e-18 * ethPrice;
       feeYieldMap.set(record.address, positionValueUsd > 0 ? (unclaimedFeesUsd / positionValueUsd) * 100 : 0);
+      feeYieldUsdMap.set(record.address, unclaimedFeesUsd);
     });
-    return { positionValueByVault: valueMap, feeYieldPctByVault: feeYieldMap };
+    return { positionValueByVault: valueMap, feeYieldPctByVault: feeYieldMap, feeYieldUsdByVault: feeYieldUsdMap };
   }, [openPositions, positionData, currentTickByPool, feeGrowthGlobalByPool, tickData]);
 
   // Live price range [low, high] per vault, in USD/ETH terms — ticks
@@ -710,6 +713,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         // into B1's numerator first.
         const realizedPct = cumulativeInvestmentUsd > 0 ? (netOperatingProfitUsd / cumulativeInvestmentUsd) * 100 : 0;
         const unrealizedPct = v.closed ? 0 : (feeYieldPctByVault.get(v.record.address) ?? 0);
+        const unrealizedFeesUsd = v.closed ? 0 : (feeYieldUsdByVault.get(v.record.address) ?? 0);
         const status: VaultStatus = v.closed ? "closed" : v.positionTokenId > 0n ? "active" : "no_position";
         return {
           address: v.record.address,
@@ -722,7 +726,8 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           valueUsd,
           priceRange: priceRangeByVault.get(v.record.address) ?? null,
           inRange: inRangeByVault.get(v.record.address) ?? null,
-          feesUsd,
+          // Same blend as netOperatingProfitPct below, in USD instead of %.
+          netFeesUsd: netOperatingProfitUsd + 0.9 * unrealizedFeesUsd,
           netOperatingProfitUsd,
           netOperatingProfitPct: realizedPct + 0.9 * unrealizedPct,
           rebalanceCount: Number(v.rebalanceCount),

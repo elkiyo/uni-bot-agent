@@ -696,7 +696,7 @@ const es = {
     colDate: "Fecha",
     colAge: "Antigüedad",
     colValue: "Valor",
-    colFees: "Comisiones",
+    colNetFees: "Comisiones netas",
     colChain: "Chain",
     colPool: "Pool",
     colVersion: "Versión",

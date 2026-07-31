@@ -667,7 +667,7 @@ function SortableHeader({
 type SortKey =
   | "createdAt"
   | "valueUsd"
-  | "feesUsd"
+  | "netFeesUsd"
   | "rangeWidthPct"
   | "rebalanceCount"
   | "netOperatingProfitPct";
@@ -678,7 +678,7 @@ function sortableColumns(
   return [
     { key: "createdAt", label: t("dashboard.colDate"), align: "left" },
     { key: "valueUsd", label: t("dashboard.colValue"), align: "right" },
-    { key: "feesUsd", label: t("dashboard.colFees"), align: "right" },
+    { key: "netFeesUsd", label: t("dashboard.colNetFees"), align: "right" },
     { key: "rangeWidthPct", label: t("dashboard.colRangeWidth"), align: "right" },
     { key: "rebalanceCount", label: t("dashboard.colRebalances"), align: "right" },
     // Appended rather than inserted in visual order — every other index
@@ -919,8 +919,12 @@ function VaultHistoryTable({
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                     {snapshotLoading ? "…" : usd(row.valueUsd)}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-positive">
-                    {eventsLoading ? "…" : usd(row.feesUsd)}
+                  <td
+                    className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${
+                      eventsLoading ? "" : row.netFeesUsd >= 0 ? "text-positive" : "text-negative"
+                    }`}
+                  >
+                    {eventsLoading ? "…" : `${row.netFeesUsd >= 0 ? "+" : ""}${usd(row.netFeesUsd)}`}
                   </td>
                   <td
                     className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${

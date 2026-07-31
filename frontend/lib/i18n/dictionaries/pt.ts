@@ -691,7 +691,7 @@ const pt: Dictionary = {
     colDate: "Data",
     colAge: "Idade",
     colValue: "Valor",
-    colFees: "Comissões",
+    colNetFees: "Comissões líquidas",
     colChain: "Chain",
     colPool: "Pool",
     colVersion: "Versão",
