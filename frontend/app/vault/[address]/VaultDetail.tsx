@@ -308,12 +308,17 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       ? t("vaults.returnLabel", { pct: ((feesUsdTotal / cumulativeInvestmentUsd) * 100).toFixed(2) })
       : undefined;
 
-  // Ganancia neta de operación's $ figure (netOperatingProfitUsd) is computed
-  // here since it only needs feesUsdTotal/gas — the % (netOperatingProfitPct)
-  // is computed further down, right after a1Usd/positionTokensOwedLive exist,
-  // since it also blends in the unrealized fee yield on the open position.
+  // Ganancia neta de operación = comisiones generadas − gas reembolsado al
+  // operador — mide si vale la pena operar el vault puramente en costos
+  // (ingreso por LP vs. lo que se le paga al keeper), deliberadamente SIN
+  // la desvalorización/revalorización del precio del par (eso ya lo cubre
+  // "Rentabilidad flotante" más abajo, que sí incluye impermanent loss).
   const gasSpentUsd = Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals));
   const netOperatingProfitUsd = feesUsdTotal !== undefined ? feesUsdTotal - gasSpentUsd : undefined;
+  const netOperatingProfitPct =
+    netOperatingProfitUsd !== undefined && cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
+      ? (netOperatingProfitUsd / cumulativeInvestmentUsd) * 100
+      : undefined;
 
   const isOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
@@ -1233,32 +1238,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
           return stableRaw * 10 ** -stableDecimals + volatileRaw * 10 ** -volatileDecimals * ethPrice;
         })()
       : undefined;
-
-  // Ganancia neta de operación % blends the realized part (comisiones − gas,
-  // sobre B1) with 90% of the unrealized fee yield on the OPEN position
-  // (unclaimed fees ÷ a1Usd) — same "Rendimiento de comisiones (posición
-  // actual)" metric app/vaults/page.tsx's feeYieldPct/PositionNFT.tsx's
-  // floatingYieldPct already show per-vault, added here at a discount since
-  // it hasn't actually been collected yet. Mirrors the same blend the
-  // Dashboard's "Ganancia neta de operación" column already does (see
-  // useProtocolMetrics.ts) — kept in sync by hand, same as B1 itself.
-  // Needs a1Usd/positionTokensOwedLive, so it's computed here instead of up
-  // near netOperatingProfitUsd above (neither of those is available yet).
-  const unrealizedFeesUsd =
-    positionTokensOwedLive && currentTick !== undefined
-      ? Number(stableIsToken0 ? positionTokensOwedLive.tokensOwed0 : positionTokensOwedLive.tokensOwed1) *
-          10 ** -stableDecimals +
-        Number(stableIsToken0 ? positionTokensOwedLive.tokensOwed1 : positionTokensOwedLive.tokensOwed0) *
-          10 ** -volatileDecimals *
-          ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
-      : undefined;
-  const feeYieldPct =
-    unrealizedFeesUsd !== undefined && a1Usd !== undefined && a1Usd > 0 ? (unrealizedFeesUsd / a1Usd) * 100 : 0;
-  const netOperatingProfitPct =
-    netOperatingProfitUsd !== undefined && cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
-      ? (netOperatingProfitUsd / cumulativeInvestmentUsd) * 100 + 0.9 * feeYieldPct
-      : undefined;
-
   const withdrawPreview =
     positionTicks && positionLiquidity !== undefined && positionTokensOwedLive && currentTick !== undefined
       ? (() => {
