@@ -681,7 +681,7 @@ const pt: Dictionary = {
     colVersion: "Versão",
     colRange: "Faixa",
     colRangeWidth: "Amplitude",
-    colNetProfit: "Lucro líquido",
+    colNetProfit: "Lucro operacional líquido",
     colRebalances: "Rebalanceamentos",
     colStatus: "Status",
     colHash: "Hash",

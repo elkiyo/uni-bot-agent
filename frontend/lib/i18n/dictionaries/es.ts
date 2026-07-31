@@ -686,7 +686,7 @@ const es = {
     colVersion: "Versión",
     colRange: "Rango",
     colRangeWidth: "Amplitud",
-    colNetProfit: "Ganancia neta",
+    colNetProfit: "Ganancia neta de operación",
     colRebalances: "Rebalanceos",
     colStatus: "Estado",
     colHash: "Hash",
