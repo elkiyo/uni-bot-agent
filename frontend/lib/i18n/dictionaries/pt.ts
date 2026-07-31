@@ -503,7 +503,6 @@ const pt: Dictionary = {
     netOperatingProfitHint: "Comissões menos gas reembolsado, sem contar a variação de preço do par",
     statRebalances: "Rebalanceamentos",
     statFees: "Comissões geradas",
-    statFeesClaimed: "Comissões resgatadas",
     statFeesReinjected: "Comissões reinjetadas",
     statFeesReinjectedHint: "{{count}} reinjeções",
 

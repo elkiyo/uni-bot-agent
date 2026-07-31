@@ -501,7 +501,6 @@ const es = {
     netOperatingProfitHint: "Comisiones − gas reembolsado, sin contar la variación de precio del par",
     statRebalances: "Rebalanceos",
     statFees: "Comisiones generadas",
-    statFeesClaimed: "Comisiones reclamadas",
     statFeesReinjected: "Comisiones reinyectadas",
     statFeesReinjectedHint: "{{count}} reinyecciones",
 

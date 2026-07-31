@@ -495,7 +495,6 @@ const zh: Dictionary = {
     netOperatingProfitHint: "手续费减去已报销的 Gas，不计入交易对的价格波动",
     statRebalances: "再平衡次数",
     statFees: "已产生手续费",
-    statFeesClaimed: "已领取手续费",
     statFeesReinjected: "已再投入手续费",
     statFeesReinjectedHint: "共 {{count}} 次再投入",
 

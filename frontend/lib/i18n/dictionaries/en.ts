@@ -503,7 +503,6 @@ const en: Dictionary = {
     netOperatingProfitHint: "Fees minus gas reimbursed, excluding the pair's price movement",
     statRebalances: "Rebalances",
     statFees: "Fees generated",
-    statFeesClaimed: "Fees claimed",
     statFeesReinjected: "Fees reinjected",
     statFeesReinjectedHint: "{{count}} reinjections",
 

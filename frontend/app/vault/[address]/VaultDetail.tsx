@@ -1922,15 +1922,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 hint2ClassName="mt-1 font-mono text-base font-bold text-accent-text"
                 accent
               />
-              <Stat
-                label={t("vaultDetail.statFeesClaimed")}
-                value={claimedUsd !== undefined ? `$${claimedUsd.toFixed(2)}` : `${feesUsdtStr} ${stableSymbol}`}
-                hint={
-                  feesWethRaw > 0n
-                    ? `${feesUsdtStr} ${stableSymbol} + ${feesWethStr} ${volatileSymbol}`
-                    : undefined
-                }
-              />
               {isCompound && (
                 <Stat
                   label={t("vaultDetail.statFeesReinjected")}
