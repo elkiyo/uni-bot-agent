@@ -1808,7 +1808,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         {data && (
           <>
             {/* Stats */}
-            <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
               <VaultAgeStat createdAt={createdAt} />
               <Stat
                 label={t("vaultDetail.statPositionValue")}
@@ -1857,7 +1857,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 <Stat
                   label={t("vaultDetail.statGasBudget")}
                   value={`${formatUnits(gasReserveBalance, stableDecimals)} ${stableSymbol}`}
-                  hint={t("vaultDetail.gasBudgetHint")}
+                  longHint={t("vaultDetail.gasBudgetHint")}
                   hint2={
                     (feesSummary?.gasReserveAddedRaw ?? 0n) > 0n
                       ? t("vaultDetail.gasBudgetAddedHint", {
@@ -1890,13 +1890,12 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 <Stat
                   label={t("vaultDetail.statNetOperatingProfit")}
                   value={netOperatingProfitUsd !== undefined ? `$${netOperatingProfitUsd.toFixed(2)}` : "—"}
-                  hint={t("vaultDetail.netOperatingProfitHint")}
+                  longHint={t("vaultDetail.netOperatingProfitHint")}
                   hint2={
                     netOperatingProfitPct !== undefined
                       ? `${netOperatingProfitPct >= 0 ? "+" : ""}${netOperatingProfitPct.toFixed(2)}%`
                       : undefined
                   }
-                  hintClassName="mt-1 text-xs text-faint"
                   hint2ClassName={`mt-1 text-sm font-semibold ${(netOperatingProfitPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}
                   accent={(netOperatingProfitUsd ?? 0) >= 0}
                 />
@@ -2526,6 +2525,7 @@ function Stat({
   value,
   hint,
   hint2,
+  longHint,
   accent,
   hintClassName,
   hint2ClassName,
@@ -2534,6 +2534,13 @@ function Stat({
   value: string;
   hint?: string;
   hint2?: string;
+  /** Explanatory (not data) text — e.g. "how this stat behaves" copy that's
+   * the same every time, unlike hint/hint2 which are this vault's actual
+   * numbers. Collapsed behind a tap/click-to-open <details> instead of
+   * always rendered, since a full sentence in every card was most of why
+   * this grid felt oversized. Native <details> needs no JS state and opens
+   * identically on tap (mobile) and click (desktop). */
+  longHint?: string;
   accent?: boolean;
   /** Overrides the default hint styling — e.g. the fees card wants its
    * USDT/WETH breakdown in green and larger than the other stats' hints. */
@@ -2544,13 +2551,28 @@ function Stat({
     <div
       className={
         accent
-          ? "glass rounded-2xl border-accent/35 bg-accent/[0.06] p-5"
-          : "glass rounded-2xl p-5"
+          ? "glass rounded-xl border-accent/35 bg-accent/[0.06] p-3.5"
+          : "glass rounded-xl p-3.5"
       }
     >
-      <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">{label}</span>
+      <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+        {label}
+        {longHint && (
+          <details className="group/hint relative">
+            <summary
+              className="flex h-3.5 w-3.5 shrink-0 cursor-pointer list-none items-center justify-center rounded-full border border-hairline text-[9px] normal-case text-faint marker:hidden hover:border-accent/50 hover:text-accent [&::-webkit-details-marker]:hidden"
+              aria-label="info"
+            >
+              i
+            </summary>
+            <p className="absolute left-0 top-5 z-10 w-48 rounded-lg border border-hairline bg-background p-2 text-[11px] font-normal normal-case leading-snug text-muted shadow-xl">
+              {longHint}
+            </p>
+          </details>
+        )}
+      </span>
       <p
-        className={`mt-2 text-lg font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`}
+        className={`mt-1.5 text-base font-semibold tabular-nums ${accent ? "text-accent-text" : "text-foreground/90"}`}
         style={{ fontFamily: "var(--font-display)" }}
       >
         {value}
