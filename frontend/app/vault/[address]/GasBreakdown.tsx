@@ -32,6 +32,7 @@ export function GasBreakdown({
     { key: "rebalance", label: t("gasBreakdown.actionRebalance"), entry: data.rebalance },
     { key: "reinjectIntoPosition", label: t("gasBreakdown.actionReinjectIntoPosition"), entry: data.reinjectIntoPosition },
     { key: "sweepIdleDust", label: t("gasBreakdown.actionSweepIdleDust"), entry: data.sweepIdleDust },
+    { key: "harvestFees", label: t("gasBreakdown.actionHarvestFees"), entry: data.harvestFees },
   ];
   const rows = allRows.filter((r) => r.entry.count > 0);
 

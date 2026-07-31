@@ -400,7 +400,7 @@ const en: Dictionary = {
   gasBreakdown: {
     title: "Gas spent breakdown",
     subtitle:
-      "Every gas reimbursement to the operator, grouped by which action triggered it — this is why the rebalance count on Gas spent can differ from the Rebalances stat: it also includes opening the position and idle-dust sweeps.",
+      "Every gas reimbursement to the operator, grouped by which action triggered it — this is why the rebalance count on Gas spent can differ from the Rebalances stat: it also includes opening the position, idle-dust sweeps, and (on compound-interest vaults) the automatic fee claim.",
     colAction: "Action",
     colCount: "Count",
     colTotal: "Total",
@@ -410,6 +410,7 @@ const en: Dictionary = {
     actionRebalance: "Rebalance",
     actionReinjectIntoPosition: "Manual reserve reinjection",
     actionSweepIdleDust: "Idle dust sweep",
+    actionHarvestFees: "Automatic fee claim",
   },
   reinjectionHistory: {
     title: "Reinjection history",

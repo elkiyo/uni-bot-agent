@@ -395,7 +395,7 @@ const zh: Dictionary = {
   },
   gasBreakdown: {
     title: "Gas 花费明细",
-    subtitle: "每一笔向运营方报销的 Gas，按触发它的操作分类——这就是为什么「已花费 Gas」里显示的再平衡次数可能与「再平衡」统计不一致：这里还包括开仓和闲置资产清扫。",
+    subtitle: "每一笔向运营方报销的 Gas，按触发它的操作分类——这就是为什么「已花费 Gas」里显示的再平衡次数可能与「再平衡」统计不一致：这里还包括开仓、闲置资产清扫，以及（复利金库）自动领取手续费。",
     colAction: "操作",
     colCount: "次数",
     colTotal: "合计",
@@ -405,6 +405,7 @@ const zh: Dictionary = {
     actionRebalance: "再平衡",
     actionReinjectIntoPosition: "手动再注入储备金",
     actionSweepIdleDust: "闲置资产清扫",
+    actionHarvestFees: "自动领取手续费",
   },
   reinjectionHistory: {
     title: "再投入历史",

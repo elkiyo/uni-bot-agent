@@ -398,7 +398,7 @@ const es = {
   gasBreakdown: {
     title: "Desglose de gas gastado",
     subtitle:
-      "Cada reembolso de gas al operador, agrupado por qué acción lo generó — por eso el conteo de rebalanceos en Gas gastado puede diferir del total de Rebalanceos: acá también entran la apertura de la posición y los barridos de sobrante.",
+      "Cada reembolso de gas al operador, agrupado por qué acción lo generó — por eso el conteo de rebalanceos en Gas gastado puede diferir del total de Rebalanceos: acá también entran la apertura de la posición, los barridos de sobrante y (en vaults de interés compuesto) el reclamo automático de comisiones.",
     colAction: "Acción",
     colCount: "Cantidad",
     colTotal: "Total",
@@ -408,6 +408,7 @@ const es = {
     actionRebalance: "Rebalanceo",
     actionReinjectIntoPosition: "Reinyección manual de reserva",
     actionSweepIdleDust: "Barrido de sobrante suelto",
+    actionHarvestFees: "Reclamo automático de comisiones",
   },
   reinjectionHistory: {
     title: "Historial de reinyecciones",

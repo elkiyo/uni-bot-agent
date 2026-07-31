@@ -400,7 +400,7 @@ const pt: Dictionary = {
   gasBreakdown: {
     title: "Detalhamento do gas gasto",
     subtitle:
-      "Cada reembolso de gas ao operador, agrupado pela ação que o gerou — por isso a contagem de rebalanceamentos em Gas gasto pode diferir do total de Rebalanceamentos: aqui também entram a abertura da posição e as varreduras de sobra.",
+      "Cada reembolso de gas ao operador, agrupado pela ação que o gerou — por isso a contagem de rebalanceamentos em Gas gasto pode diferir do total de Rebalanceamentos: aqui também entram a abertura da posição, as varreduras de sobra e (em vaults de juros compostos) o reclamo automático de comissões.",
     colAction: "Ação",
     colCount: "Quantidade",
     colTotal: "Total",
@@ -410,6 +410,7 @@ const pt: Dictionary = {
     actionRebalance: "Rebalanceamento",
     actionReinjectIntoPosition: "Reinjeção manual de reserva",
     actionSweepIdleDust: "Varredura de sobra",
+    actionHarvestFees: "Reclamo automático de comissões",
   },
   reinjectionHistory: {
     title: "Histórico de reinjeções",
