@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { useQueries } from "@tanstack/react-query";
@@ -129,6 +129,16 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
   const { t } = useTranslation();
   const targets = useMemo(() => factoryTargets(chains), [chains]);
 
+  // One shared ticking clock for every card's "Antigüedad del vault" stat —
+  // same "Xd Yh Zm" live counter as VaultDetail.tsx's VaultAgeStat, but a
+  // single interval here instead of one per card (same pattern dashboard/
+  // page.tsx's VaultHistoryTable already uses for the same reason).
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   // Stage 1: which vaults exist, per (chain, factory) target — one batched
   // call across every standard AND compound factory.
   const { data: vaultListsData, isLoading: vaultListsLoading } = useReadContracts({
@@ -227,7 +237,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
         <ul className="mt-10 flex flex-col gap-4">
           {activeVaults.map(({ chain, address, kind, createdAt }) => (
             <li key={`${chain.id}-${address}`}>
-              <VaultCard vaultAddress={address} chain={chain} kind={kind} createdAt={createdAt} />
+              <VaultCard vaultAddress={address} chain={chain} kind={kind} createdAt={createdAt} now={now} />
             </li>
           ))}
         </ul>
@@ -245,7 +255,7 @@ function AllVaults({ chains, owner }: { chains: ChainDef[]; owner: `0x${string}`
           <ul className="mt-4 flex flex-col gap-4">
             {closedVaults.map(({ chain, address, kind, createdAt }) => (
               <li key={`${chain.id}-${address}`}>
-                <VaultCard vaultAddress={address} chain={chain} kind={kind} createdAt={createdAt} isClosed />
+                <VaultCard vaultAddress={address} chain={chain} kind={kind} createdAt={createdAt} now={now} isClosed />
               </li>
             ))}
           </ul>
@@ -272,12 +282,14 @@ function VaultCard({
   chain,
   kind,
   createdAt,
+  now,
   isClosed,
 }: {
   vaultAddress: `0x${string}`;
   chain: ChainDef;
   kind: "standard" | "compound";
   createdAt?: number;
+  now: number;
   isClosed?: boolean;
 }) {
   // Clicking into a vault also switches the app's viewing chain to match it
@@ -555,11 +567,32 @@ function VaultCard({
           wrapping down on narrower screens. Color is reserved for what it
           actually means — accent on the headline position value, green/red
           only on genuine gain/loss figures, everything else neutral. */}
-      <div className="grid grid-cols-2 gap-4 border-t border-hairline bg-surface-1 px-5 py-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 border-t border-hairline bg-surface-1 px-5 py-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+        <StatCell label={t("vaultDetail.statAge")}>
+          <p className="text-sm font-medium text-foreground/90">
+            {createdAt !== undefined && createdAt > 0 ? formatAge(Math.max(0, now - createdAt)) : "—"}
+          </p>
+        </StatCell>
+
         <StatCell label={t("vaults.positionValue")}>
           <p className="text-lg font-semibold tabular-nums text-accent-text" style={{ fontFamily: "var(--font-display)" }}>
             {hasPosition && positionValueUsd !== undefined ? `$${positionValueUsd.toFixed(2)}` : "—"}
           </p>
+        </StatCell>
+
+        <StatCell label={t("vaultDetail.statInvested")}>
+          <p className="text-sm font-medium text-foreground/90">
+            {cumulativeInvestmentUsd !== undefined ? `$${cumulativeInvestmentUsd.toFixed(2)}` : "—"}
+          </p>
+          {hasPosition && positionValueUsd !== undefined && cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0 && (
+            <p
+              className={`mt-0.5 font-mono text-xs ${
+                positionValueUsd >= cumulativeInvestmentUsd ? "text-positive/70" : "text-negative"
+              }`}
+            >
+              {`${positionValueUsd >= cumulativeInvestmentUsd ? "+" : ""}${(positionValueUsd - cumulativeInvestmentUsd).toFixed(2)} (${(((positionValueUsd - cumulativeInvestmentUsd) / cumulativeInvestmentUsd) * 100).toFixed(2)}%)`}
+            </p>
+          )}
         </StatCell>
 
         <StatCell label={t("vaults.range")}>
@@ -606,6 +639,18 @@ function VaultCard({
       </div>
     </Link>
   );
+}
+
+// Same "Xd Yh Zm" shape as VaultDetail.tsx's own formatAge — file-local
+// duplicate (same convention as that file and dashboard/page.tsx), since
+// it's a tiny pure display helper, not worth sharing across pages.
+function formatAge(totalSeconds: number): string {
+  const d = Math.floor(totalSeconds / 86400);
+  const h = Math.floor((totalSeconds % 86400) / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 function StatCell({ label, children }: { label: string; children: React.ReactNode }) {
