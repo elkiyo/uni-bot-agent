@@ -671,7 +671,7 @@ type SortKey =
   | "yieldPct"
   | "rangeWidthPct"
   | "rebalanceCount"
-  | "netOperatingProfitUsd";
+  | "netOperatingProfitPct";
 
 function sortableColumns(
   t: ReturnType<typeof useTranslation>["t"],
@@ -688,7 +688,7 @@ function sortableColumns(
     // spot in the header JSX, so adding this at the end avoids re-numbering
     // every existing reference just to place it visually between Yield and
     // Rebalances (see the header JSX below for where it actually renders).
-    { key: "netOperatingProfitUsd", label: t("dashboard.colNetProfit"), align: "right" },
+    { key: "netOperatingProfitPct", label: t("dashboard.colNetProfit"), align: "right" },
   ];
 }
 
@@ -930,14 +930,12 @@ function VaultHistoryTable({
                   </td>
                   <td
                     className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${
-                      eventsLoading ? "" : row.netOperatingProfitUsd >= 0 ? "text-positive" : "text-negative"
+                      eventsLoading ? "" : row.netOperatingProfitPct >= 0 ? "text-positive" : "text-negative"
                     }`}
                   >
                     {eventsLoading
                       ? "…"
-                      : row.netOperatingProfitUsd >= 0
-                        ? usd(row.netOperatingProfitUsd)
-                        : `-${usd(-row.netOperatingProfitUsd)}`}
+                      : `${row.netOperatingProfitPct >= 0 ? "+" : ""}${row.netOperatingProfitPct.toFixed(2)}%`}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                     {snapshotLoading ? "…" : row.rebalanceCount}

@@ -73,6 +73,10 @@ export interface VaultRow {
    * price/IL" metric as VaultDetail.tsx's Ganancia neta de operación stat,
    * just derived here from this dashboard's own per-chain event scan. */
   netOperatingProfitUsd: number;
+  /** netOperatingProfitUsd as a % of B1 (cumulativeInvestmentUsd) — same
+   * denominator as yieldPct above, and the primary way VaultDetail.tsx's
+   * own Ganancia neta de operación card displays this stat. 0 when B1 is 0. */
+  netOperatingProfitPct: number;
   rebalanceCount: number;
   status: VaultStatus;
 }
@@ -556,6 +560,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
         const valueUsd = ledgerValue + positionValue;
         const feesUsd = vaultFeesByAddress.get(v.record.address.toLowerCase()) ?? 0;
         const gasUsd = vaultGasByAddress.get(v.record.address.toLowerCase()) ?? 0;
+        const netOperatingProfitUsd = feesUsd - gasUsd;
         const b1Raw = b1ByAddress.get(v.record.address.toLowerCase()) ?? 0n;
         const cumulativeInvestmentUsd = Number(b1Raw < 0n ? 0n : b1Raw) * 1e-6;
         const status: VaultStatus = v.closed ? "closed" : v.positionTokenId > 0n ? "active" : "no_position";
@@ -572,7 +577,8 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           inRange: inRangeByVault.get(v.record.address) ?? null,
           feesUsd,
           yieldPct: cumulativeInvestmentUsd > 0 ? (feesUsd / cumulativeInvestmentUsd) * 100 : 0,
-          netOperatingProfitUsd: feesUsd - gasUsd,
+          netOperatingProfitUsd,
+          netOperatingProfitPct: cumulativeInvestmentUsd > 0 ? (netOperatingProfitUsd / cumulativeInvestmentUsd) * 100 : 0,
           rebalanceCount: Number(v.rebalanceCount),
           status,
         };
