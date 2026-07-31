@@ -39,7 +39,6 @@ export interface FeeEvent {
 
 export interface RebalanceEvent {
   timestamp: number;
-  gasReimbursedUsd: number;
 }
 
 export interface ChainFetchError {
@@ -652,7 +651,17 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           const usd = Number(asBigIntField(args.amountUsd)) * 1e-6;
           gasReimbursedUsd += usd;
           addGas(row.address, usd);
-          rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: usd });
+          // Deliberately NOT pushed to rebalanceEvents — this event also
+          // fires on its own for a keeper-triggered fee-harvest/reinject
+          // cycle (no rebalance at all, see ReinjectionHistory.tsx's own
+          // docstring), and doubles up with the Rebalanced branch below on
+          // an actual rebalance (same tx emits both). Counting it here
+          // inflated the Dashboard's "Rebalances" chart total to ~3476 vs.
+          // the real on-chain rebalanceCount()-based stat card's 1871 — bug
+          // found live 2026-07-31 comparing the two side by side; confirmed
+          // by replaying real indexed events (Rebalanced-only count matched
+          // the stat card almost exactly, Rebalanced+KeeperGasReimbursed
+          // matched the inflated chart total almost exactly).
         } else if (row.event_name === "Deposited") {
           const investable = asBigIntField(args.investableAmount);
           const reserve = asBigIntField(args.reserveAmount);
@@ -673,7 +682,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           }
         } else if (row.event_name === "Rebalanced" || row.event_name === "IdleDustSwept") {
           if (row.event_name === "Rebalanced") {
-            rebalanceEvents.push({ timestamp: ts, gasReimbursedUsd: 0 });
+            rebalanceEvents.push({ timestamp: ts });
             if (row.usd_value !== null) mintVolumeEvents.push({ timestamp: ts, usd: Number(row.usd_value) });
             addB1(asBigIntField(args.reinjectedAmount));
           }

@@ -411,7 +411,7 @@ function RebalanceSeriesChart({
   granularity,
   isLoading,
 }: {
-  events: { timestamp: number; gasReimbursedUsd: number }[];
+  events: { timestamp: number }[];
   granularity: Granularity;
   isLoading: boolean;
 }) {
