@@ -483,6 +483,8 @@ const es = {
     statGasSpent: "Gas gastado",
     gasSpentHint: "reembolsado al operador en {{count}} rebalanceos",
     gasSpentAvgHint: "promedio ${{amount}} por rebalanceo",
+    statNetOperatingProfit: "Ganancia neta de operación",
+    netOperatingProfitHint: "Comisiones − gas reembolsado, sin contar la variación de precio del par",
     statRebalances: "Rebalanceos",
     statFees: "Comisiones generadas",
     statFeesClaimed: "Comisiones reclamadas",

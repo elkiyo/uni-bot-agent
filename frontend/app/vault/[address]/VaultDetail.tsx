@@ -308,6 +308,18 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       ? t("vaults.returnLabel", { pct: ((feesUsdTotal / cumulativeInvestmentUsd) * 100).toFixed(2) })
       : undefined;
 
+  // Ganancia neta de operación = comisiones generadas − gas reembolsado al
+  // operador — mide si vale la pena operar el vault puramente en costos
+  // (ingreso por LP vs. lo que se le paga al keeper), deliberadamente SIN
+  // la desvalorización/revalorización del precio del par (eso ya lo cubre
+  // "Rentabilidad flotante" más abajo, que sí incluye impermanent loss).
+  const gasSpentUsd = Number(formatUnits(feesSummary?.gasReimbursedUsdRaw ?? 0n, stableDecimals));
+  const netOperatingProfitUsd = feesUsdTotal !== undefined ? feesUsdTotal - gasSpentUsd : undefined;
+  const netOperatingProfitPct =
+    netOperatingProfitUsd !== undefined && cumulativeInvestmentUsd !== undefined && cumulativeInvestmentUsd > 0
+      ? (netOperatingProfitUsd / cumulativeInvestmentUsd) * 100
+      : undefined;
+
   const isOwner = Boolean(
     connected && owner && (connected as string).toLowerCase() === (owner as string).toLowerCase(),
   );
@@ -1872,6 +1884,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                         })
                       : undefined
                   }
+                />
+              )}
+              {chain.supportsGasReserve && (
+                <Stat
+                  label={t("vaultDetail.statNetOperatingProfit")}
+                  value={netOperatingProfitUsd !== undefined ? `$${netOperatingProfitUsd.toFixed(2)}` : "—"}
+                  hint={t("vaultDetail.netOperatingProfitHint")}
+                  hint2={
+                    netOperatingProfitPct !== undefined
+                      ? `${netOperatingProfitPct >= 0 ? "+" : ""}${netOperatingProfitPct.toFixed(2)}%`
+                      : undefined
+                  }
+                  hintClassName="mt-1 text-xs text-faint"
+                  hint2ClassName={`mt-1 text-sm font-semibold ${(netOperatingProfitPct ?? 0) >= 0 ? "text-positive" : "text-negative"}`}
+                  accent={(netOperatingProfitUsd ?? 0) >= 0}
                 />
               )}
               <Stat

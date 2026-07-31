@@ -479,6 +479,8 @@ const zh: Dictionary = {
     statGasSpent: "已花费 Gas",
     gasSpentHint: "已在 {{count}} 次再平衡中报销给运营方",
     gasSpentAvgHint: "平均每次再平衡 ${{amount}}",
+    statNetOperatingProfit: "净运营收益",
+    netOperatingProfitHint: "手续费减去已报销的 Gas，不计入交易对的价格波动",
     statRebalances: "再平衡次数",
     statFees: "已产生手续费",
     statFeesClaimed: "已领取手续费",

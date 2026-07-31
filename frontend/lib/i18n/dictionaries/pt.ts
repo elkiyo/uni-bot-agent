@@ -485,6 +485,8 @@ const pt: Dictionary = {
     statGasSpent: "Gas gasto",
     gasSpentHint: "reembolsado ao operador em {{count}} rebalanceamentos",
     gasSpentAvgHint: "média de ${{amount}} por rebalanceamento",
+    statNetOperatingProfit: "Lucro operacional líquido",
+    netOperatingProfitHint: "Comissões menos gas reembolsado, sem contar a variação de preço do par",
     statRebalances: "Rebalanceamentos",
     statFees: "Comissões geradas",
     statFeesClaimed: "Comissões resgatadas",

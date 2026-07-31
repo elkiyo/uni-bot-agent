@@ -485,6 +485,8 @@ const en: Dictionary = {
     statGasSpent: "Gas spent",
     gasSpentHint: "reimbursed to the operator over {{count}} rebalances",
     gasSpentAvgHint: "${{amount}} average per rebalance",
+    statNetOperatingProfit: "Net operating profit",
+    netOperatingProfitHint: "Fees minus gas reimbursed, excluding the pair's price movement",
     statRebalances: "Rebalances",
     statFees: "Fees generated",
     statFeesClaimed: "Fees claimed",
