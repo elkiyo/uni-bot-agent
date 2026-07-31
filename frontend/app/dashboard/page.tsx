@@ -668,7 +668,6 @@ type SortKey =
   | "createdAt"
   | "valueUsd"
   | "feesUsd"
-  | "yieldPct"
   | "rangeWidthPct"
   | "rebalanceCount"
   | "netOperatingProfitPct";
@@ -680,7 +679,6 @@ function sortableColumns(
     { key: "createdAt", label: t("dashboard.colDate"), align: "left" },
     { key: "valueUsd", label: t("dashboard.colValue"), align: "right" },
     { key: "feesUsd", label: t("dashboard.colFees"), align: "right" },
-    { key: "yieldPct", label: t("dashboard.colYield"), align: "right" },
     { key: "rangeWidthPct", label: t("dashboard.colRangeWidth"), align: "right" },
     { key: "rebalanceCount", label: t("dashboard.colRebalances"), align: "right" },
     // Appended rather than inserted in visual order — every other index
@@ -842,7 +840,7 @@ function VaultHistoryTable({
                   options={[{ value: "all", label: t("dashboard.colVersion") }, ...versionOptions.map((v) => ({ value: v, label: v }))]}
                 />
                 <th className="px-4 py-3 font-normal">{t("dashboard.colRange")}</th>
-                <SortableHeader column={SORTABLE_COLUMNS[4]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <FilterHeader
                   value={poolRangeFilter}
                   onChange={(v) => setPoolRangeFilter(v as "all" | "in" | "out" | "none")}
@@ -855,9 +853,8 @@ function VaultHistoryTable({
                 />
                 <SortableHeader column={SORTABLE_COLUMNS[1]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[2]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                <SortableHeader column={SORTABLE_COLUMNS[3]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                <SortableHeader column={SORTABLE_COLUMNS[6]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <SortableHeader column={SORTABLE_COLUMNS[5]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortableHeader column={SORTABLE_COLUMNS[4]} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                 <FilterHeader
                   value={statusFilter}
                   onChange={(v) => setStatusFilter(v as VaultStatus | "all")}
@@ -924,9 +921,6 @@ function VaultHistoryTable({
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-positive">
                     {eventsLoading ? "…" : usd(row.feesUsd)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                    {eventsLoading || snapshotLoading ? "…" : row.valueUsd > 0 ? `${row.yieldPct.toFixed(2)}%` : "—"}
                   </td>
                   <td
                     className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${

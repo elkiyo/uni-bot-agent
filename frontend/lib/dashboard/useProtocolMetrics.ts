@@ -72,10 +72,6 @@ export interface VaultRow {
    * totalUsdt/totalWeth) — the platform's cut is still tracked separately
    * in platformFeesUsd above, just not folded into this per-vault figure. */
   feesUsd: number;
-  /** feesUsd as a % of the vault's current value — a coarse, non-annualized
-   * proxy for return (fees generated relative to what's deployed right now,
-   * NOT a time-weighted or annualized APY). 0 when valueUsd is 0. */
-  yieldPct: number;
   /** feesUsd minus cumulative gas reimbursed to the keeper — realized only
    * (claimed/reinjected fees, not what's still accruing in an open
    * position). Same "ignore price/IL" metric as VaultDetail.tsx's Ganancia
@@ -135,7 +131,7 @@ export interface ProtocolMetrics {
    * historical position+pool read that used to make this the slowest part
    * of the hook now happens once, server-side, at index time). */
   mintVolumeLoading: boolean;
-  /** One row per vault ever created, newest first — feesUsd/yieldPct need
+  /** One row per vault ever created, newest first — feesUsd needs
    * eventsLoading, valueUsd/priceRange need snapshotLoading, so this is only
    * fully accurate once BOTH have resolved (see vaultRowsLoading). */
   vaultRows: VaultRow[];
@@ -727,7 +723,6 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           priceRange: priceRangeByVault.get(v.record.address) ?? null,
           inRange: inRangeByVault.get(v.record.address) ?? null,
           feesUsd,
-          yieldPct: cumulativeInvestmentUsd > 0 ? (feesUsd / cumulativeInvestmentUsd) * 100 : 0,
           netOperatingProfitUsd,
           netOperatingProfitPct: realizedPct + 0.9 * unrealizedPct,
           rebalanceCount: Number(v.rebalanceCount),
