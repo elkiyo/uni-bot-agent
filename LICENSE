@@ -1,0 +1,37 @@
+Copyright (c) 2026 Harold Giraldo Valencia. All rights reserved.
+
+This repository is public for transparency and hackathon-verification purposes
+(Celo "Agentic Payments & DeFAI" hackathon — github.com/elkiyo/uni-bot-agent).
+
+Except where a specific file explicitly states otherwise, no permission is
+granted to copy, modify, merge, publish, distribute, sublicense, or otherwise
+use this software or any part of it, in source or compiled form, for any
+purpose. All rights are reserved by the copyright holder.
+
+Exception: files under contracts/src/ (including contracts/src/compound/)
+that carry their own `SPDX-License-Identifier: MIT` header are licensed
+under the MIT License below for that specific file only. That license does
+not extend to the frontend, keeper, agent, or any other part of this
+repository unless a file there also carries its own MIT header.
+
+-------------------------------------------------------------------------------
+
+MIT License (applies only to files that carry an SPDX-License-Identifier: MIT
+header)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of the affected file(s), to deal in the file(s) without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the file(s), and to permit persons to whom
+the file(s) is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the file(s).
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
