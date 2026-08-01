@@ -1384,7 +1384,7 @@ async function computeRebalanceParams(
   // Supabase-backed (a fresh serverless invocation per tick) instead of an
   // in-memory flag.
   const X402_BREAKER_WINDOW_MS = 5 * 60 * 1000;
-  const X402_BREAKER_FAILURE_THRESHOLD = 3; // "more than 2" failures
+  const X402_BREAKER_FAILURE_THRESHOLD = 1; // trip on the very first failure — no point burning X402_TIMEOUT_MS a 2nd/3rd time once it's down
   const X402_BREAKER_TRIP_MS = 25 * 60 * 1000;
 
   let resp: RcRlpRebalanceResponse | undefined;
