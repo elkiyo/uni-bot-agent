@@ -1103,6 +1103,7 @@ const zh: Dictionary = {
     operatorLabel: "运营方",
     statGasLabel: "{{symbol}}（gas，{{chain}}）",
     statUsdcLabel: "USDC（x402，Celo）",
+    statUsdtLabel: "USDT（直接支付备用，Celo）",
     statUnilabQueries: "对 uni-lab 的查询",
     statUnilabValue: "{{ok}} 次成功 / {{failed}} 次失败",
     statPlatformRevenue: "平台收入",

@@ -1112,6 +1112,7 @@ const pt: Dictionary = {
     operatorLabel: "Operador",
     statGasLabel: "{{symbol}} (gas, {{chain}})",
     statUsdcLabel: "USDC (x402, Celo)",
+    statUsdtLabel: "USDT (pagamento direto de reserva, Celo)",
     statUnilabQueries: "Consultas ao uni-lab",
     statUnilabValue: "{{ok}} ok / {{failed}} falhas",
     statPlatformRevenue: "Revenue da plataforma",

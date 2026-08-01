@@ -254,7 +254,9 @@ export const positionManagerAbi = [
 // decimals/symbol — the two calls that let a vault's pair be resolved live
 // from token0()/token1()/stableIsToken0() alone, with no separate per-pair
 // registry needed for reading an already-deployed vault (see
-// lib/keeper/pairInfo.ts).
+// lib/keeper/pairInfo.ts) — plus `transfer`, needed by the operator's direct
+// on-chain payment to uni-lab.xyz when x402 is unavailable (see
+// lib/keeper/unilab.ts#rcRlpRebalanceViaDirectPayment).
 export const erc20Abi = [
   {
     type: "function",
@@ -262,6 +264,16 @@ export const erc20Abi = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
       { name: "amount", type: "uint256" },
     ],
     outputs: [{ name: "", type: "bool" }],

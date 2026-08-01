@@ -1126,6 +1126,7 @@ const es = {
     operatorLabel: "Operador",
     statGasLabel: "{{symbol}} (gas, {{chain}})",
     statUsdcLabel: "USDC (x402, Celo)",
+    statUsdtLabel: "USDT (respaldo de pago directo, Celo)",
     statUnilabQueries: "Consultas a uni-lab",
     statUnilabValue: "{{ok}} ok / {{failed}} fallidas",
     statPlatformRevenue: "Revenue de plataforma",

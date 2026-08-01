@@ -2,7 +2,12 @@ import "server-only";
 import { BaseError, ContractFunctionRevertedError, parseEventLogs, type Abi, type Address } from "viem";
 import { operatorAccount, type ChainRuntime } from "./wallet";
 import { vaultContract, uniswapV3PoolAbi, positionManagerAbi, sendTaggedTx } from "./serverContracts";
-import { rcRlpRebalanceViaX402, type RcRlpRebalanceResponse } from "./unilab";
+import {
+  rcRlpRebalanceViaX402,
+  rcRlpRebalanceViaDirectPayment,
+  hasEnoughOperatorUsdtForDirectPayment,
+  type RcRlpRebalanceResponse,
+} from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing, alignTickOutward } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeCoverage, targetRawRatio } from "./swapMath";
 
@@ -1343,31 +1348,63 @@ async function computeRebalanceParams(
     reinvestmentAmountUsd: 0,
   };
 
-  // x402-only (2026-07-15) — the operator's own USDC pays uni-lab directly,
-  // no vault budget involved at all, always via Celo regardless of which
-  // chain THIS vault lives on (see unilab.ts's own docstring). Confirmed
-  // working end-to-end on-chain, see HACKATHON.md "Track 2 — x402". The
-  // retired on-chain payUniLabFee()+tx_hash path is gone.
+  // x402 by default (2026-07-15) — the operator's own USDC pays uni-lab
+  // directly, no vault budget involved at all, always via Celo regardless of
+  // which chain THIS vault lives on (see unilab.ts's own docstring).
+  // Confirmed working end-to-end on-chain, see HACKATHON.md "Track 2 —
+  // x402". The old vault-funded payUniLabFee()/usdtBudget path is still
+  // gone (retired 7b7d5a3) — the direct-payment fallback below pays from
+  // the OPERATOR's own wallet too, just a different rail, not a
+  // resurrection of that ledger.
+  //
+  // Direct-payment fallback (added 2026-08-01, after uni-lab.xyz's x402
+  // handshake broke — every call started throwing "Failed to parse payment
+  // requirements", confirmed via /api/admin/unilab-calls): if x402 fails,
+  // try uni-lab's other documented payment rail (a plain on-chain USDT
+  // transfer + tx_hash, see unilab.ts#rcRlpRebalanceViaDirectPayment)
+  // before giving up on the cycle.
   //
   // No local fallback for the actual mint (explicit product decision,
   // 2026-07-16): the ceiling on a real rebalance — periodic or
-  // out-of-range-bottom — must come from uni-lab's live simulation. If x402
-  // fails, uni-lab is unreachable, or the response has no usable field, the
-  // pool is left exactly as-is this cycle rather than minting against a
-  // local guess — the guess was confirmed to reliably produce a position
-  // that's already out of range on arrival (vault 0x8Ed2ad9f...42737C88,
-  // 2026-07-16, see note above).
+  // out-of-range-bottom — must come from uni-lab's live simulation. If
+  // BOTH payment rails fail, uni-lab is unreachable, or the response has no
+  // usable field, the pool is left exactly as-is this cycle rather than
+  // minting against a local guess — the guess was confirmed to reliably
+  // produce a position that's already out of range on arrival (vault
+  // 0x8Ed2ad9f...42737C88, 2026-07-16, see note above). This only widens
+  // HOW a real uni-lab answer gets paid for, never what happens without one.
   let resp: RcRlpRebalanceResponse | undefined;
   try {
     resp = await rcRlpRebalanceViaX402(record.uniLabApiKey, baseParams, vaultAddress, chain.id);
-  } catch (err) {
+  } catch (x402Err) {
     logEvent({
       level: "warn",
       vault: vaultAddress,
-      msg: "rc-rlp-rebalance (x402) call failed — skipping cycle, no local fallback for the real mint",
-      err: String(err),
+      msg: "rc-rlp-rebalance (x402) call failed — attempting direct-payment fallback",
+      err: String(x402Err),
     });
-    return null;
+
+    const gate = await hasEnoughOperatorUsdtForDirectPayment();
+    if (!gate.ok) {
+      logEvent({
+        level: "warn",
+        vault: vaultAddress,
+        msg: `direct-payment fallback unavailable (${gate.reason}) — skipping cycle, no local fallback for the real mint`,
+      });
+      return null;
+    }
+
+    try {
+      resp = await rcRlpRebalanceViaDirectPayment(record.uniLabApiKey, baseParams, vaultAddress, chain.id);
+    } catch (directErr) {
+      logEvent({
+        level: "warn",
+        vault: vaultAddress,
+        msg: "rc-rlp-rebalance (direct-payment) call also failed — skipping cycle, no local fallback for the real mint",
+        err: String(directErr),
+      });
+      return null;
+    }
   }
 
   // Confirmed schema (2026-07-13, from a real 200 response — see the

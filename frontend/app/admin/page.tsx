@@ -15,7 +15,7 @@ import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { Header } from "../components/Header";
 import { VolumeChart } from "./VolumeChart";
 import { platformConfigAbi, uniswapV3PoolAbi, positionManagerAbi, erc20Abi } from "@/lib/contracts";
-import { USDC } from "@/lib/addresses";
+import { USDC, USDT } from "@/lib/addresses";
 import { ethPriceFromTick } from "@/lib/priceMath";
 import { estimatePositionAmounts } from "@/lib/keeper/swapMath";
 import { useSelectedChain, useAvailableChains } from "@/lib/useSelectedChain";
@@ -290,6 +290,19 @@ export default function Admin() {
     args: defaultOperator ? [defaultOperator as Address] : undefined,
     query: { enabled: Boolean(defaultOperator), refetchInterval: 60_000 },
   });
+  // Same Celo-side-only reasoning as operatorUsdc above — needed as of
+  // 2026-08-01 for the direct-payment fallback to uni-lab.xyz (used only
+  // when x402 fails, see unilab.ts#rcRlpRebalanceViaDirectPayment). A new
+  // operational prerequisite worth surfacing here: the operator never
+  // needed USDT before (only USDC, for x402), so this likely reads 0 until
+  // someone funds it.
+  const { data: operatorUsdt } = useReadContract({
+    address: USDT,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: defaultOperator ? [defaultOperator as Address] : undefined,
+    query: { enabled: Boolean(defaultOperator), refetchInterval: 60_000 },
+  });
   const operatorGasLow = operatorGas !== undefined && Number(operatorGas.formatted) < chain.lowGasThreshold;
 
   const [uniLabCalls, setUniLabCalls] = useState<UniLabCallRow[] | null>(null);
@@ -523,6 +536,10 @@ export default function Admin() {
               <Stat
                 label={t("admin.statUsdcLabel")}
                 value={operatorUsdc !== undefined ? `${formatUnits(operatorUsdc as bigint, 6)} USDC` : "…"}
+              />
+              <Stat
+                label={t("admin.statUsdtLabel")}
+                value={operatorUsdt !== undefined ? `${formatUnits(operatorUsdt as bigint, 6)} USDT` : "…"}
               />
               <Stat
                 label={t("admin.statUnilabQueries")}
