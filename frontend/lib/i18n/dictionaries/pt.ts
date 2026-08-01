@@ -145,7 +145,7 @@ const pt: Dictionary = {
     safeWaitingMsg:
       "Proposta ao seu Safe — assinaturas: {{submitted}}/{{required}}. Vá até a aba Queue do seu Safe para que os demais donos assinem; esta tela continua sozinha quando for executada.",
     resumeBannerText:
-      "Você tem um vault não configurado criado com este Safe ({{address}}). Pode continuar configurando ele em vez de criar um novo, evitando pagar a taxa de criação de novo.",
+      "Você tem um vault não configurado ({{address}}). Pode continuar configurando ele em vez de criar um novo, evitando pagar a taxa de criação de novo.",
     resumeBannerButton: "Continuar configurando esse vault",
 
     errMissingFields: "Preencha todos os campos — não há valores padrão.",
@@ -582,9 +582,11 @@ const pt: Dictionary = {
       "Independentes entre si — saque um % da posição ativa, um % dos fundos ociosos (investível + reserva), ou ambos, sem fechar o vault.",
     fieldPositionPct: "% da posição",
     fieldIdleFundsPct: "% de fundos ociosos",
-    fieldInvestablePct: "% de investível",
-    fieldReservePct: "% de reserva",
-    fieldGasReservePct: "% de reserva de gás",
+    fieldInvestableAmount: "Investível a sacar",
+    fieldReserveAmount: "Reserva a sacar",
+    fieldGasReserveAmount: "Reserva de gás a sacar",
+    availableBalance: "Disponível: {{amount}} {{symbol}}",
+    errAmountOverAvailable: "O valor não pode superar o disponível",
     pctMax: "Máx.",
     withdrawReviewPosition: "Da posição ({{pct}}%)",
     withdrawReviewFunds: "De fundos ociosos ({{pct}}%)",

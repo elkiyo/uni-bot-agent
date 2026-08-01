@@ -636,9 +636,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // split it into 3 fully independent buckets below (see withdraw()'s own
   // signature change documented in CLAUDE.md's "Interés compuesto V2").
   const [withdrawFundsPct, setWithdrawFundsPct] = useState("0");
-  const [withdrawInvestablePct, setWithdrawInvestablePct] = useState("0");
-  const [withdrawReservePct, setWithdrawReservePct] = useState("0");
-  const [withdrawGasReservePct, setWithdrawGasReservePct] = useState("0");
+  // Amounts (in the stable token's own units), not percentages — the owner
+  // sees each bucket's real available balance and types (or quick-picks) how
+  // much of it to withdraw; converted back to bps just before the contract
+  // call, since withdraw() itself only ever takes bps (see the derivation
+  // below). Quick buttons still emit "25"/"50"/"75"/"100" (LightPctQuickButtons
+  // is unchanged) — the onPick handlers convert that to an actual amount.
+  const [withdrawInvestableAmount, setWithdrawInvestableAmount] = useState("0");
+  const [withdrawReserveAmount, setWithdrawReserveAmount] = useState("0");
+  const [withdrawGasReserveAmount, setWithdrawGasReserveAmount] = useState("0");
   // Uniswap-style liquidity actions — "Agregar liquidez"/"Eliminar
   // liquidez"/"Cobrar comisiones" each open their own modal (input step,
   // then a review step before the wallet ever opens) instead of living as
@@ -1144,16 +1150,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   }
 
   async function handlePartialWithdraw() {
-    const positionShareBps = BigInt(Math.round(Number(withdrawPositionPct || "0") * 100));
+    // Reuses the same bps figures already derived above (withdrawInvestable/
+    // Reserve/GasReserveShareBps convert the owner-typed AMOUNTS back to bps
+    // via each bucket's own available balance) — never recomputed here, so
+    // this can't drift from what the review screen showed.
+    const positionShareBps = BigInt(withdrawPositionShareBps);
     // Compound (V2) vaults: 3 fully independent buckets. Standard (V1)
     // vaults: one shared bucket, withdraw() there only takes 2 args total.
     const withdrawArgs = isCompound
-      ? [
-          positionShareBps,
-          BigInt(Math.round(Number(withdrawInvestablePct || "0") * 100)),
-          BigInt(Math.round(Number(withdrawReservePct || "0") * 100)),
-          BigInt(Math.round(Number(withdrawGasReservePct || "0") * 100)),
-        ]
+      ? [positionShareBps, BigInt(withdrawInvestableShareBps), BigInt(withdrawReserveShareBps), BigInt(withdrawGasReserveShareBps)]
       : [positionShareBps, BigInt(Math.round(Number(withdrawFundsPct || "0") * 100))];
     if (withdrawArgs.every((bps) => bps === 0n)) return;
     if (withdrawArgs.some((bps) => bps > 10_000n)) {
@@ -1171,9 +1176,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     );
     setWithdrawPositionPct("0");
     setWithdrawFundsPct("0");
-    setWithdrawInvestablePct("0");
-    setWithdrawReservePct("0");
-    setWithdrawGasReservePct("0");
+    setWithdrawInvestableAmount("0");
+    setWithdrawReserveAmount("0");
+    setWithdrawGasReserveAmount("0");
   }
 
   // Owner-only switch — sits right under the "view on Uniswap" link in
@@ -1217,9 +1222,30 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // tokensOwed0/1, same reasoning as collectPreview below.
   const withdrawPositionShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawPositionPct) || 0) * 100)));
   const withdrawFundsShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawFundsPct) || 0) * 100)));
-  const withdrawInvestableShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawInvestablePct) || 0) * 100)));
-  const withdrawReserveShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawReservePct) || 0) * 100)));
-  const withdrawGasReserveShareBps = Math.min(10_000, Math.max(0, Math.round((Number(withdrawGasReservePct) || 0) * 100)));
+  // Each bucket's real balance, in human units — shown as "Disponible" next
+  // to its own input, and used to convert the typed amount back into the
+  // bps withdraw() actually needs. >= available (rather than an exact
+  // equality check) both handles the "Máx." quick button landing on bps
+  // 10_000 despite float rounding, and clamps a manually-typed overshoot to
+  // "withdraw everything" instead of silently doing nothing.
+  const investableAvailable = Number(formatUnits((investableUsdt as bigint) ?? 0n, stableDecimals));
+  const reserveAvailable = Number(formatUnits((reserveBalance as bigint) ?? 0n, stableDecimals));
+  const gasReserveAvailable = Number(formatUnits(gasReserveBalance, stableDecimals));
+  const amountToBps = (amount: string, available: number): number => {
+    const n = Number(amount) || 0;
+    if (n <= 0 || available <= 0) return 0;
+    if (n >= available) return 10_000;
+    return Math.min(10_000, Math.max(0, Math.round((n / available) * 10_000)));
+  };
+  const withdrawInvestableShareBps = amountToBps(withdrawInvestableAmount, investableAvailable);
+  const withdrawReserveShareBps = amountToBps(withdrawReserveAmount, reserveAvailable);
+  const withdrawGasReserveShareBps = amountToBps(withdrawGasReserveAmount, gasReserveAvailable);
+  // Inverse of amountToBps, for the quick-pick buttons — LightPctQuickButtons
+  // still emits a plain "25"/"50"/"75"/"100" pct string, this turns that into
+  // an actual amount of the given bucket's own available balance. toFixed(6)
+  // then round-tripped through Number strips trailing zeros (e.g. "12.5"
+  // instead of "12.500000") without losing USDC's own 6-decimal precision.
+  const amountFromPct = (pct: string, available: number): string => String(Number(((available * (Number(pct) || 0)) / 100).toFixed(6)));
   // A1 — current live value of the position (principal only, no uncollected
   // fees), same formula PositionNFT.tsx uses for its own "$XX.XX" display —
   // duplicated here rather than shared since that component re-derives it
@@ -1433,35 +1459,56 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     // above for the scroll/sticky-header half of that fix.
                     <div className="grid grid-cols-2 gap-x-3 gap-y-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestablePct")}</span>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestableAmount")}</span>
+                          <span className="font-mono text-[11px] text-black/40">
+                            {t("vaultDetail.availableBalance", { amount: investableAvailable.toFixed(6), symbol: stableSymbol })}
+                          </span>
+                        </div>
                         <input
                           className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
-                          value={withdrawInvestablePct}
-                          onChange={(e) => setWithdrawInvestablePct(e.target.value)}
+                          value={withdrawInvestableAmount}
+                          onChange={(e) => setWithdrawInvestableAmount(e.target.value)}
                           inputMode="decimal"
                         />
-                        <LightPctQuickButtons onPick={setWithdrawInvestablePct} />
+                        <LightPctQuickButtons
+                          onPick={(pct) => setWithdrawInvestableAmount(amountFromPct(pct, investableAvailable))}
+                        />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs text-black/60">{t("vaultDetail.fieldReservePct")}</span>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs text-black/60">{t("vaultDetail.fieldReserveAmount")}</span>
+                          <span className="font-mono text-[11px] text-black/40">
+                            {t("vaultDetail.availableBalance", { amount: reserveAvailable.toFixed(6), symbol: stableSymbol })}
+                          </span>
+                        </div>
                         <input
                           className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
-                          value={withdrawReservePct}
-                          onChange={(e) => setWithdrawReservePct(e.target.value)}
+                          value={withdrawReserveAmount}
+                          onChange={(e) => setWithdrawReserveAmount(e.target.value)}
                           inputMode="decimal"
                         />
-                        <LightPctQuickButtons onPick={setWithdrawReservePct} />
+                        <LightPctQuickButtons
+                          onPick={(pct) => setWithdrawReserveAmount(amountFromPct(pct, reserveAvailable))}
+                        />
                       </div>
                       {chain.supportsGasReserve && (
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-xs text-black/60">{t("vaultDetail.fieldGasReservePct")}</span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs text-black/60">{t("vaultDetail.fieldGasReserveAmount")}</span>
+                            <span className="font-mono text-[11px] text-black/40">
+                              {t("vaultDetail.availableBalance", { amount: gasReserveAvailable.toFixed(6), symbol: stableSymbol })}
+                            </span>
+                          </div>
                           <input
                             className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
-                            value={withdrawGasReservePct}
-                            onChange={(e) => setWithdrawGasReservePct(e.target.value)}
+                            value={withdrawGasReserveAmount}
+                            onChange={(e) => setWithdrawGasReserveAmount(e.target.value)}
                             inputMode="decimal"
                           />
-                          <LightPctQuickButtons onPick={setWithdrawGasReservePct} />
+                          <LightPctQuickButtons
+                            onPick={(pct) => setWithdrawGasReserveAmount(amountFromPct(pct, gasReserveAvailable))}
+                          />
                         </div>
                       )}
                     </div>
@@ -1480,13 +1527,27 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
                 <button
                   onClick={() => {
-                    const pctFields = isCompound
-                      ? [withdrawPositionPct, withdrawInvestablePct, withdrawReservePct, withdrawGasReservePct]
-                      : [withdrawPositionPct, withdrawFundsPct];
-                    if (pctFields.every((pct) => (Number(pct) || 0) === 0)) return;
-                    if (pctFields.some((pct) => (Number(pct) || 0) > 100)) {
-                      setError(t("vaultDetail.errPctOver100"));
-                      return;
+                    if (isCompound) {
+                      const positionPct = Number(withdrawPositionPct) || 0;
+                      const investableAmt = Number(withdrawInvestableAmount) || 0;
+                      const reserveAmt = Number(withdrawReserveAmount) || 0;
+                      const gasReserveAmt = Number(withdrawGasReserveAmount) || 0;
+                      if (positionPct === 0 && investableAmt === 0 && reserveAmt === 0 && gasReserveAmt === 0) return;
+                      if (positionPct > 100) {
+                        setError(t("vaultDetail.errPctOver100"));
+                        return;
+                      }
+                      if (investableAmt > investableAvailable || reserveAmt > reserveAvailable || gasReserveAmt > gasReserveAvailable) {
+                        setError(t("vaultDetail.errAmountOverAvailable"));
+                        return;
+                      }
+                    } else {
+                      const pctFields = [withdrawPositionPct, withdrawFundsPct];
+                      if (pctFields.every((pct) => (Number(pct) || 0) === 0)) return;
+                      if (pctFields.some((pct) => (Number(pct) || 0) > 100)) {
+                        setError(t("vaultDetail.errPctOver100"));
+                        return;
+                      }
                     }
                     setManageStep("review");
                   }}
@@ -1518,7 +1579,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       {withdrawInvestableShareBps > 0 && (
                         <div className="rounded-xl border border-black/10 bg-black/5 p-4">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
-                            {t("vaultDetail.withdrawReviewInvestable", { pct: withdrawInvestablePct })}
+                            {t("vaultDetail.withdrawReviewInvestable", { pct: (withdrawInvestableShareBps / 100).toFixed(1) })}
                           </p>
                           <p className="mt-1 text-lg font-semibold text-[#050505]">
                             {withdrawPreview ? withdrawPreview.fundsStable.toFixed(2) : "—"} {stableSymbol}
@@ -1528,7 +1589,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       {withdrawReserveShareBps > 0 && (
                         <div className="rounded-xl border border-black/10 bg-black/5 p-4">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
-                            {t("vaultDetail.withdrawReviewReserve", { pct: withdrawReservePct })}
+                            {t("vaultDetail.withdrawReviewReserve", { pct: (withdrawReserveShareBps / 100).toFixed(1) })}
                           </p>
                           <p className="mt-1 text-lg font-semibold text-[#050505]">
                             {withdrawPreview ? withdrawPreview.reserveStable.toFixed(2) : "—"} {stableSymbol}
@@ -1538,7 +1599,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       {withdrawGasReserveShareBps > 0 && (
                         <div className="rounded-xl border border-black/10 bg-black/5 p-4">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
-                            {t("vaultDetail.withdrawReviewGasReserve", { pct: withdrawGasReservePct })}
+                            {t("vaultDetail.withdrawReviewGasReserve", { pct: (withdrawGasReserveShareBps / 100).toFixed(1) })}
                           </p>
                           <p className="mt-1 text-lg font-semibold text-[#050505]">
                             {withdrawPreview ? withdrawPreview.gasReserveStable.toFixed(2) : "—"} {stableSymbol}

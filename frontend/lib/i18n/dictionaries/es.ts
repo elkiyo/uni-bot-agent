@@ -143,7 +143,7 @@ const es = {
     safeWaitingMsg:
       "Propuesta a tu Safe — firmas: {{submitted}}/{{required}}. Andá a la pestaña Queue de tu Safe para que el resto de los dueños firme; esta pantalla continúa sola cuando se ejecute.",
     resumeBannerText:
-      "Tenés un vault sin configurar creado con este Safe ({{address}}). Podés continuar su configuración en vez de crear uno nuevo, así evitás pagar el fee de creación otra vez.",
+      "Tenés un vault sin configurar ({{address}}). Podés continuar su configuración en vez de crear uno nuevo, así evitás pagar el fee de creación otra vez.",
     resumeBannerButton: "Continuar configurando ese vault",
 
     errMissingFields: "Completá todos los campos — no hay valores por defecto.",
@@ -584,9 +584,11 @@ const es = {
     // Compound (V2) vaults split "fondos idle" en 3 baldes 100%
     // independientes entre sí — solo aplica ahí, los vaults estándar
     // siguen con fieldIdleFundsPct de arriba.
-    fieldInvestablePct: "% de invertible",
-    fieldReservePct: "% de reserva",
-    fieldGasReservePct: "% de reserva de gas",
+    fieldInvestableAmount: "Invertible a retirar",
+    fieldReserveAmount: "Reserva a retirar",
+    fieldGasReserveAmount: "Reserva de gas a retirar",
+    availableBalance: "Disponible: {{amount}} {{symbol}}",
+    errAmountOverAvailable: "El monto no puede superar el disponible",
     pctMax: "Máx.",
     withdrawReviewPosition: "De la posición ({{pct}}%)",
     withdrawReviewFunds: "De fondos idle ({{pct}}%)",

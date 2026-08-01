@@ -145,7 +145,7 @@ const en: Dictionary = {
     safeWaitingMsg:
       "Proposed to your Safe — signatures: {{submitted}}/{{required}}. Go to your Safe's Queue tab so the other owners can sign; this screen continues on its own once it executes.",
     resumeBannerText:
-      "You have an unconfigured vault created with this Safe ({{address}}). You can continue configuring it instead of creating a new one, avoiding the creation fee again.",
+      "You have an unconfigured vault ({{address}}). You can continue configuring it instead of creating a new one, avoiding the creation fee again.",
     resumeBannerButton: "Continue configuring that vault",
 
     errMissingFields: "Fill in every field — there are no default values.",
@@ -582,9 +582,11 @@ const en: Dictionary = {
       "Independent of each other — withdraw a % of the active position, a % of idle funds (investable + reserve), or both, without closing the vault.",
     fieldPositionPct: "% of the position",
     fieldIdleFundsPct: "% of idle funds",
-    fieldInvestablePct: "% of investable",
-    fieldReservePct: "% of reserve",
-    fieldGasReservePct: "% of gas reserve",
+    fieldInvestableAmount: "Investable to withdraw",
+    fieldReserveAmount: "Reserve to withdraw",
+    fieldGasReserveAmount: "Gas reserve to withdraw",
+    availableBalance: "Available: {{amount}} {{symbol}}",
+    errAmountOverAvailable: "Amount can't exceed what's available",
     pctMax: "Max.",
     withdrawReviewPosition: "From the position ({{pct}}%)",
     withdrawReviewFunds: "From idle funds ({{pct}}%)",
