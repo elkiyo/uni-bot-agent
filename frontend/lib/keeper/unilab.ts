@@ -102,6 +102,7 @@ async function postToUniLab(
   vaultAddress: string,
   vaultChainId: number,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs?: number,
 ): Promise<RcRlpRebalanceResponse> {
   const startedAt = Date.now();
   try {
@@ -109,6 +110,7 @@ async function postToUniLab(
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
       body: JSON.stringify(body),
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
     const text = await res.text();
     let parsed: unknown = text;
@@ -169,7 +171,24 @@ async function postToUniLab(
  * and now falls back to rcRlpRebalanceViaDirectPayment below (added
  * 2026-08-01 after uni-lab.xyz's x402 handshake broke — see that function's
  * own docstring) before giving up on the cycle entirely.
+ *
+ * X402_TIMEOUT_MS bounds how long a BROKEN x402 attempt can stall the whole
+ * cycle before falling through to the direct-payment rail. Confirmed live
+ * 2026-08-01: during uni-lab's x402 outage, every failing attempt took a
+ * consistent ~10.5s (the x402 client's own internal retry/timeout behavior)
+ * before finally erroring — with 46 vaults out of range and the cron's
+ * sequential per-vault loop bound by a 200s function budget, that ~10.5s of
+ * dead time per vault (on top of the direct-payment rail's own ~5-10s) was
+ * roughly halving how many vaults could actually get rebalanced per tick.
+ * 4s is generous for a healthy x402 round-trip (the docs bundle's own flow
+ * completes in under a second end-to-end) while cutting the outage-mode
+ * dead time by more than half. Worst case if x402 recovers but is merely
+ * SLOW (not broken): an occasional spurious fallback to direct-payment,
+ * which still succeeds — not a correctness risk, just an extra operator
+ * payment that would have been unnecessary.
  */
+const X402_TIMEOUT_MS = 4_000;
+
 export async function rcRlpRebalanceViaX402(
   apiKey: string,
   params: RcRlpRebalanceParams,
@@ -187,7 +206,16 @@ export async function rcRlpRebalanceViaX402(
     E1: params.reinvestmentAmountUsd,
     blockchain: "celo",
   };
-  return postToUniLab("rc-rlp-rebalance", "rc-rlp-rebalance (x402)", apiKey, body, vaultAddress, vaultChainId, fetchImpl);
+  return postToUniLab(
+    "rc-rlp-rebalance",
+    "rc-rlp-rebalance (x402)",
+    apiKey,
+    body,
+    vaultAddress,
+    vaultChainId,
+    fetchImpl,
+    X402_TIMEOUT_MS,
+  );
 }
 
 // Same 30% gas-price-drift buffer as rebalancer.ts's GAS_SAFETY_MULTIPLIER_PCT

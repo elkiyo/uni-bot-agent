@@ -56,3 +56,23 @@ export async function logUniLabCall(call: UniLabCallLog): Promise<void> {
     console.error("logUniLabCall: failed to persist to supabase", err);
   }
 }
+
+/**
+ * Feeds rebalancer.ts's x402 circuit breaker (see store.ts#setX402CircuitBreakerUntil):
+ * counts x402 failures logged via logUniLabCall in the last `windowMs`,
+ * across ALL vaults — x402 breaking is a property of uni-lab.xyz's Celo-side
+ * facilitator, not any one vault, so this deliberately isn't vault-scoped.
+ * Reuses the existing keeper_unilab_calls audit trail instead of a separate
+ * counter — no extra write path to keep in sync.
+ */
+export async function recentX402FailureCount(windowMs: number): Promise<number> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count, error } = await supabase()
+    .from("keeper_unilab_calls")
+    .select("id", { count: "exact", head: true })
+    .eq("endpoint", "rc-rlp-rebalance (x402)")
+    .eq("ok", false)
+    .gte("created_at", since);
+  if (error) throw error;
+  return count ?? 0;
+}

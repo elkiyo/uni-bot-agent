@@ -20,8 +20,8 @@ import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeC
 function toToken0ToToken1(sellStable: boolean, chain: ChainRuntime): boolean {
   return sellStable === chain.stableIsToken0;
 }
-import { Store } from "./store";
-import { logEvent, logUniLabCall } from "./logger";
+import { Store, getX402CircuitBreakerUntil, setX402CircuitBreakerUntil } from "./store";
+import { logEvent, logUniLabCall, recentX402FailureCount } from "./logger";
 import { erc20Abi, swapRouter02Abi, uniswapV3FactoryAbi } from "../contracts";
 import { getLogsChunkedMulti } from "../getLogsChunked";
 import { resolveVaultPair, applyVaultPair } from "./pairInfo";
@@ -1373,17 +1373,54 @@ async function computeRebalanceParams(
   // produce a position that's already out of range on arrival (vault
   // 0x8Ed2ad9f...42737C88, 2026-07-16, see note above). This only widens
   // HOW a real uni-lab answer gets paid for, never what happens without one.
-  let resp: RcRlpRebalanceResponse | undefined;
-  try {
-    resp = await rcRlpRebalanceViaX402(record.uniLabApiKey, baseParams, vaultAddress, chain.id);
-  } catch (x402Err) {
-    logEvent({
-      level: "warn",
-      vault: vaultAddress,
-      msg: "rc-rlp-rebalance (x402) call failed — attempting direct-payment fallback",
-      err: String(x402Err),
-    });
+  //
+  // Circuit breaker (added 2026-08-01, same outage): once x402 has failed
+  // X402_BREAKER_FAILURE_THRESHOLD times within X402_BREAKER_WINDOW_MS, stop
+  // even TRYING x402 for X402_BREAKER_TRIP_MS — go straight to
+  // direct-payment. Confirmed live: every failing x402 attempt still costs
+  // ~4s (X402_TIMEOUT_MS, see unilab.ts) before falling through, dead time
+  // that adds up fast across dozens of out-of-range vaults in the same
+  // cron loop. See store.ts#getX402CircuitBreakerUntil for why this is
+  // Supabase-backed (a fresh serverless invocation per tick) instead of an
+  // in-memory flag.
+  const X402_BREAKER_WINDOW_MS = 5 * 60 * 1000;
+  const X402_BREAKER_FAILURE_THRESHOLD = 3; // "more than 2" failures
+  const X402_BREAKER_TRIP_MS = 10 * 60 * 1000;
 
+  let resp: RcRlpRebalanceResponse | undefined;
+  const breakerUntil = await getX402CircuitBreakerUntil();
+  const breakerActive = breakerUntil !== null && Date.now() < breakerUntil;
+
+  if (breakerActive) {
+    logEvent({
+      level: "info",
+      vault: vaultAddress,
+      msg: `x402 circuit breaker active (until ${new Date(breakerUntil).toISOString()}) — skipping straight to direct-payment`,
+    });
+  } else {
+    try {
+      resp = await rcRlpRebalanceViaX402(record.uniLabApiKey, baseParams, vaultAddress, chain.id);
+    } catch (x402Err) {
+      logEvent({
+        level: "warn",
+        vault: vaultAddress,
+        msg: "rc-rlp-rebalance (x402) call failed — attempting direct-payment fallback",
+        err: String(x402Err),
+      });
+
+      const recentFailures = await recentX402FailureCount(X402_BREAKER_WINDOW_MS);
+      if (recentFailures >= X402_BREAKER_FAILURE_THRESHOLD) {
+        const until = Date.now() + X402_BREAKER_TRIP_MS;
+        await setX402CircuitBreakerUntil(until);
+        logEvent({
+          level: "warn",
+          msg: `x402 failed ${recentFailures}x in the last ${X402_BREAKER_WINDOW_MS / 60000}min — tripping circuit breaker until ${new Date(until).toISOString()}`,
+        });
+      }
+    }
+  }
+
+  if (resp === undefined) {
     const gate = await hasEnoughOperatorUsdtForDirectPayment();
     if (!gate.ok) {
       logEvent({

@@ -241,3 +241,39 @@ export async function releaseTickLock(): Promise<void> {
   const { error } = await supabase().rpc("release_tick_lock");
   if (error) throw error;
 }
+
+// Fixed key, not chain-namespaced like lastProcessedBlock above — x402
+// payment always settles via Celo regardless of which chain's vault
+// triggered the cycle (see unilab.ts's own docstring), so "is x402 broken
+// right now" is a single global fact, not a per-chain one.
+const X402_CIRCUIT_BREAKER_KEY = "x402CircuitBreakerUntil";
+
+/**
+ * Circuit breaker added 2026-08-01 during uni-lab.xyz's x402 outage: once
+ * rebalancer.ts sees 3+ x402 failures within a 5-minute window (via
+ * logger.ts#recentX402FailureCount), it trips this for 10 minutes so every
+ * rebalance in that window skips straight to the direct-payment fallback
+ * instead of eating x402's own ~10s timeout first (see unilab.ts's
+ * X402_TIMEOUT_MS docstring for why that dead time matters — with dozens of
+ * vaults out of range at once, it roughly halves how many the cron's
+ * sequential per-vault loop can get through before its 200s budget runs
+ * out). Stored in keeper_state (not in-memory) since each cron invocation
+ * is a fresh serverless function — plain epoch-ms in `value`, `null` (row
+ * absent) means never tripped / breaker not active.
+ */
+export async function getX402CircuitBreakerUntil(): Promise<number | null> {
+  const { data, error } = await supabase()
+    .from("keeper_state")
+    .select("value")
+    .eq("key", X402_CIRCUIT_BREAKER_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? Number(data.value) : null;
+}
+
+export async function setX402CircuitBreakerUntil(untilMs: number): Promise<void> {
+  const { error } = await supabase()
+    .from("keeper_state")
+    .upsert({ key: X402_CIRCUIT_BREAKER_KEY, value: String(untilMs) });
+  if (error) throw error;
+}
