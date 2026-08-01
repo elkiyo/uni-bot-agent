@@ -1385,7 +1385,7 @@ async function computeRebalanceParams(
   // in-memory flag.
   const X402_BREAKER_WINDOW_MS = 5 * 60 * 1000;
   const X402_BREAKER_FAILURE_THRESHOLD = 3; // "more than 2" failures
-  const X402_BREAKER_TRIP_MS = 10 * 60 * 1000;
+  const X402_BREAKER_TRIP_MS = 25 * 60 * 1000;
 
   let resp: RcRlpRebalanceResponse | undefined;
   const breakerUntil = await getX402CircuitBreakerUntil();
