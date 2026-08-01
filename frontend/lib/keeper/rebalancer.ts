@@ -1300,6 +1300,20 @@ async function computeRebalanceParams(
   const combinedCurrentLiquidityUsd = positionValueUsd + reinjectAmountUsd + idleInvestableUsd;
   const combinedAmountToRecoverUsd = historicalAmountToRecoverUsd + reinjectAmountUsd;
 
+  // 1% safety margin on B1, ALWAYS applied (not just to dodge the 500 below)
+  // — confirmed live 2026-08-01 (vault 0x7186CE90...4D78c7's first
+  // ownerRebalance()): uni-lab's ceiling is calibrated so the position's
+  // value AT that exact continuous price equals B1, but the real mint can
+  // only land on the nearest valid tick (alignToTickSpacing rounds to
+  // nearest, either direction) — here it landed $0.31 (0.07%) short of full
+  // capital recovery at the real ceiling. Padding the B1 uni-lab targets by
+  // 1% shifts the ceiling slightly further out, comfortably covering that
+  // tick-rounding noise (plus the swap-execution/volatility slippage the
+  // user also observed) in exchange for a marginally later rebalance at the
+  // top — never applied to A1/B1 anywhere else in the app (ledger, UI,
+  // useVaultCumulativeInvestment), only to what gets SENT to uni-lab here.
+  const marginedAmountToRecoverUsd = combinedAmountToRecoverUsd * 1.01;
+
   // uni-lab.xyz's /rc-rlp-rebalance returns 500 ("input combination doesn't
   // produce a valid rebalance range" — its own documented meaning) whenever
   // A1 (currentLiquidityUsd, the position's live value) exceeds B1 — root-
@@ -1313,11 +1327,13 @@ async function computeRebalanceParams(
   // untouched. 1.0005 (0.05%) is comfortably above float rounding noise
   // without meaningfully distorting the real "amount to recover". Compared
   // against the COMBINED (post-reinjection) A1/B1, not the raw historical
-  // ones — those are what actually get sent.
+  // ones — those are what actually get sent. Checked against the 1%-margined
+  // B1 above, not the raw one — so this only ever kicks in on top of that
+  // margin, never instead of it.
   const cappedAmountToRecoverUsd =
-    combinedCurrentLiquidityUsd > combinedAmountToRecoverUsd
+    combinedCurrentLiquidityUsd > marginedAmountToRecoverUsd
       ? combinedCurrentLiquidityUsd * 1.0005
-      : combinedAmountToRecoverUsd;
+      : marginedAmountToRecoverUsd;
 
   const baseParams = {
     currentLiquidityUsd: combinedCurrentLiquidityUsd,
