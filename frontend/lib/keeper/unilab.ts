@@ -243,6 +243,19 @@ export async function hasEnoughOperatorUsdtForDirectPayment(): Promise<{ ok: tru
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
+// A DEDICATED api_key for the direct-payment rail, registered with
+// agent_wallet = the operator's own address (NOT any vault's own
+// per-vault api_key, which is registered with agent_wallet = that vault's
+// address, from the retired vault-funded flow). Confirmed live 2026-08-01:
+// uni-lab.xyz's tx_hash verification checks that the USDT transfer's
+// sender matches the CALLING api_key's registered agent_wallet — using a
+// vault's own api_key here (the operator is who actually sends the USDT)
+// gets rejected with "USDT transfer not from agent wallet". Registered via
+// POST /register-agent with agent_wallet=operatorAccount.address once,
+// stored here as its own env var since it's an operator-level credential,
+// not a per-vault one (those live in Supabase, see store.ts).
+const UNILAB_OPERATOR_API_KEY = process.env.UNILAB_OPERATOR_API_KEY;
+
 /**
  * Plan B for the 2026-08-01 x402 outage (uni-lab.xyz's x402 handshake
  * started throwing "Failed to parse payment requirements" 100% of the
@@ -261,16 +274,23 @@ const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
  * payment leg — simpler than the old flow.
  *
  * Throws if the operator has no USDT/CELO to pay with (call
- * hasEnoughOperatorUsdtForDirectPayment first), or on any other
- * network/API failure — same contract as rcRlpRebalanceViaX402, the caller
- * treats this as the LAST resort before skipping the cycle entirely.
+ * hasEnoughOperatorUsdtForDirectPayment first), if UNILAB_OPERATOR_API_KEY
+ * isn't configured, or on any other network/API failure — same contract as
+ * rcRlpRebalanceViaX402, the caller treats this as the LAST resort before
+ * skipping the cycle entirely.
+ *
+ * Deliberately does NOT take a per-vault apiKey param (unlike
+ * rcRlpRebalanceViaX402) — always uses UNILAB_OPERATOR_API_KEY, since a
+ * vault's own api_key would fail uni-lab's sender-matches-agent_wallet
+ * check (see that constant's own comment above). vaultAddress/vaultChainId
+ * here are only for OUR OWN logUniLabCall audit trail, not sent to uni-lab.
  */
 export async function rcRlpRebalanceViaDirectPayment(
-  apiKey: string,
   params: RcRlpRebalanceParams,
   vaultAddress: string,
   vaultChainId: number,
 ): Promise<RcRlpRebalanceResponse> {
+  if (!UNILAB_OPERATOR_API_KEY) throw new Error("UNILAB_OPERATOR_API_KEY not set — cannot use the direct-payment fallback");
   if (!operatorAccount) throw new Error("no operator account configured for direct payment");
   const celoChain = getChainRuntime(CHAINS[celo.id]);
   if (!celoChain.walletClient) throw new Error("no operator account configured for direct payment");
@@ -313,7 +333,7 @@ export async function rcRlpRebalanceViaDirectPayment(
       return await postToUniLab(
         endpoint,
         `${endpoint} (direct-payment)`,
-        apiKey,
+        UNILAB_OPERATOR_API_KEY,
         body,
         vaultAddress,
         vaultChainId,

@@ -1395,7 +1395,7 @@ async function computeRebalanceParams(
     }
 
     try {
-      resp = await rcRlpRebalanceViaDirectPayment(record.uniLabApiKey, baseParams, vaultAddress, chain.id);
+      resp = await rcRlpRebalanceViaDirectPayment(baseParams, vaultAddress, chain.id);
     } catch (directErr) {
       logEvent({
         level: "warn",
