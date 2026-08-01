@@ -49,3 +49,24 @@ export function tickFromEthPrice(
 export function alignToTickSpacing(tick: number, tickSpacing: number): number {
   return Math.round(tick / tickSpacing) * tickSpacing;
 }
+
+/**
+ * Same rounding as alignToTickSpacing, but biased outward (away from
+ * currentTick) instead of to the nearest multiple — used for the CEILING
+ * side of a uni-lab rebalance range (rebalancer.ts's computeRebalanceParams),
+ * where landing even slightly short of uni-lab's own continuous price can
+ * mean a hair less capital recovered than its RC calibration intended.
+ * alignToTickSpacing's round-to-nearest lands on the "wrong" (nearer) side
+ * about half the time — confirmed live 2026-08-01 (vault 0x7186CE90...
+ * 4D78c7's first ownerRebalance()). Comparing raw tick distance (not price)
+ * works regardless of stableIsToken0 — ethPriceFromTick/tickFromEthPrice are
+ * monotonic in tick either way, just in opposite directions depending on
+ * token order, so "farther in tick space" and "farther in price space" are
+ * always the same comparison.
+ */
+export function alignTickOutward(tick: number, tickSpacing: number, currentTick: number): number {
+  const lower = Math.floor(tick / tickSpacing) * tickSpacing;
+  const upper = Math.ceil(tick / tickSpacing) * tickSpacing;
+  if (lower === upper) return lower;
+  return Math.abs(lower - currentTick) > Math.abs(upper - currentTick) ? lower : upper;
+}
