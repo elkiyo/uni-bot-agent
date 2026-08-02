@@ -81,5 +81,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ add
       fee: result.swapIx.fee,
     },
     reinjectAmount: result.reinjectAmount.toString(),
+    feePayoutSwapIx: {
+      token0ToToken1: result.feePayoutSwapIx.token0ToToken1,
+      amountIn: result.feePayoutSwapIx.amountIn.toString(),
+      amountOutMinimum: result.feePayoutSwapIx.amountOutMinimum.toString(),
+      fee: result.feePayoutSwapIx.fee,
+    },
   });
 }

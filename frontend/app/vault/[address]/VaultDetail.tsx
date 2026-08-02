@@ -633,6 +633,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [cfgExitTopCeilingMarginPct, setCfgExitTopCeilingMarginPct] = useState("");
   const [cfgFeeClaimThresholdPct, setCfgFeeClaimThresholdPct] = useState("");
   const [cfgFeeClaimIntervalHours, setCfgFeeClaimIntervalHours] = useState("");
+  // Feature 6 — hard ceiling. Human USD price, converted to a tick right
+  // before the contract call (tickFromEthPrice, same direction-aware
+  // conversion every other range field in this file already uses).
+  const [cfgHardCeilingPrice, setCfgHardCeilingPrice] = useState("");
   const [riskMaxSlippagePct, setRiskMaxSlippagePct] = useState("");
   const [riskMinCooldownHours, setRiskMinCooldownHours] = useState("");
   const [riskMaxRangeDeviationTicks, setRiskMaxRangeDeviationTicks] = useState("");
@@ -672,6 +676,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // already uses for sizeRebalanceSwap, not a simulate-then-execute round
   // trip).
   const [withdrawConvertToStable, setWithdrawConvertToStable] = useState(false);
+  // Same feature 5(b) checkbox, mirrored for the "Retirar todo" button —
+  // sized at a full 100% share instead of withdrawPositionShareBps.
+  const [withdrawAllConvertToStable, setWithdrawAllConvertToStable] = useState(false);
   // withdrawFundsPct: standard (V1) vaults only — withdraw() there still
   // takes one shared bps for investable+reserve+gas. Compound (V2) vaults
   // split it into 3 fully independent buckets below (see withdraw()'s own
@@ -1050,6 +1057,39 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         chainId: chain.id,
       }),
     );
+  }
+
+  // Feature 6 — hard ceiling. `enabled=false` keeps sending the CURRENT
+  // on-chain tick unchanged (irrelevant while disabled — the contract's own
+  // _isAboveHardCeiling() short-circuits on hardCeilingEnabled first) so a
+  // temporary disable doesn't lose the configured price for next time.
+  async function handleSetHardCeiling(enabled: boolean) {
+    let tick = (hardCeilingTick as number) ?? 0;
+    if (enabled) {
+      if (tickSpacing === undefined) {
+        setError(t("vaultDetail.errNoRange"));
+        return;
+      }
+      const priceUsd = Number(cfgHardCeilingPrice);
+      if (!priceUsd || priceUsd <= 0) {
+        setError(t("vaultDetail.errHardCeilingPriceRequired"));
+        return;
+      }
+      tick = alignToTickSpacing(
+        tickFromEthPrice(priceUsd, stableIsToken0, stableDecimals, volatileDecimals),
+        Number(tickSpacing),
+      );
+    }
+    await withTx(t("vaultDetail.txSettingHardCeiling"), () =>
+      writeContractAsync({
+        address,
+        abi: vaultAbi,
+        functionName: "setHardCeiling",
+        args: [enabled, tick],
+        chainId: chain.id,
+      }),
+    );
+    setCfgHardCeilingPrice("");
   }
 
   async function handleUpdateRiskParams() {
@@ -2433,6 +2473,50 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       </div>
                     </div>
                   )}
+
+                  {isCompound && (
+                    <div className="mt-6 rounded-xl border border-negative/25 bg-negative/[0.04] p-4">
+                      <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-negative">
+                        {t("vaultDetail.hardCeilingSectionLabel")}
+                      </span>
+                      <p className="mt-1 text-xs text-faint">{t("vaultDetail.hardCeilingHint", { symbol: stableSymbol })}</p>
+                      {hardCeilingEnabled ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <span className="text-sm text-foreground">
+                            {t("vaultDetail.hardCeilingCurrentValue", {
+                              price:
+                                hardCeilingTick !== undefined
+                                  ? ethPriceFromTick(Number(hardCeilingTick), stableIsToken0, stableDecimals, volatileDecimals).toFixed(2)
+                                  : "—",
+                              symbol: stableSymbol,
+                            })}
+                          </span>
+                          <button
+                            onClick={() => handleSetHardCeiling(false)}
+                            disabled={Boolean(busy)}
+                            className="btn-secondary !py-2"
+                          >
+                            {t("vaultDetail.hardCeilingDisable")}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-2 flex flex-wrap items-end gap-3">
+                          <MiniField
+                            label={t("vaultDetail.fieldHardCeilingPrice", { symbol: stableSymbol })}
+                            value={cfgHardCeilingPrice}
+                            onChange={setCfgHardCeilingPrice}
+                          />
+                          <button
+                            onClick={() => handleSetHardCeiling(true)}
+                            disabled={Boolean(busy)}
+                            className="btn-secondary !py-3"
+                          >
+                            {t("vaultDetail.hardCeilingEnable")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-8">
@@ -2510,16 +2594,44 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     onClick={() =>
                       withTx(t("vaultDetail.txWithdrawing"), () => {
                         // Standard (V1) vaults: no-arg withdrawAll(). Compound
-                        // (V3) vaults: 2 no-op SwapInstructions — this button
-                        // is the "todo, sin conversión extra" path; the
-                        // checkbox-driven conversion (feature 5(b)) only
-                        // lives on the partial-withdraw modal for now.
+                        // (V3) vaults: 2 SwapInstructions — feeSwapIx always a
+                        // no-op (withdrawAll() sweeps whatever payoutFeesInStableOnly
+                        // already converted, no separate fee-swap slot), payoutSwapIx
+                        // sized against the checkbox, same estimate-and-no-haircut
+                        // reasoning as handlePartialWithdraw's own (fees only ever
+                        // grow between this read and the tx landing).
                         const noSwap = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
+                        let payoutSwapIx = noSwap;
+                        if (
+                          withdrawAllConvertToStable &&
+                          positionTicks &&
+                          positionLiquidity !== undefined &&
+                          positionTokensOwedLive &&
+                          currentTick !== undefined
+                        ) {
+                          const { amount0Raw, amount1Raw } = estimatePositionAmounts({
+                            liquidity: positionLiquidity,
+                            currentTick,
+                            tickLower: positionTicks.tickLower,
+                            tickUpper: positionTicks.tickUpper,
+                          });
+                          const total0 = amount0Raw + Number(positionTokensOwedLive.tokensOwed0);
+                          const total1 = amount1Raw + Number(positionTokensOwedLive.tokensOwed1);
+                          const volatileRawEstimate = Math.floor(stableIsToken0 ? total1 : total0);
+                          if (volatileRawEstimate > 0) {
+                            payoutSwapIx = {
+                              token0ToToken1: !stableIsToken0,
+                              amountIn: BigInt(volatileRawEstimate),
+                              amountOutMinimum: 0n,
+                              fee: feeTier,
+                            };
+                          }
+                        }
                         return writeContractAsync({
                           address,
                           abi: vaultAbi,
                           functionName: "withdrawAll",
-                          args: isCompound ? [noSwap, noSwap] : [],
+                          args: isCompound ? [noSwap, payoutSwapIx] : [],
                           chainId: chain.id,
                         });
                       })
@@ -2529,6 +2641,17 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   >
                     {t("vaultDetail.withdrawAll")}
                   </button>
+                  {isCompound && (
+                    <label className="flex w-full items-center gap-2.5 text-sm text-foreground/70">
+                      <input
+                        type="checkbox"
+                        checked={withdrawAllConvertToStable}
+                        onChange={(e) => setWithdrawAllConvertToStable(e.target.checked)}
+                        className="h-4 w-4 rounded border-foreground/30 accent-accent"
+                      />
+                      {t("vaultDetail.withdrawConvertToStable", { symbol: stableSymbol })}
+                    </label>
+                  )}
                   <button
                     onClick={() =>
                       withTx(paused ? t("vaultDetail.txResuming") : t("vaultDetail.txPausing"), () =>

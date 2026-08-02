@@ -438,6 +438,7 @@ const es = {
     errSwitchChain: "Cambiá tu wallet a {{chain}} para continuar.",
     errPriceRange: "El precio máximo debe ser mayor al mínimo, ambos positivos",
     errNoRange: "Todavía no se pudo leer el rango actual de la posición — probá de nuevo en un momento.",
+    errHardCeilingPriceRequired: "Ingresá un precio válido para el techo.",
     errPctOver100: "Los porcentajes no pueden superar 100%",
     capAlertTitle: "Supera el tope de depósito",
     capAlertMsg:
@@ -599,7 +600,7 @@ const es = {
     withdrawReviewReserve: "De reserva ({{pct}}%)",
     withdrawReviewGasReserve: "De reserva de gas ({{pct}}%)",
     withdrawReviewFeesNote: "Incluye las comisiones sin cobrar. Montos estimados — el contrato calcula el monto real al ejecutar.",
-    withdrawConvertToStable: "Recibir posición + comisiones en {symbol}",
+    withdrawConvertToStable: "Recibir posición + comisiones en {{symbol}}",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",
 
@@ -622,11 +623,19 @@ const es = {
     autoCompoundToggleOff: "Desactivar interés compuesto",
     autoCompoundToggleHint:
       "Con esto activo, las comisiones de cada rebalanceo, del reclamo manual y del auto-reclamo programado se reinyectan en la posición en vez de pagarse a tu wallet.",
-    payoutStableToggleOn: "Cobrar comisiones solo en {symbol}",
+    payoutStableToggleOn: "Cobrar comisiones solo en {{symbol}}",
     payoutStableToggleOff: "Cobrar comisiones en ambos tokens",
     payoutStableToggleHint:
-      "Solo aplica cuando el interés compuesto está apagado. Con esto activo, cada vez que se pague una comisión directo a tu wallet (rebalanceo, reclamo manual), la parte que no es {symbol} se convierte a {symbol} en la misma transacción.",
+      "Solo aplica cuando el interés compuesto está apagado. Con esto activo, cada vez que se pague una comisión directo a tu wallet (rebalanceo, reclamo manual), la parte que no es {{symbol}} se convierte a {{symbol}} en la misma transacción.",
     compoundSectionLabel: "Interés compuesto — reclamo automático de comisiones",
+    hardCeilingSectionLabel: "Techo absoluto de precio",
+    hardCeilingHint:
+      "Si el precio rompe por arriba de este techo, el vault cierra la posición, convierte todo a {{symbol}}, y se pausa — no vuelve a armar una posición nueva hasta que la reactivés manualmente.",
+    fieldHardCeilingPrice: "Precio techo ({{symbol}})",
+    hardCeilingEnable: "Activar techo",
+    hardCeilingDisable: "Desactivar techo",
+    hardCeilingCurrentValue: "Techo actual: {{price}} {{symbol}}",
+    txSettingHardCeiling: "Configurando el techo de precio",
     withdrawAll: "Retirar todo",
     resume: "Reanudar",
     pause: "Pausar",

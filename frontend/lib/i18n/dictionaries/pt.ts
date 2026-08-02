@@ -440,6 +440,7 @@ const pt: Dictionary = {
     errSwitchChain: "Troque sua carteira para {{chain}} para continuar.",
     errPriceRange: "O preço máximo deve ser maior que o mínimo, ambos positivos",
     errNoRange: "Ainda não foi possível ler a faixa atual da posição — tente de novo em instantes.",
+    errHardCeilingPriceRequired: "Informe um preço de teto válido.",
     errPctOver100: "Os percentuais não podem ultrapassar 100%",
     capAlertTitle: "Excede o teto de depósito",
     capAlertMsg:
@@ -597,7 +598,7 @@ const pt: Dictionary = {
     withdrawReviewReserve: "De reserva ({{pct}}%)",
     withdrawReviewGasReserve: "De reserva de gás ({{pct}}%)",
     withdrawReviewFeesNote: "Inclui as comissões não coletadas. Valores estimados — o contrato calcula o valor real na execução.",
-    withdrawConvertToStable: "Receber posição + comissões em {symbol}",
+    withdrawConvertToStable: "Receber posição + comissões em {{symbol}}",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",
 
@@ -617,11 +618,19 @@ const pt: Dictionary = {
     autoCompoundToggleOff: "Desativar juros compostos",
     autoCompoundToggleHint:
       "Com isso ativo, as comissões de cada rebalanceamento, do resgate manual e do auto-resgate programado são reinjetadas na posição em vez de pagas para sua carteira.",
-    payoutStableToggleOn: "Cobrar comissões apenas em {symbol}",
+    payoutStableToggleOn: "Cobrar comissões apenas em {{symbol}}",
     payoutStableToggleOff: "Cobrar comissões em ambos os tokens",
     payoutStableToggleHint:
-      "Só se aplica quando os juros compostos estão desativados. Com isso ativo, toda vez que uma comissão for paga direto para sua carteira (rebalanceamento, resgate manual), a parte que não é {symbol} é convertida para {symbol} na mesma transação.",
+      "Só se aplica quando os juros compostos estão desativados. Com isso ativo, toda vez que uma comissão for paga direto para sua carteira (rebalanceamento, resgate manual), a parte que não é {{symbol}} é convertida para {{symbol}} na mesma transação.",
     compoundSectionLabel: "Juros compostos — resgate automático de comissões",
+    hardCeilingSectionLabel: "Teto absoluto de preço",
+    hardCeilingHint:
+      "Se o preço romper acima deste teto, o vault fecha a posição, converte tudo para {{symbol}}, e pausa — não reabre uma nova posição até você reativar manualmente.",
+    fieldHardCeilingPrice: "Preço do teto ({{symbol}})",
+    hardCeilingEnable: "Ativar teto",
+    hardCeilingDisable: "Desativar teto",
+    hardCeilingCurrentValue: "Teto atual: {{price}} {{symbol}}",
+    txSettingHardCeiling: "Configurando o teto de preço",
     withdrawAll: "Sacar tudo",
     resume: "Retomar",
     pause: "Pausar",

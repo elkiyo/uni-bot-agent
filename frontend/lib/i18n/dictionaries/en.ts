@@ -440,6 +440,7 @@ const en: Dictionary = {
     errSwitchChain: "Switch your wallet to {{chain}} to continue.",
     errPriceRange: "The maximum price must be greater than the minimum, both positive",
     errNoRange: "The position's current range couldn't be read yet — try again in a moment.",
+    errHardCeilingPriceRequired: "Enter a valid ceiling price.",
     errPctOver100: "Percentages can't exceed 100%",
     capAlertTitle: "Exceeds the deposit cap",
     capAlertMsg:
@@ -597,7 +598,7 @@ const en: Dictionary = {
     withdrawReviewReserve: "From reserve ({{pct}}%)",
     withdrawReviewGasReserve: "From gas reserve ({{pct}}%)",
     withdrawReviewFeesNote: "Includes uncollected fees. Estimated amounts — the contract computes the real amount at execution.",
-    withdrawConvertToStable: "Receive position + fees in {symbol}",
+    withdrawConvertToStable: "Receive position + fees in {{symbol}}",
     withdrawReviewCancel: "Cancel",
     withdrawReviewConfirm: "Confirm",
 
@@ -617,11 +618,19 @@ const en: Dictionary = {
     autoCompoundToggleOff: "Turn compounding off",
     autoCompoundToggleHint:
       "When on, fees from every rebalance, manual claim, and scheduled auto-claim get reinjected into the position instead of paid out to your wallet.",
-    payoutStableToggleOn: "Charge fees in {symbol} only",
+    payoutStableToggleOn: "Charge fees in {{symbol}} only",
     payoutStableToggleOff: "Charge fees in both tokens",
     payoutStableToggleHint:
-      "Only applies while compounding is off. When on, any fee paid directly to your wallet (rebalance, manual claim) gets its non-{symbol} leg converted to {symbol} in the same transaction.",
+      "Only applies while compounding is off. When on, any fee paid directly to your wallet (rebalance, manual claim) gets its non-{{symbol}} leg converted to {{symbol}} in the same transaction.",
     compoundSectionLabel: "Compounding — automatic fee claim",
+    hardCeilingSectionLabel: "Hard price ceiling",
+    hardCeilingHint:
+      "If the price breaks above this ceiling, the vault closes the position, converts everything to {{symbol}}, and pauses — it won't reopen a new position until you manually re-enable it.",
+    fieldHardCeilingPrice: "Ceiling price ({{symbol}})",
+    hardCeilingEnable: "Enable ceiling",
+    hardCeilingDisable: "Disable ceiling",
+    hardCeilingCurrentValue: "Current ceiling: {{price}} {{symbol}}",
+    txSettingHardCeiling: "Setting price ceiling",
     withdrawAll: "Withdraw all",
     resume: "Resume",
     pause: "Pause",

@@ -10,6 +10,7 @@ import {
 } from "./unilab";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing, alignTickOutward } from "../priceMath";
 import { estimatePositionAmounts, sizeInitialSwap, sizeRebalanceSwap, ensureFeeCoverage, targetRawRatio } from "./swapMath";
+import { uncollectedFeesRaw } from "../positionMath";
 
 /** Converts the business-level "sell stable / sell volatile" direction into
  * the on-chain SwapInstruction.token0ToToken1 the contract actually needs —
@@ -1075,12 +1076,19 @@ async function computeRebalanceParams(
   newTickUpper: number;
   swapIx: { token0ToToken1: boolean; amountIn: bigint; amountOutMinimum: bigint; fee: number };
   reinjectAmount: bigint;
+  feePayoutSwapIx: { token0ToToken1: boolean; amountIn: bigint; amountOutMinimum: bigint; fee: number };
 } | null> {
   const record = await store.getVault(vaultAddress);
   if (!record?.uniLabApiKey) {
     logEvent({ level: "error", vault: vaultAddress, msg: "no uni-lab api key on record, skipping rebalance" });
     return null;
   }
+
+  // feePayoutSwapIx (V3, feature 5(a)) — only meaningful for compound vaults
+  // with autoCompoundFees off and payoutFeesInStableOnly on. Read up front so
+  // the two extra calls below (autoCompoundFees/payoutFeesInStableOnly) never
+  // fire against a standard-ABI vault, which would fail to encode.
+  const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
 
   const vault = vaultContract(chain, vaultAddress, abi);
   const [
@@ -1094,6 +1102,8 @@ async function computeRebalanceParams(
     platformConfig,
     maxSlippageBps,
     pool,
+    autoCompoundFees,
+    payoutFeesInStableOnly,
   ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.reinjectionAmount() as Promise<bigint>, // owner's per-cycle ceiling — see RangeVault.sol
@@ -1109,6 +1119,8 @@ async function computeRebalanceParams(
     vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
     vault.read.maxSlippageBps() as Promise<bigint>,
     vault.read.pool() as Promise<Address>,
+    isCompoundAbi ? (vault.read.autoCompoundFees() as Promise<boolean>) : Promise.resolve(false),
+    isCompoundAbi ? (vault.read.payoutFeesInStableOnly() as Promise<boolean>) : Promise.resolve(false),
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -1124,8 +1136,66 @@ async function computeRebalanceParams(
     >,
   ]);
 
-  const [, , , , , posTickLower, posTickUpper, liquidity] = position;
+  const [
+    ,
+    ,
+    ,
+    ,
+    ,
+    posTickLower,
+    posTickUpper,
+    liquidity,
+    feeGrowthInside0LastX128,
+    feeGrowthInside1LastX128,
+    tokensOwed0,
+    tokensOwed1,
+  ] = position;
   const ethPrice = ethPriceFromTick(tick, chain.stableIsToken0, chain.stableDecimals, chain.volatileDecimals);
+
+  // feePayoutSwapIx sizing — live uncollected fees, same formula/reads as
+  // monitor.ts's checkFeeClaimDue (tokensOwed0/1 alone can be stale — see
+  // that function's own docstring). Sized to sell 100% of the volatile-leg
+  // fee; no safety haircut needed (unlike withdraw()'s payoutSwapIx sizing)
+  // because real fees only grow monotonically between this read and the tx
+  // landing — the amount measured on-chain at execution time can only be
+  // >= this estimate, never less, so under-sizing here is impossible by
+  // construction.
+  let feePayoutSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: chain.feeTier };
+  if (isCompoundAbi && !autoCompoundFees && payoutFeesInStableOnly && liquidity > 0n) {
+    const [feeGrowthGlobal0X128, feeGrowthGlobal1X128, tickLowerData, tickUpperData] = (await Promise.all([
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128" }),
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128" }),
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickLower] }),
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickUpper] }),
+    ])) as [bigint, bigint, readonly bigint[], readonly bigint[]];
+
+    const { fees0Raw, fees1Raw } = uncollectedFeesRaw({
+      liquidity,
+      tokensOwed0,
+      tokensOwed1,
+      feeGrowthInside0LastX128,
+      feeGrowthInside1LastX128,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      tickLowerOutside0X128: tickLowerData[2],
+      tickLowerOutside1X128: tickLowerData[3],
+      tickUpperOutside0X128: tickUpperData[2],
+      tickUpperOutside1X128: tickUpperData[3],
+      currentTick: tick,
+      tickLower: posTickLower,
+      tickUpper: posTickUpper,
+    });
+    const volatileFeeRaw = Math.max(0, Math.floor(chain.stableIsToken0 ? fees1Raw : fees0Raw));
+    if (volatileFeeRaw > 0) {
+      const feeSwapFee = await pickDeepestSwapFee(chain);
+      feePayoutSwapIx = {
+        token0ToToken1: !chain.stableIsToken0,
+        amountIn: BigInt(volatileFeeRaw),
+        amountOutMinimum: 0n,
+        fee: feeSwapFee,
+      };
+    }
+  }
 
   // IMPORTANT: whether a HIGHER tick means a LOWER or HIGHER USD price
   // depends on which real token0/token1 slot the stablecoin landed in —
@@ -1520,15 +1590,15 @@ async function computeRebalanceParams(
   // real balance, same-tx — unlike the standalone pre-tx quote this whole
   // rebalance-swap path exists to avoid (see minAmountOutForRebalanceSwap).
   const swapFee = await pickDeepestSwapFee(chain);
-  // feePayoutSwapIx — same conditional as runRebalanceViaUniLab's own
-  // finalArgs: only rebalance()/ownerRebalance() on the COMPOUND ABI take
-  // this 4th positional arg. ownerRebalance() itself only exists on compound
-  // vaults at all (standard RangeVaultArb.sol never had it), so that
-  // targetFunctionName is unconditionally compound-shaped regardless of
-  // which abi got threaded through — checked explicitly rather than only
-  // relying on isCompoundAbi, since this same helper is shared with
-  // "rebalance" too.
-  const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
+  // feePayoutSwapIx — computed above (live uncollected fees, only nonzero
+  // when isCompoundAbi && !autoCompoundFees && payoutFeesInStableOnly). Same
+  // conditional as runRebalanceViaUniLab's own finalArgs: only rebalance()/
+  // ownerRebalance() on the COMPOUND ABI take this 4th positional arg.
+  // ownerRebalance() itself only exists on compound vaults at all (standard
+  // RangeVaultArb.sol never had it), so that targetFunctionName is
+  // unconditionally compound-shaped regardless of which abi got threaded
+  // through — checked explicitly rather than only relying on isCompoundAbi,
+  // since this same helper is shared with "rebalance" too.
   const isCompoundShaped = isCompoundAbi || targetFunctionName === "ownerRebalance";
   const buildFinalArgs = (amountOutMinimum: bigint) => {
     const mintSwapIx = {
@@ -1537,9 +1607,8 @@ async function computeRebalanceParams(
       amountOutMinimum,
       fee: swapFee,
     };
-    const noSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: swapFee };
     return isCompoundShaped
-      ? ([newTickLower, newTickUpper, mintSwapIx, noSwapIx, reinjectAmount, 0n, 0n] as const)
+      ? ([newTickLower, newTickUpper, mintSwapIx, feePayoutSwapIx, reinjectAmount, 0n, 0n] as const)
       : ([newTickLower, newTickUpper, mintSwapIx, reinjectAmount, 0n, 0n] as const);
   };
 
@@ -1579,6 +1648,7 @@ async function computeRebalanceParams(
       fee: swapFee,
     },
     reinjectAmount,
+    feePayoutSwapIx,
   };
 }
 
@@ -1598,16 +1668,12 @@ async function runRebalanceViaUniLab(
   // (this same function is shared by both — see runRebalance's own
   // docstring). Reference-equality against chain.compoundVaultAbi, same
   // check tick.ts/monitor.ts/discovery.ts already do by `record.kind`, just
-  // from the ABI object itself since that's what's in scope here. Sized as
-  // a no-op for now (amountIn=0) — payoutFeesInStableOnly still applies
-  // correctly when autoCompoundFees is on (fees reinject, this param is
-  // unused there); this only leaves the non-compounding-fee-payout case
-  // unconverted, same documented gap as handleOwnerRebalance's own
-  // client-side default.
+  // from the ABI object itself since that's what's in scope here.
+  // params.feePayoutSwapIx is already correctly sized (or a no-op) by
+  // computeRebalanceParams itself, live off uncollected fees.
   const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
-  const noSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: params.swapIx.fee };
   const finalArgs = isCompoundAbi
-    ? ([params.newTickLower, params.newTickUpper, params.swapIx, noSwapIx, params.reinjectAmount, 0n, 0n] as const)
+    ? ([params.newTickLower, params.newTickUpper, params.swapIx, params.feePayoutSwapIx, params.reinjectAmount, 0n, 0n] as const)
     : ([params.newTickLower, params.newTickUpper, params.swapIx, params.reinjectAmount, 0n, 0n] as const);
   if (!(await hasEnoughOperatorGas(chain, vaultAddress, { functionName: "rebalance", args: finalArgs }, abi))) {
     return;
@@ -1670,6 +1736,7 @@ export async function computeOwnerRebalanceParams(
       newTickUpper: number;
       swapIx: { token0ToToken1: boolean; amountIn: bigint; amountOutMinimum: bigint; fee: number };
       reinjectAmount: bigint;
+      feePayoutSwapIx: { token0ToToken1: boolean; amountIn: bigint; amountOutMinimum: bigint; fee: number };
     }
   | { ok: false }
 > {
@@ -1695,6 +1762,7 @@ async function runRebalanceExitTop(
   store: Store,
   abi: Abi = chain.vaultAbi as Abi,
 ): Promise<void> {
+  const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
   const vault = vaultContract(chain, vaultAddress, abi);
   const [
     positionTokenId,
@@ -1706,6 +1774,10 @@ async function runRebalanceExitTop(
     platformConfig,
     maxSlippageBps,
     pool,
+    autoCompoundFees,
+    payoutFeesInStableOnly,
+    hardCeilingEnabled,
+    hardCeilingTick,
   ] = await Promise.all([
     vault.read.positionTokenId() as Promise<bigint>,
     vault.read.positionManager() as Promise<Address>,
@@ -1718,6 +1790,10 @@ async function runRebalanceExitTop(
     vault.read.platformConfig() as Promise<Address>, // for currentRebalanceFee — see ensureFeeCoverage below
     vault.read.maxSlippageBps() as Promise<bigint>,
     vault.read.pool() as Promise<Address>,
+    isCompoundAbi ? (vault.read.autoCompoundFees() as Promise<boolean>) : Promise.resolve(false),
+    isCompoundAbi ? (vault.read.payoutFeesInStableOnly() as Promise<boolean>) : Promise.resolve(false),
+    isCompoundAbi ? (vault.read.hardCeilingEnabled() as Promise<boolean>).catch(() => false) : Promise.resolve(false),
+    isCompoundAbi ? (vault.read.hardCeilingTick() as Promise<number>).catch(() => 0) : Promise.resolve(0),
   ]);
 
   const [tick, spacing, position] = await Promise.all([
@@ -1733,8 +1809,31 @@ async function runRebalanceExitTop(
     >,
   ]);
 
-  const [, , , , , posTickLower, posTickUpper, liquidity] = position;
+  const [
+    ,
+    ,
+    ,
+    ,
+    ,
+    posTickLower,
+    posTickUpper,
+    liquidity,
+    feeGrowthInside0LastX128,
+    feeGrowthInside1LastX128,
+    tokensOwed0,
+    tokensOwed1,
+  ] = position;
   const ethPrice = ethPriceFromTick(tick, chain.stableIsToken0, chain.stableDecimals, chain.volatileDecimals);
+
+  // Feature 6 — same direction-aware comparison as the contract's own
+  // _isAboveHardCeiling(): higher tick means LOWER price when stableIsToken0
+  // (Celo), HIGHER price when it isn't (Arbitrum). If this evaluates true,
+  // rebalance() will redirect on-chain to close-to-stable-and-pause
+  // regardless of newTickLower/newTickUpper/swapIx computed below — this
+  // flag only changes how feePayoutSwapIx gets sized (see below), never the
+  // mint params themselves (the contract ignores them in that branch anyway).
+  const willHitHardCeiling =
+    isCompoundAbi && hardCeilingEnabled && (chain.stableIsToken0 ? tick <= hardCeilingTick : tick >= hardCeilingTick);
 
   const newLowerPrice = ethPrice * (1 - Number(recenterMarginBps) / 10_000);
   const newUpperPrice = ethPrice * (1 + Number(exitTopCeilingMarginBps) / 10_000);
@@ -1791,13 +1890,63 @@ async function runRebalanceExitTop(
   // Safe here for the same reason as runRebalanceViaUniLab: decreaseLiquidity+
   // collect already ran by the time _executeSwap does, inside the same tx.
   const swapFee = await pickDeepestSwapFee(chain);
-  // feePayoutSwapIx — see runRebalanceViaUniLab's own comment on why this is
-  // conditional on the compound ABI specifically, and why a no-op is safe
-  // here. Note: if the vault has a hard ceiling configured (V3) and the
-  // price crossed it, rebalance() redirects on-chain to close-to-stable-
-  // and-pause regardless of newTickLower/newTickUpper/swapIx below — the
-  // keeper doesn't need to special-case that, the contract already does.
-  const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
+
+  // feePayoutSwapIx — two different sizing intents depending on
+  // willHitHardCeiling (computed above from the SAME live tick this
+  // function already fetched, so it can't drift from what the contract
+  // itself will see):
+  //   - Hard ceiling triggers: _closeToStableAndPause() uses this swap to
+  //     convert the ENTIRE closed-out balance (principal + fees together) —
+  //     size it against the full closedVolatileRaw + idle dust, not just the
+  //     fee, or the "become 100% stable" intent only partially happens.
+  //   - Otherwise, normal payoutFeesInStableOnly semantics: fee-only, same
+  //     live-uncollected-fees formula as computeRebalanceParams.
+  let feePayoutSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: swapFee };
+  if (willHitHardCeiling) {
+    const fullVolatileRaw = Math.max(0, Math.floor(closedVolatileRaw) + Number(idleWeth));
+    if (fullVolatileRaw > 0) {
+      feePayoutSwapIx = {
+        token0ToToken1: !chain.stableIsToken0,
+        amountIn: BigInt(fullVolatileRaw),
+        amountOutMinimum: 0n,
+        fee: swapFee,
+      };
+    }
+  } else if (isCompoundAbi && !autoCompoundFees && payoutFeesInStableOnly && liquidity > 0n) {
+    const [feeGrowthGlobal0X128, feeGrowthGlobal1X128, tickLowerData, tickUpperData] = (await Promise.all([
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128" }),
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128" }),
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickLower] }),
+      chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickUpper] }),
+    ])) as [bigint, bigint, readonly bigint[], readonly bigint[]];
+
+    const { fees0Raw, fees1Raw } = uncollectedFeesRaw({
+      liquidity,
+      tokensOwed0,
+      tokensOwed1,
+      feeGrowthInside0LastX128,
+      feeGrowthInside1LastX128,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      tickLowerOutside0X128: tickLowerData[2],
+      tickLowerOutside1X128: tickLowerData[3],
+      tickUpperOutside0X128: tickUpperData[2],
+      tickUpperOutside1X128: tickUpperData[3],
+      currentTick: tick,
+      tickLower: posTickLower,
+      tickUpper: posTickUpper,
+    });
+    const volatileFeeRaw = Math.max(0, Math.floor(chain.stableIsToken0 ? fees1Raw : fees0Raw));
+    if (volatileFeeRaw > 0) {
+      feePayoutSwapIx = {
+        token0ToToken1: !chain.stableIsToken0,
+        amountIn: BigInt(volatileFeeRaw),
+        amountOutMinimum: 0n,
+        fee: swapFee,
+      };
+    }
+  }
+
   const buildRebalanceArgs = (amountOutMinimum: bigint) => {
     const mintSwapIx = {
       token0ToToken1: toToken0ToToken1(swapIx.sellStable, chain),
@@ -1805,9 +1954,8 @@ async function runRebalanceExitTop(
       amountOutMinimum,
       fee: swapFee,
     };
-    const noSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: swapFee };
     return isCompoundAbi
-      ? ([newTickLower, newTickUpper, mintSwapIx, noSwapIx, 0n, 0n, 0n] as const)
+      ? ([newTickLower, newTickUpper, mintSwapIx, feePayoutSwapIx, 0n, 0n, 0n] as const)
       : ([newTickLower, newTickUpper, mintSwapIx, 0n, 0n, 0n] as const); // no reinjection — from-scratch rebuild, like initPosition()
   };
 
