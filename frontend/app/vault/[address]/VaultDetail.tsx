@@ -676,6 +676,11 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // already uses for sizeRebalanceSwap, not a simulate-then-execute round
   // trip).
   const [withdrawConvertToStable, setWithdrawConvertToStable] = useState(false);
+  // Per-call override for "Cobrar comisiones", same idea as
+  // withdrawConvertToStable — defaults to the persistent
+  // payoutFeesInStableOnly preference whenever the modal opens, but the
+  // owner can flip it just for this one claim without touching the setting.
+  const [collectConvertToStable, setCollectConvertToStable] = useState(false);
   // Same feature 5(b) checkbox, mirrored for the "Retirar todo" button —
   // sized at a full 100% share instead of withdrawPositionShareBps.
   const [withdrawAllConvertToStable, setWithdrawAllConvertToStable] = useState(false);
@@ -708,6 +713,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showRiskLimits, setShowRiskLimits] = useState(false);
+
+  // Sync the "Cobrar comisiones" per-call toggle to the persistent
+  // payoutFeesInStableOnly preference every time that modal opens — a
+  // sensible starting point, still overridable just for this claim.
+  useEffect(() => {
+    if (manageModal === "collect") setCollectConvertToStable(payoutFeesInStableOnly);
+  }, [manageModal, payoutFeesInStableOnly]);
 
   // Single choke point for every write in this file — the viewing chain
   // (chain, from useSelectedChain) and the wallet's actual connected chain
@@ -1036,7 +1048,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // positionTokensOwedLive preview the ratio-matching swap above already
     // reads, just aimed at 100% conversion instead of ratio-matching.
     let feePayoutSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
-    if (!autoCompoundFees && payoutFeesInStableOnly && positionTokensOwedLive) {
+    if (!autoCompoundFees && collectConvertToStable && positionTokensOwedLive) {
       const volatileOwed = stableIsToken0 ? positionTokensOwedLive.tokensOwed1 : positionTokensOwedLive.tokensOwed0;
       if (volatileOwed > 0n) {
         feePayoutSwapIx = {
@@ -1880,18 +1892,48 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                   <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
                     {t("vaultDetail.collectFeesReviewLabel")}
                   </p>
-                  <p className="mt-1 text-lg font-semibold text-[#050505]">
-                    {collectPreview ? collectPreview.volatile.toFixed(6) : "—"} {volatileSymbol}
-                  </p>
-                  <p className="text-lg font-semibold text-[#050505]">
-                    {collectPreview ? collectPreview.stable.toFixed(2) : "—"} {stableSymbol}
-                  </p>
+                  {isCompound && !autoCompoundFees && collectConvertToStable ? (
+                    <p className="mt-1 text-lg font-semibold text-[#050505]">
+                      {collectPreview && currentTick !== undefined
+                        ? (
+                            collectPreview.stable +
+                            collectPreview.volatile *
+                              ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
+                          ).toFixed(2)
+                        : "—"}{" "}
+                      {stableSymbol}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-lg font-semibold text-[#050505]">
+                        {collectPreview ? collectPreview.volatile.toFixed(6) : "—"} {volatileSymbol}
+                      </p>
+                      <p className="text-lg font-semibold text-[#050505]">
+                        {collectPreview ? collectPreview.stable.toFixed(2) : "—"} {stableSymbol}
+                      </p>
+                    </>
+                  )}
                   <p className="mt-2 text-xs text-black/60">
                     {isCompound && autoCompoundFees
                       ? t("vaultDetail.collectFeesTooltipCompoundOn")
-                      : t("vaultDetail.withdrawReviewFeesNote")}
+                      : isCompound && collectConvertToStable
+                        ? t("vaultDetail.withdrawReviewFeesNoteConverted")
+                        : t("vaultDetail.withdrawReviewFeesNote")}
                   </p>
                 </div>
+                {isCompound && !autoCompoundFees && (
+                  <button
+                    type="button"
+                    onClick={() => setCollectConvertToStable((v) => !v)}
+                    className={
+                      collectConvertToStable
+                        ? "mt-4 flex w-full items-center justify-center gap-2 rounded-full border-2 border-[#050505] bg-[#050505] px-4 py-2.5 text-sm font-semibold text-accent-soft transition-opacity hover:opacity-90"
+                        : "mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-black/25 px-4 py-2.5 text-sm font-medium text-[#050505] transition-colors hover:bg-black/5"
+                    }
+                  >
+                    {t("vaultDetail.withdrawConvertToStable", { symbol: stableSymbol })}
+                  </button>
+                )}
                 <div className="mt-6 flex gap-3">
                   <button
                     onClick={() => setManageModal(null)}
