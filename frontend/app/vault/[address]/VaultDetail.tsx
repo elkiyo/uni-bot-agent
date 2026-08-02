@@ -1644,23 +1644,33 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     // the close button. See the modal wrapper's own comment
                     // above for the scroll/sticky-header half of that fix.
                     <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestableAmount")}</span>
-                          <span className="font-mono text-[11px] text-black/40">
-                            {t("vaultDetail.availableBalance", { amount: investableAvailable.toFixed(6), symbol: stableSymbol })}
-                          </span>
+                      {/* Once a position exists, investableUsdt can only ever
+                          hold transient dust (fix #3 blocks depositing into
+                          it directly anymore — see investableUseIncreaseInstead
+                          above) that a later sweep/rebalance folds into the
+                          position on its own. Showing an input that's almost
+                          always "Disponible: 0.000000" is dead-end clutter —
+                          only render it when there's actually something to
+                          withdraw. */}
+                      {investableAvailable > 0 && (
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestableAmount")}</span>
+                            <span className="font-mono text-[11px] text-black/40">
+                              {t("vaultDetail.availableBalance", { amount: investableAvailable.toFixed(6), symbol: stableSymbol })}
+                            </span>
+                          </div>
+                          <input
+                            className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                            value={withdrawInvestableAmount}
+                            onChange={(e) => setWithdrawInvestableAmount(e.target.value)}
+                            inputMode="decimal"
+                          />
+                          <LightPctQuickButtons
+                            onPick={(pct) => setWithdrawInvestableAmount(amountFromPct(pct, investableAvailable))}
+                          />
                         </div>
-                        <input
-                          className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
-                          value={withdrawInvestableAmount}
-                          onChange={(e) => setWithdrawInvestableAmount(e.target.value)}
-                          inputMode="decimal"
-                        />
-                        <LightPctQuickButtons
-                          onPick={(pct) => setWithdrawInvestableAmount(amountFromPct(pct, investableAvailable))}
-                        />
-                      </div>
+                      )}
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="text-xs text-black/60">{t("vaultDetail.fieldReserveAmount")}</span>
