@@ -3,8 +3,8 @@ import RangeVaultAbi from "./abi/RangeVault.json";
 import VaultFactoryAbi from "./abi/VaultFactory.json";
 import RangeVaultArbAbi from "./abi/RangeVaultArb.json";
 import VaultFactoryArbAbi from "./abi/VaultFactoryArb.json";
-import RangeVaultArbCompoundV2Abi from "./abi/RangeVaultArbCompoundV2.json";
-import VaultFactoryArbCompoundV2Abi from "./abi/VaultFactoryArbCompoundV2.json";
+import RangeVaultArbCompoundV3Abi from "./abi/RangeVaultArbCompoundV3.json";
+import VaultFactoryArbCompoundV3Abi from "./abi/VaultFactoryArbCompoundV3.json";
 import PlatformConfigAbi from "./abi/PlatformConfig.json";
 
 // Cast through Abi (rather than leaving the plain JSON-inferred type) so wagmi's
@@ -22,16 +22,21 @@ export const rangeVaultArbAbi = RangeVaultArbAbi as Abi;
 export const vaultFactoryArbAbi = VaultFactoryArbAbi as Abi;
 // rangeVaultArbCompoundAbi/vaultFactoryArbCompoundAbi are the interest-compounding
 // fork of RangeVaultArb.sol/VaultFactoryArb.sol — Arbitrum only. Points at the
-// V2 factory (ownerRebalance(), split withdraw(), increasePositionWithToken(),
-// uncountedInvestable — see contracts/src/compound/RangeVaultArbCompoundV2.sol's
-// class docstring) as of 2026-07-28: the only compound vault ever created (the
-// single beta wallet's, see compoundBeta.ts) was emptied before this switch, so
-// there was no live V1 vault left to keep serving — repointed this one slot
-// directly instead of adding V1/V2 coexistence plumbing. RangeVaultArbCompound.sol/
-// VaultFactoryArbCompound.sol (V1) are untouched on-chain but no longer referenced
-// from the frontend.
-export const rangeVaultArbCompoundAbi = RangeVaultArbCompoundV2Abi as Abi;
-export const vaultFactoryArbCompoundAbi = VaultFactoryArbCompoundV2Abi as Abi;
+// V3 factory (saturating-subtraction fix on withdrawAll()/emergencyWithdrawPosition(),
+// uncountedInvestable clamps, investableAmount restricted to before the first
+// position, withdraw() respecting autoCompoundFees, payoutFeesInStableOnly,
+// hardCeiling — see contracts/src/compound/RangeVaultArbCompoundV3.sol's class
+// docstring) as of 2026-08-02: repointed this slot directly instead of adding
+// V2/V3 coexistence plumbing — same pattern as the V1→V2 switch, this time a
+// deliberate call (not "nothing live to lose") after confirming the one vault
+// still holding a real position (0x7186CE90dE92D6B6412eA79b8f3c2964c34D78c7) has
+// funds the owner considers insignificant and already effectively stranded.
+// RangeVaultArbCompound.sol/VaultFactoryArbCompound.sol (V1) and
+// RangeVaultArbCompoundV2.sol/VaultFactoryArbCompoundV2.sol (V2) are untouched
+// on-chain but no longer referenced from the frontend — their vaults keep
+// working via direct contract calls, just outside this app's UI/keeper.
+export const rangeVaultArbCompoundAbi = RangeVaultArbCompoundV3Abi as Abi;
+export const vaultFactoryArbCompoundAbi = VaultFactoryArbCompoundV3Abi as Abi;
 export const platformConfigAbi = PlatformConfigAbi as Abi;
 
 export const uniswapV3PoolAbi = [

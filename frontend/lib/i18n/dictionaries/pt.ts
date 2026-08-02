@@ -451,6 +451,7 @@ const pt: Dictionary = {
     txSettingRisk: "Definindo limites de risco",
     txCollectingFees: "Resgatando comissões",
     txSettingAutoCompound: "Configurando juros compostos",
+    txSettingPayoutStable: "Configurando pagamento em moeda estável",
     txWithdrawing: "Sacando",
     txResuming: "Retomando",
     txPausing: "Pausando",
@@ -596,6 +597,7 @@ const pt: Dictionary = {
     withdrawReviewReserve: "De reserva ({{pct}}%)",
     withdrawReviewGasReserve: "De reserva de gás ({{pct}}%)",
     withdrawReviewFeesNote: "Inclui as comissões não coletadas. Valores estimados — o contrato calcula o valor real na execução.",
+    withdrawConvertToStable: "Receber posição + comissões em {symbol}",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",
 
@@ -615,6 +617,10 @@ const pt: Dictionary = {
     autoCompoundToggleOff: "Desativar juros compostos",
     autoCompoundToggleHint:
       "Com isso ativo, as comissões de cada rebalanceamento, do resgate manual e do auto-resgate programado são reinjetadas na posição em vez de pagas para sua carteira.",
+    payoutStableToggleOn: "Cobrar comissões apenas em {symbol}",
+    payoutStableToggleOff: "Cobrar comissões em ambos os tokens",
+    payoutStableToggleHint:
+      "Só se aplica quando os juros compostos estão desativados. Com isso ativo, toda vez que uma comissão for paga direto para sua carteira (rebalanceamento, resgate manual), a parte que não é {symbol} é convertida para {symbol} na mesma transação.",
     compoundSectionLabel: "Juros compostos — resgate automático de comissões",
     withdrawAll: "Sacar tudo",
     resume: "Retomar",

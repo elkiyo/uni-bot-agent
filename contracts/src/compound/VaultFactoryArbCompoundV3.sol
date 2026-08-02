@@ -2,14 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
-import {RangeVault} from "./RangeVault.sol";
+import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import {RangeVaultArbCompoundV3} from "./RangeVaultArbCompoundV3.sol";
 
-/// @title VaultFactory
-/// @notice Deploys RangeVault instances as EIP-1167 minimal clones. This is what makes
-/// uni-bot-agent a platform rather than a single hand-run vault: anyone can call
-/// createVault() to get their own non-custodial vault pointed at the platform's
-/// operator. See autorange.md ("Los 3 roles del sistema" / "Plataforma pública completa").
-contract VaultFactory {
+contract VaultFactoryArbCompoundV3 {
+    error TokenMismatch();
+
     address public immutable implementation;
     address public immutable platformConfig;
     address public immutable positionManager;
@@ -23,26 +21,36 @@ contract VaultFactory {
     );
 
     constructor(address _platformConfig, address _positionManager, address _swapRouter) {
-        implementation = address(new RangeVault());
+        implementation = address(new RangeVaultArbCompoundV3());
         platformConfig = _platformConfig;
         positionManager = _positionManager;
         swapRouter = _swapRouter;
     }
 
-    /// @notice Deploy a fresh vault for `msg.sender`, pointed at `pool` (token0/token1/fee
-    /// must match the pool's own values — the caller supplies them so the vault doesn't
-    /// need to make an extra call back into the pool during initialize()).
-    function createVault(address pool, address token0, address token1, uint24 fee)
+    function createVault(address pool, address stableToken, address volatileToken, uint24 fee)
         external
         returns (address vault)
     {
+        address poolToken0 = IUniswapV3Pool(pool).token0();
+        address poolToken1 = IUniswapV3Pool(pool).token1();
+        bool stableIsToken0;
+        if (stableToken == poolToken0 && volatileToken == poolToken1) {
+            stableIsToken0 = true;
+        } else if (stableToken == poolToken1 && volatileToken == poolToken0) {
+            stableIsToken0 = false;
+        } else {
+            revert TokenMismatch();
+        }
+
         vault = Clones.clone(implementation);
-        RangeVault(vault).initialize(msg.sender, platformConfig, pool, token0, token1, fee, positionManager, swapRouter);
+        RangeVaultArbCompoundV3(vault).initialize(
+            msg.sender, platformConfig, pool, poolToken0, poolToken1, stableIsToken0, fee, positionManager, swapRouter
+        );
 
         _vaultsByOwner[msg.sender].push(vault);
         allVaults.push(vault);
 
-        emit VaultCreated(msg.sender, vault, pool, token0, token1, fee);
+        emit VaultCreated(msg.sender, vault, pool, poolToken0, poolToken1, fee);
     }
 
     function getVaultsByOwner(address ownerAddr) external view returns (address[] memory) {

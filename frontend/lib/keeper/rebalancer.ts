@@ -1520,15 +1520,28 @@ async function computeRebalanceParams(
   // real balance, same-tx — unlike the standalone pre-tx quote this whole
   // rebalance-swap path exists to avoid (see minAmountOutForRebalanceSwap).
   const swapFee = await pickDeepestSwapFee(chain);
-  const buildFinalArgs = (amountOutMinimum: bigint) =>
-    [
-      newTickLower,
-      newTickUpper,
-      { token0ToToken1: toToken0ToToken1(finalSwap.sellStable, chain), amountIn: finalSwap.amountIn, amountOutMinimum, fee: swapFee },
-      reinjectAmount,
-      0n,
-      0n,
-    ] as const;
+  // feePayoutSwapIx — same conditional as runRebalanceViaUniLab's own
+  // finalArgs: only rebalance()/ownerRebalance() on the COMPOUND ABI take
+  // this 4th positional arg. ownerRebalance() itself only exists on compound
+  // vaults at all (standard RangeVaultArb.sol never had it), so that
+  // targetFunctionName is unconditionally compound-shaped regardless of
+  // which abi got threaded through — checked explicitly rather than only
+  // relying on isCompoundAbi, since this same helper is shared with
+  // "rebalance" too.
+  const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
+  const isCompoundShaped = isCompoundAbi || targetFunctionName === "ownerRebalance";
+  const buildFinalArgs = (amountOutMinimum: bigint) => {
+    const mintSwapIx = {
+      token0ToToken1: toToken0ToToken1(finalSwap.sellStable, chain),
+      amountIn: finalSwap.amountIn,
+      amountOutMinimum,
+      fee: swapFee,
+    };
+    const noSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: swapFee };
+    return isCompoundShaped
+      ? ([newTickLower, newTickUpper, mintSwapIx, noSwapIx, reinjectAmount, 0n, 0n] as const)
+      : ([newTickLower, newTickUpper, mintSwapIx, reinjectAmount, 0n, 0n] as const);
+  };
 
   // Real gate, using uni-lab's actual computed range instead of the earlier
   // local guess — the probe above only ever checked our own estimate, and
@@ -1579,7 +1592,23 @@ async function runRebalanceViaUniLab(
   const params = await computeRebalanceParams(chain, vaultAddress, store, reason, abi, "rebalance");
   if (!params) return;
 
-  const finalArgs = [params.newTickLower, params.newTickUpper, params.swapIx, params.reinjectAmount, 0n, 0n] as const;
+  // feePayoutSwapIx is a V3-only 4th positional arg — RangeVaultArb.sol's
+  // (standard) rebalance() and RangeVaultArbCompoundV2's still only take 6
+  // args, so this must ONLY be added when calling against the compound ABI
+  // (this same function is shared by both — see runRebalance's own
+  // docstring). Reference-equality against chain.compoundVaultAbi, same
+  // check tick.ts/monitor.ts/discovery.ts already do by `record.kind`, just
+  // from the ABI object itself since that's what's in scope here. Sized as
+  // a no-op for now (amountIn=0) — payoutFeesInStableOnly still applies
+  // correctly when autoCompoundFees is on (fees reinject, this param is
+  // unused there); this only leaves the non-compounding-fee-payout case
+  // unconverted, same documented gap as handleOwnerRebalance's own
+  // client-side default.
+  const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
+  const noSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: params.swapIx.fee };
+  const finalArgs = isCompoundAbi
+    ? ([params.newTickLower, params.newTickUpper, params.swapIx, noSwapIx, params.reinjectAmount, 0n, 0n] as const)
+    : ([params.newTickLower, params.newTickUpper, params.swapIx, params.reinjectAmount, 0n, 0n] as const);
   if (!(await hasEnoughOperatorGas(chain, vaultAddress, { functionName: "rebalance", args: finalArgs }, abi))) {
     return;
   }
@@ -1762,15 +1791,25 @@ async function runRebalanceExitTop(
   // Safe here for the same reason as runRebalanceViaUniLab: decreaseLiquidity+
   // collect already ran by the time _executeSwap does, inside the same tx.
   const swapFee = await pickDeepestSwapFee(chain);
-  const buildRebalanceArgs = (amountOutMinimum: bigint) =>
-    [
-      newTickLower,
-      newTickUpper,
-      { token0ToToken1: toToken0ToToken1(swapIx.sellStable, chain), amountIn: swapIx.amountIn, amountOutMinimum, fee: swapFee },
-      0n, // no reinjection — from-scratch rebuild, like initPosition()
-      0n,
-      0n,
-    ] as const;
+  // feePayoutSwapIx — see runRebalanceViaUniLab's own comment on why this is
+  // conditional on the compound ABI specifically, and why a no-op is safe
+  // here. Note: if the vault has a hard ceiling configured (V3) and the
+  // price crossed it, rebalance() redirects on-chain to close-to-stable-
+  // and-pause regardless of newTickLower/newTickUpper/swapIx below — the
+  // keeper doesn't need to special-case that, the contract already does.
+  const isCompoundAbi = abi === (chain.compoundVaultAbi as Abi | undefined);
+  const buildRebalanceArgs = (amountOutMinimum: bigint) => {
+    const mintSwapIx = {
+      token0ToToken1: toToken0ToToken1(swapIx.sellStable, chain),
+      amountIn: swapIx.amountIn,
+      amountOutMinimum,
+      fee: swapFee,
+    };
+    const noSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: swapFee };
+    return isCompoundAbi
+      ? ([newTickLower, newTickUpper, mintSwapIx, noSwapIx, 0n, 0n, 0n] as const)
+      : ([newTickLower, newTickUpper, mintSwapIx, 0n, 0n, 0n] as const); // no reinjection — from-scratch rebuild, like initPosition()
+  };
 
   const exitTopAmountOutMinimum = await minAmountOutForRebalanceSwap(
     chain,

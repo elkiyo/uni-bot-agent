@@ -449,6 +449,7 @@ const es = {
     txSettingRisk: "Fijando límites de riesgo",
     txCollectingFees: "Reclamando comisiones",
     txSettingAutoCompound: "Configurando interés compuesto",
+    txSettingPayoutStable: "Configurando pago en moneda estable",
     txWithdrawing: "Retirando",
     txResuming: "Reanudando",
     txPausing: "Pausando",
@@ -598,6 +599,7 @@ const es = {
     withdrawReviewReserve: "De reserva ({{pct}}%)",
     withdrawReviewGasReserve: "De reserva de gas ({{pct}}%)",
     withdrawReviewFeesNote: "Incluye las comisiones sin cobrar. Montos estimados — el contrato calcula el monto real al ejecutar.",
+    withdrawConvertToStable: "Recibir posición + comisiones en {symbol}",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",
 
@@ -620,6 +622,10 @@ const es = {
     autoCompoundToggleOff: "Desactivar interés compuesto",
     autoCompoundToggleHint:
       "Con esto activo, las comisiones de cada rebalanceo, del reclamo manual y del auto-reclamo programado se reinyectan en la posición en vez de pagarse a tu wallet.",
+    payoutStableToggleOn: "Cobrar comisiones solo en {symbol}",
+    payoutStableToggleOff: "Cobrar comisiones en ambos tokens",
+    payoutStableToggleHint:
+      "Solo aplica cuando el interés compuesto está apagado. Con esto activo, cada vez que se pague una comisión directo a tu wallet (rebalanceo, reclamo manual), la parte que no es {symbol} se convierte a {symbol} en la misma transacción.",
     compoundSectionLabel: "Interés compuesto — reclamo automático de comisiones",
     withdrawAll: "Retirar todo",
     resume: "Reanudar",

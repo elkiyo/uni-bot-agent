@@ -246,14 +246,31 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // calling against the standard ABI would fail to encode. See
   // RangeVaultArbCompound.sol for what each one gates.
   const { data: compoundData } = useReadContracts({
-    contracts: (["autoCompoundFees", "feeClaimThresholdBps", "feeClaimIntervalSeconds", "lastFeeClaimTimestamp"] as const).map(
-      (functionName) => ({ address, abi: vaultAbi, functionName, chainId: chain.id }) as const,
-    ),
+    contracts: (
+      [
+        "autoCompoundFees",
+        "feeClaimThresholdBps",
+        "feeClaimIntervalSeconds",
+        "lastFeeClaimTimestamp",
+        "payoutFeesInStableOnly",
+        "hardCeilingEnabled",
+        "hardCeilingTick",
+      ] as const
+    ).map((functionName) => ({ address, abi: vaultAbi, functionName, chainId: chain.id }) as const),
     query: { enabled: isCompound, refetchInterval: 60_000 },
   });
-  const [autoCompoundFeesRaw, feeClaimThresholdBps, feeClaimIntervalSeconds, lastFeeClaimTimestamp] =
-    compoundData?.map((d) => d.result) ?? [];
+  const [
+    autoCompoundFeesRaw,
+    feeClaimThresholdBps,
+    feeClaimIntervalSeconds,
+    lastFeeClaimTimestamp,
+    payoutFeesInStableOnlyRaw,
+    hardCeilingEnabledRaw,
+    hardCeilingTick,
+  ] = compoundData?.map((d) => d.result) ?? [];
   const autoCompoundFees = Boolean(autoCompoundFeesRaw);
+  const payoutFeesInStableOnly = Boolean(payoutFeesInStableOnlyRaw);
+  const hardCeilingEnabled = Boolean(hardCeilingEnabledRaw);
 
   const { data: feesSummary } = useVaultFeesSummary(address, chain, vaultAbi);
   // B1 — see useVaultCumulativeInvestment's own docstring. Raw stable-decimal
@@ -646,6 +663,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const increaseQuoteLoading = increaseQuotePending && increaseQuote.isLoading;
   const increaseQuoteErrored = increaseQuotePending && increaseQuote.isError;
   const [withdrawPositionPct, setWithdrawPositionPct] = useState("0");
+  // Feature 5(b) — per-call "todo en {stable}" option in the withdraw modal.
+  // NOT a persisted preference (unlike payoutFeesInStableOnly) — the owner
+  // is present signing this exact transaction, so they just size the
+  // conversion for THIS withdrawal, no on-chain flag needed. See
+  // handlePartialWithdraw's own sizing comment for how the swap amount is
+  // estimated client-side (same estimation-based pattern this codebase
+  // already uses for sizeRebalanceSwap, not a simulate-then-execute round
+  // trip).
+  const [withdrawConvertToStable, setWithdrawConvertToStable] = useState(false);
   // withdrawFundsPct: standard (V1) vaults only — withdraw() there still
   // takes one shared bps for investable+reserve+gas. Compound (V2) vaults
   // split it into 3 fully independent buckets below (see withdraw()'s own
@@ -939,6 +965,22 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     );
   }
 
+  // Feature 5(a) — persistent preference. Settable regardless of
+  // autoCompoundFees's current value (matches the contract's own docstring —
+  // lets the owner pre-arm it before flipping the other switch), only
+  // actually changes behavior while autoCompoundFees is off.
+  async function handleTogglePayoutFeesInStableOnly() {
+    await withTx(t("vaultDetail.txSettingPayoutStable"), () =>
+      writeContractAsync({
+        address,
+        abi: vaultAbi,
+        functionName: "setPayoutFeesInStableOnly",
+        args: [!payoutFeesInStableOnly],
+        chainId: chain.id,
+      }),
+    );
+  }
+
   async function handleCollectFees() {
     // Standard vaults: unchanged, no-arg collectFees() straight to the owner.
     if (!isCompound) {
@@ -948,14 +990,15 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       return;
     }
 
-    // Compound vault: collectFees() now always takes (swapIx, amount0Min,
-    // amount1Min) — with autoCompoundFees off it behaves exactly like the
-    // standard call above (empty swapIx, _executeSwap no-ops on amountIn=0).
-    // With it on, the accrued tokensOwed0/1 (both legs — Uniswap accrues fees
-    // in both at once) need the same mixed-balance correction swap the
-    // keeper's own runClaimFees sizes server-side, via sizeRebalanceSwap
-    // toward the position's own live ratio — see RangeVaultArbCompound.sol's
-    // _reinjectFees docstring for why sizeRebalanceSwap, not sizeInitialSwap.
+    // Compound vault (V3): collectFees() now takes (swapIx, feePayoutSwapIx,
+    // amount0Min, amount1Min) — with autoCompoundFees off it behaves exactly
+    // like the standard call above (empty swapIx, _executeSwap no-ops on
+    // amountIn=0). With it on, the accrued tokensOwed0/1 (both legs —
+    // Uniswap accrues fees in both at once) need the same mixed-balance
+    // correction swap the keeper's own runClaimFees sizes server-side, via
+    // sizeRebalanceSwap toward the position's own live ratio — see
+    // RangeVaultArbCompound.sol's _reinjectFees docstring for why
+    // sizeRebalanceSwap, not sizeInitialSwap.
     let swapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
     if (autoCompoundFees && positionTicks && positionTokensOwedLive && currentTick !== undefined) {
       const ethPrice = ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals);
@@ -980,12 +1023,30 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       };
     }
 
+    // Fix 5(a) — payoutFeesInStableOnly: only relevant in the non-compounding
+    // branch (autoCompoundFees off), converting the volatile leg of the
+    // accrued fee to the vault's stable token. Sized against the SAME
+    // positionTokensOwedLive preview the ratio-matching swap above already
+    // reads, just aimed at 100% conversion instead of ratio-matching.
+    let feePayoutSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
+    if (!autoCompoundFees && payoutFeesInStableOnly && positionTokensOwedLive) {
+      const volatileOwed = stableIsToken0 ? positionTokensOwedLive.tokensOwed1 : positionTokensOwedLive.tokensOwed0;
+      if (volatileOwed > 0n) {
+        feePayoutSwapIx = {
+          token0ToToken1: !stableIsToken0,
+          amountIn: volatileOwed,
+          amountOutMinimum: 0n,
+          fee: feeTier,
+        };
+      }
+    }
+
     await withTx(t("vaultDetail.txCollectingFees"), () =>
       writeContractAsync({
         address,
         abi: vaultAbi,
         functionName: "collectFees",
-        args: [swapIx, 0n, 0n],
+        args: [swapIx, feePayoutSwapIx, 0n, 0n],
         chainId: chain.id,
       }),
     );
@@ -1136,6 +1197,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         return;
       }
       setBusy(null);
+      // feePayoutSwapIx (V3): sized server-side by owner-rebalance-params
+      // when payoutFeesInStableOnly is on and autoCompoundFees is off, same
+      // as the keeper's own rebalance() sizing (see rebalancer.ts) —
+      // defaults to a no-op (amountIn=0) when the route doesn't return one,
+      // which _convertPayoutToStable() treats as "pay the fee raw,
+      // unconverted" (safe, just doesn't honor the preference for this one
+      // action yet).
+      const feePayoutSwapIx = data.feePayoutSwapIx
+        ? {
+            token0ToToken1: data.feePayoutSwapIx.token0ToToken1,
+            amountIn: BigInt(data.feePayoutSwapIx.amountIn),
+            amountOutMinimum: BigInt(data.feePayoutSwapIx.amountOutMinimum),
+            fee: data.feePayoutSwapIx.fee,
+          }
+        : { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
       await withTx(t("vaultDetail.txRebalancing"), () =>
         writeContractAsync({
           address,
@@ -1150,6 +1226,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               amountOutMinimum: BigInt(data.swapIx.amountOutMinimum),
               fee: data.swapIx.fee,
             },
+            feePayoutSwapIx,
             BigInt(data.reinjectAmount),
             0n,
             0n,
@@ -1170,22 +1247,75 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // via each bucket's own available balance) — never recomputed here, so
     // this can't drift from what the review screen showed.
     const positionShareBps = BigInt(withdrawPositionShareBps);
-    // Compound (V2) vaults: 3 fully independent buckets. Standard (V1)
-    // vaults: one shared bucket, withdraw() there only takes 2 args total.
-    const withdrawArgs = isCompound
-      ? [positionShareBps, BigInt(withdrawInvestableShareBps), BigInt(withdrawReserveShareBps), BigInt(withdrawGasReserveShareBps)]
-      : [positionShareBps, BigInt(Math.round(Number(withdrawFundsPct || "0") * 100))];
-    if (withdrawArgs.every((bps) => bps === 0n)) return;
-    if (withdrawArgs.some((bps) => bps > 10_000n)) {
+
+    if (!isCompound) {
+      const withdrawArgs = [positionShareBps, BigInt(Math.round(Number(withdrawFundsPct || "0") * 100))];
+      if (withdrawArgs.every((bps) => bps === 0n)) return;
+      if (withdrawArgs.some((bps) => bps > 10_000n)) {
+        setError(t("vaultDetail.errPctOver100"));
+        return;
+      }
+      await withTx(t("vaultDetail.txWithdrawing"), () =>
+        writeContractAsync({ address, abi: vaultAbi, functionName: "withdraw", args: withdrawArgs, chainId: chain.id }),
+      );
+      setWithdrawPositionPct("0");
+      setWithdrawFundsPct("0");
+      return;
+    }
+
+    // Compound (V3): 4 independent buckets + feeSwapIx (fix #4's reinject
+    // sizing when autoCompoundFees is on) + payoutSwapIx (feature 5(b), the
+    // "todo en {stable}" checkbox). feeSwapIx defaults to a no-op — the
+    // contract still folds fees back into the remaining position correctly
+    // without it (confirmed in RangeVaultArbCompoundV3.t.sol), just without
+    // ratio-matching optimization.
+    const investableShareBps = BigInt(withdrawInvestableShareBps);
+    const reserveShareBps = BigInt(withdrawReserveShareBps);
+    const gasReserveShareBps = BigInt(withdrawGasReserveShareBps);
+    if (
+      positionShareBps === 0n && investableShareBps === 0n && reserveShareBps === 0n && gasReserveShareBps === 0n
+    ) {
+      return;
+    }
+    if ([positionShareBps, investableShareBps, reserveShareBps, gasReserveShareBps].some((bps) => bps > 10_000n)) {
       setError(t("vaultDetail.errPctOver100"));
       return;
     }
+
+    const noSwap = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
+    let payoutSwapIx = noSwap;
+    if (withdrawConvertToStable && positionShareBps > 0n && positionTicks && positionLiquidity !== undefined && positionTokensOwedLive && currentTick !== undefined) {
+      // Client-side estimate, same pattern as sizeRebalanceSwap elsewhere in
+      // this file — not a simulate-then-execute round trip. Under-sizing
+      // (leaving some volatile dust unconverted) degrades gracefully;
+      // over-sizing would revert the whole withdraw, so a 1% safety haircut
+      // guards against estimation drift between this read and the tx landing.
+      const { amount0Raw, amount1Raw } = estimatePositionAmounts({
+        liquidity: positionLiquidity,
+        currentTick,
+        tickLower: positionTicks.tickLower,
+        tickUpper: positionTicks.tickUpper,
+      });
+      const total0 = amount0Raw + Number(positionTokensOwedLive.tokensOwed0);
+      const total1 = amount1Raw + Number(positionTokensOwedLive.tokensOwed1);
+      const shareFraction = withdrawPositionShareBps / 10_000;
+      const volatileRawEstimate = Math.floor((stableIsToken0 ? total1 : total0) * shareFraction * 0.99);
+      if (volatileRawEstimate > 0) {
+        payoutSwapIx = {
+          token0ToToken1: !stableIsToken0,
+          amountIn: BigInt(volatileRawEstimate),
+          amountOutMinimum: 0n,
+          fee: feeTier,
+        };
+      }
+    }
+
     await withTx(t("vaultDetail.txWithdrawing"), () =>
       writeContractAsync({
         address,
         abi: vaultAbi,
         functionName: "withdraw",
-        args: withdrawArgs,
+        args: [positionShareBps, investableShareBps, reserveShareBps, gasReserveShareBps, noSwap, payoutSwapIx, 0n, 0n],
         chainId: chain.id,
       }),
     );
@@ -1194,6 +1324,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     setWithdrawInvestableAmount("0");
     setWithdrawReserveAmount("0");
     setWithdrawGasReserveAmount("0");
+    setWithdrawConvertToStable(false);
   }
 
   // Owner-only switch — sits right under the "view on Uniswap" link in
@@ -1540,6 +1671,17 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     </div>
                   )}
                 </div>
+                {isCompound && withdrawPositionShareBps > 0 && (
+                  <label className="mt-4 flex items-center gap-2.5 text-sm text-black/70">
+                    <input
+                      type="checkbox"
+                      checked={withdrawConvertToStable}
+                      onChange={(e) => setWithdrawConvertToStable(e.target.checked)}
+                      className="h-4 w-4 rounded border-black/30 accent-[#050505]"
+                    />
+                    {t("vaultDetail.withdrawConvertToStable", { symbol: stableSymbol })}
+                  </label>
+                )}
                 <button
                   onClick={() => {
                     if (isCompound) {
@@ -2352,17 +2494,35 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       {autoCompoundFees ? t("vaultDetail.autoCompoundToggleOff") : t("vaultDetail.autoCompoundToggleOn")}
                     </button>
                   )}
+                  {isCompound && (
+                    <button
+                      onClick={handleTogglePayoutFeesInStableOnly}
+                      disabled={Boolean(busy)}
+                      className="btn-secondary"
+                      title={t("vaultDetail.payoutStableToggleHint", { symbol: stableSymbol })}
+                    >
+                      {payoutFeesInStableOnly
+                        ? t("vaultDetail.payoutStableToggleOff", { symbol: stableSymbol })
+                        : t("vaultDetail.payoutStableToggleOn", { symbol: stableSymbol })}
+                    </button>
+                  )}
                   <button
                     onClick={() =>
-                      withTx(t("vaultDetail.txWithdrawing"), () =>
-                        writeContractAsync({
+                      withTx(t("vaultDetail.txWithdrawing"), () => {
+                        // Standard (V1) vaults: no-arg withdrawAll(). Compound
+                        // (V3) vaults: 2 no-op SwapInstructions — this button
+                        // is the "todo, sin conversión extra" path; the
+                        // checkbox-driven conversion (feature 5(b)) only
+                        // lives on the partial-withdraw modal for now.
+                        const noSwap = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
+                        return writeContractAsync({
                           address,
                           abi: vaultAbi,
                           functionName: "withdrawAll",
-                          args: [],
+                          args: isCompound ? [noSwap, noSwap] : [],
                           chainId: chain.id,
-                        }),
-                      )
+                        });
+                      })
                     }
                     disabled={Boolean(busy)}
                     className="btn-secondary"

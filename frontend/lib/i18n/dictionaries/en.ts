@@ -451,6 +451,7 @@ const en: Dictionary = {
     txSettingRisk: "Setting risk limits",
     txCollectingFees: "Claiming fees",
     txSettingAutoCompound: "Setting compounding",
+    txSettingPayoutStable: "Setting stable-only payout",
     txWithdrawing: "Withdrawing",
     txResuming: "Resuming",
     txPausing: "Pausing",
@@ -596,6 +597,7 @@ const en: Dictionary = {
     withdrawReviewReserve: "From reserve ({{pct}}%)",
     withdrawReviewGasReserve: "From gas reserve ({{pct}}%)",
     withdrawReviewFeesNote: "Includes uncollected fees. Estimated amounts — the contract computes the real amount at execution.",
+    withdrawConvertToStable: "Receive position + fees in {symbol}",
     withdrawReviewCancel: "Cancel",
     withdrawReviewConfirm: "Confirm",
 
@@ -615,6 +617,10 @@ const en: Dictionary = {
     autoCompoundToggleOff: "Turn compounding off",
     autoCompoundToggleHint:
       "When on, fees from every rebalance, manual claim, and scheduled auto-claim get reinjected into the position instead of paid out to your wallet.",
+    payoutStableToggleOn: "Charge fees in {symbol} only",
+    payoutStableToggleOff: "Charge fees in both tokens",
+    payoutStableToggleHint:
+      "Only applies while compounding is off. When on, any fee paid directly to your wallet (rebalance, manual claim) gets its non-{symbol} leg converted to {symbol} in the same transaction.",
     compoundSectionLabel: "Compounding — automatic fee claim",
     withdrawAll: "Withdraw all",
     resume: "Resume",
