@@ -600,6 +600,8 @@ const es = {
     withdrawReviewReserve: "De reserva ({{pct}}%)",
     withdrawReviewGasReserve: "De reserva de gas ({{pct}}%)",
     withdrawReviewFeesNote: "Incluye las comisiones sin cobrar. Montos estimados — el contrato calcula el monto real al ejecutar.",
+    withdrawReviewFeesNoteConverted:
+      "Incluye las comisiones sin cobrar, convertidas a la moneda estable. Estimado al precio actual — el monto real puede variar según el precio al momento de ejecutar.",
     withdrawConvertToStable: "Recibir posición + comisiones en {{symbol}}",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",

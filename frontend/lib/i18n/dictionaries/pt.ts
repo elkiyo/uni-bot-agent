@@ -598,6 +598,8 @@ const pt: Dictionary = {
     withdrawReviewReserve: "De reserva ({{pct}}%)",
     withdrawReviewGasReserve: "De reserva de gás ({{pct}}%)",
     withdrawReviewFeesNote: "Inclui as comissões não coletadas. Valores estimados — o contrato calcula o valor real na execução.",
+    withdrawReviewFeesNoteConverted:
+      "Inclui as comissões não coletadas, convertidas para a moeda estável. Estimado no preço atual — o valor real pode variar conforme o preço na execução.",
     withdrawConvertToStable: "Receber posição + comissões em {{symbol}}",
     withdrawReviewCancel: "Cancelar",
     withdrawReviewConfirm: "Confirmar",

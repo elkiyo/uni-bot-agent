@@ -1721,17 +1721,6 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     </div>
                   )}
                 </div>
-                {isCompound && withdrawPositionShareBps > 0 && (
-                  <label className="mt-4 flex items-center gap-2.5 text-sm text-black/70">
-                    <input
-                      type="checkbox"
-                      checked={withdrawConvertToStable}
-                      onChange={(e) => setWithdrawConvertToStable(e.target.checked)}
-                      className="h-4 w-4 rounded border-black/30 accent-[#050505]"
-                    />
-                    {t("vaultDetail.withdrawConvertToStable", { symbol: stableSymbol })}
-                  </label>
-                )}
                 <button
                   onClick={() => {
                     if (isCompound) {
@@ -1772,14 +1761,50 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
                         {t("vaultDetail.withdrawReviewPosition", { pct: withdrawPositionPct })}
                       </p>
-                      <p className="mt-1 text-lg font-semibold text-[#050505]">
-                        {withdrawPreview ? withdrawPreview.positionVolatile.toFixed(6) : "—"} {volatileSymbol}
+                      {withdrawConvertToStable ? (
+                        // Estimated post-conversion total — everything folded
+                        // into {stable} at the live price, same formula a1Usd
+                        // above already uses. Real on-chain result can differ
+                        // slightly (execution-time price, actual swap slippage).
+                        <p className="mt-1 text-lg font-semibold text-[#050505]">
+                          {withdrawPreview && currentTick !== undefined
+                            ? (
+                                withdrawPreview.positionStable +
+                                withdrawPreview.positionVolatile *
+                                  ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
+                              ).toFixed(2)
+                            : "—"}{" "}
+                          {stableSymbol}
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mt-1 text-lg font-semibold text-[#050505]">
+                            {withdrawPreview ? withdrawPreview.positionVolatile.toFixed(6) : "—"} {volatileSymbol}
+                          </p>
+                          <p className="text-lg font-semibold text-[#050505]">
+                            {withdrawPreview ? withdrawPreview.positionStable.toFixed(2) : "—"} {stableSymbol}
+                          </p>
+                        </>
+                      )}
+                      <p className="mt-2 text-xs text-black/60">
+                        {withdrawConvertToStable
+                          ? t("vaultDetail.withdrawReviewFeesNoteConverted")
+                          : t("vaultDetail.withdrawReviewFeesNote")}
                       </p>
-                      <p className="text-lg font-semibold text-[#050505]">
-                        {withdrawPreview ? withdrawPreview.positionStable.toFixed(2) : "—"} {stableSymbol}
-                      </p>
-                      <p className="mt-2 text-xs text-black/60">{t("vaultDetail.withdrawReviewFeesNote")}</p>
                     </div>
+                  )}
+                  {isCompound && withdrawPositionShareBps > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawConvertToStable((v) => !v)}
+                      className={
+                        withdrawConvertToStable
+                          ? "flex w-full items-center justify-center gap-2 rounded-full border-2 border-[#050505] bg-[#050505] px-4 py-2.5 text-sm font-semibold text-accent-soft transition-opacity hover:opacity-90"
+                          : "flex w-full items-center justify-center gap-2 rounded-full border border-black/25 px-4 py-2.5 text-sm font-medium text-[#050505] transition-colors hover:bg-black/5"
+                      }
+                    >
+                      {t("vaultDetail.withdrawConvertToStable", { symbol: stableSymbol })}
+                    </button>
                   )}
                   {isCompound ? (
                     <>

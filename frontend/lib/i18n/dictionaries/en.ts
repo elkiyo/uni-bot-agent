@@ -598,6 +598,8 @@ const en: Dictionary = {
     withdrawReviewReserve: "From reserve ({{pct}}%)",
     withdrawReviewGasReserve: "From gas reserve ({{pct}}%)",
     withdrawReviewFeesNote: "Includes uncollected fees. Estimated amounts — the contract computes the real amount at execution.",
+    withdrawReviewFeesNoteConverted:
+      "Includes uncollected fees, converted to the stable token. Estimated at the current price — the real amount can vary with the price at execution.",
     withdrawConvertToStable: "Receive position + fees in {{symbol}}",
     withdrawReviewCancel: "Cancel",
     withdrawReviewConfirm: "Confirm",

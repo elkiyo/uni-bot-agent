@@ -589,6 +589,7 @@ const zh: Dictionary = {
     withdrawReviewReserve: "来自储备金（{{pct}}%）",
     withdrawReviewGasReserve: "来自 Gas 储备（{{pct}}%）",
     withdrawReviewFeesNote: "包含未领取的手续费。为估算金额——实际金额以合约执行时计算为准。",
+    withdrawReviewFeesNoteConverted: "包含未领取的手续费，已按当前价格换算为稳定币。为估算金额——实际金额可能因执行时的价格而有所不同。",
     withdrawConvertToStable: "以 {{symbol}} 接收头寸本金 + 手续费",
     withdrawReviewCancel: "取消",
     withdrawReviewConfirm: "确认",
