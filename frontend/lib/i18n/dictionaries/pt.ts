@@ -532,6 +532,7 @@ const pt: Dictionary = {
     configFeeClaimThreshold: "Limite de auto-resgate",
     configFeeClaimInterval: "Intervalo de auto-resgate",
     configLastFeeClaim: "Último resgate",
+    configHardCeiling: "Teto absoluto de preço",
     configNever: "nunca",
 
     managementTitle: "Gestão",

@@ -532,6 +532,7 @@ const en: Dictionary = {
     configFeeClaimThreshold: "Auto-claim threshold",
     configFeeClaimInterval: "Auto-claim interval",
     configLastFeeClaim: "Last claim",
+    configHardCeiling: "Hard price ceiling",
     configNever: "never",
 
     managementTitle: "Management",

@@ -524,6 +524,7 @@ const zh: Dictionary = {
     configFeeClaimThreshold: "自动领取阈值",
     configFeeClaimInterval: "自动领取间隔",
     configLastFeeClaim: "上次领取",
+    configHardCeiling: "绝对价格上限",
     configNever: "从未",
 
     managementTitle: "管理",

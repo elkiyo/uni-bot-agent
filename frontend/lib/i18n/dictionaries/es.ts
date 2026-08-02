@@ -530,6 +530,7 @@ const es = {
     configFeeClaimThreshold: "Umbral de auto-reclamo",
     configFeeClaimInterval: "Intervalo de auto-reclamo",
     configLastFeeClaim: "Último reclamo",
+    configHardCeiling: "Techo absoluto de precio",
     configNever: "nunca",
 
     managementTitle: "Gestión",

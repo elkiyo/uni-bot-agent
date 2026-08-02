@@ -2413,6 +2413,14 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                           : t("vaultDetail.configNever")
                       }
                     />
+                    <ConfigRow
+                      k={t("vaultDetail.configHardCeiling")}
+                      v={
+                        hardCeilingEnabled && hardCeilingTick !== undefined
+                          ? `${ethPriceFromTick(Number(hardCeilingTick), stableIsToken0, stableDecimals, volatileDecimals).toFixed(2)} ${stableSymbol}`
+                          : t("vaultDetail.configOff")
+                      }
+                    />
                   </>
                 )}
               </dl>
