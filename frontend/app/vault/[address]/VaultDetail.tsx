@@ -453,6 +453,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const [depInvestable, setDepInvestable] = useState("0");
   const [depReserve, setDepReserve] = useState("0");
   const [depGasReserve, setDepGasReserve] = useState("0");
+  // Once a position exists, the "invertible" field of deposit()/depositToken()
+  // is hidden below (see the modal's own JSX) in favor of "Sumar a la
+  // posición abierta" (increasePosition()) — a Deposited event only counts
+  // toward B1 immediately when positionAlreadyExists is false; once true, it
+  // waits for a LATER fold-in that may take a while (see
+  // useVaultCumulativeInvestment.ts's own docstring), while PositionIncreased
+  // always counts the full amount right away. Reset here (not just hidden)
+  // so a stale nonzero value typed before the position existed can never
+  // slip into a later deposit() call once it does — same documented-React
+  // reset-during-render pattern as prevIsCompoundForToken below.
+  const [prevHasPositionForDeposit, setPrevHasPositionForDeposit] = useState(hasPosition);
+  if (prevHasPositionForDeposit !== hasPosition) {
+    setPrevHasPositionForDeposit(hasPosition);
+    if (hasPosition) setDepInvestable("0");
+  }
 
   // Which stablecoin the owner hands over for EACH of the three deposit
   // fields — independent per field, same capability/gating as
@@ -1715,25 +1730,37 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 )}
                 {isCompound && <span className="mt-3 block text-xs text-black/60">{t("vaultDetail.depositTokenLabel")}</span>}
                 <div className="mt-2 flex flex-col gap-4">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestable")}</span>
-                    {isCompound && (
-                      <DepositTokenSelector
-                        size="mini"
-                        variant="light"
-                        tokens={depositTokenOptions}
-                        selected={investDepositToken}
-                        onSelect={setInvestDepositToken}
-                        balances={depositTokenBalancesUsd}
+                  {hasPosition ? (
+                    // Once a position exists, capital meant for the position
+                    // goes through "Sumar a la posición abierta" instead —
+                    // see prevHasPositionForDeposit's own comment above for
+                    // why (a Deposited event here would sit uncounted toward
+                    // B1 until a later fold-in, while PositionIncreased
+                    // always counts immediately).
+                    <p className="rounded-xl border border-black/15 bg-white/40 px-3 py-2.5 text-xs text-black/60">
+                      {t("vaultDetail.investableUseIncreaseInstead")}
+                    </p>
+                  ) : (
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs text-black/60">{t("vaultDetail.fieldInvestable")}</span>
+                      {isCompound && (
+                        <DepositTokenSelector
+                          size="mini"
+                          variant="light"
+                          tokens={depositTokenOptions}
+                          selected={investDepositToken}
+                          onSelect={setInvestDepositToken}
+                          balances={depositTokenBalancesUsd}
+                        />
+                      )}
+                      <input
+                        className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
+                        value={depInvestable}
+                        onChange={(e) => setDepInvestable(e.target.value)}
+                        inputMode="decimal"
                       />
-                    )}
-                    <input
-                      className="rounded-xl border border-black/15 bg-white/60 px-3 py-2.5 text-[#050505] outline-none focus:border-black/40"
-                      value={depInvestable}
-                      onChange={(e) => setDepInvestable(e.target.value)}
-                      inputMode="decimal"
-                    />
-                  </label>
+                    </label>
+                  )}
                   <label className="flex flex-col gap-1.5">
                     <span className="text-xs text-black/60">{t("vaultDetail.fieldReserve")}</span>
                     {isCompound && (

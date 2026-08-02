@@ -532,6 +532,7 @@ const zh: Dictionary = {
       "该金库尚未支付创建费——将在你此处存入的金额基础上一次性额外收取 {{fee}} {{symbol}}。",
     platformCapNote: "平台上限：{{cap}} {{symbol}}——剩余可用额度 {{room}} {{symbol}}。",
     fieldInvestable: "可投资本金",
+    investableUseIncreaseInstead: "该 vault 已经有持仓 —— 请改用「增加流动性」来追加资本，这样会立即计入你的已投入资本（B1）。",
     fieldReserve: "储备金",
     fieldGasBudget: "Gas 预算",
     deposit: "存款",

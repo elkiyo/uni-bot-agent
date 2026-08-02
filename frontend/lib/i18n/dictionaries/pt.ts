@@ -540,6 +540,8 @@ const pt: Dictionary = {
       "Este vault ainda não pagou a taxa de criação — {{fee}} {{symbol}} são somados ao valor que você depositar aqui, uma única vez.",
     platformCapNote: "Teto da plataforma: {{cap}} {{symbol}} — restam {{room}} {{symbol}} de margem.",
     fieldInvestable: "Investível",
+    investableUseIncreaseInstead:
+      "Este vault já tem uma posição aberta — use \"Adicionar liquidez\" em vez disso para somar capital a ela. Assim conta imediatamente no seu capital investido (B1).",
     fieldReserve: "Reserva",
     fieldGasBudget: "Orçamento de gas",
     deposit: "Depositar",

@@ -538,6 +538,8 @@ const es = {
       "Este vault todavía no pagó el fee de creación — se suma {{fee}} {{symbol}} arriba de lo que pongas acá, una sola vez.",
     platformCapNote: "Tope de la plataforma: {{cap}} {{symbol}} — quedan {{room}} {{symbol}} de margen.",
     fieldInvestable: "Invertible",
+    investableUseIncreaseInstead:
+      "Este vault ya tiene una posición abierta — usá \"Agregar liquidez\" en su lugar para sumarle capital. Así cuenta de inmediato en tu capital invertido (B1).",
     fieldReserve: "Reserva",
     fieldGasBudget: "Presupuesto de gas",
     deposit: "Depositar",
