@@ -519,6 +519,7 @@ const zh: Dictionary = {
     configTopMargin: "上限边际（向上突破）",
     configMaxRebalances: "再平衡次数上限",
     configAutoCompound: "复利",
+    configPayoutStableOnly: "仅以稳定币收取手续费",
     configOnValue: "已开启",
     configOffValue: "已关闭",
     configFeeClaimThreshold: "自动领取阈值",

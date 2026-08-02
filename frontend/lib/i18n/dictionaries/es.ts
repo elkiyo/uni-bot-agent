@@ -525,6 +525,7 @@ const es = {
     configTopMargin: "Margen techo (salida arriba)",
     configMaxRebalances: "Tope de rebalanceos",
     configAutoCompound: "Interés compuesto",
+    configPayoutStableOnly: "Comisiones solo en stable",
     configOnValue: "activo",
     configOffValue: "apagado",
     configFeeClaimThreshold: "Umbral de auto-reclamo",

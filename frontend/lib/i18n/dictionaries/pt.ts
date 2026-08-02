@@ -527,6 +527,7 @@ const pt: Dictionary = {
     configTopMargin: "Margem de teto (saída por cima)",
     configMaxRebalances: "Teto de rebalanceamentos",
     configAutoCompound: "Juros compostos",
+    configPayoutStableOnly: "Comissões só em stable",
     configOnValue: "ativos",
     configOffValue: "desativados",
     configFeeClaimThreshold: "Limite de auto-resgate",

@@ -527,6 +527,7 @@ const en: Dictionary = {
     configTopMargin: "Ceiling margin (upper exit)",
     configMaxRebalances: "Rebalance cap",
     configAutoCompound: "Compound interest",
+    configPayoutStableOnly: "Fees in stable only",
     configOnValue: "on",
     configOffValue: "off",
     configFeeClaimThreshold: "Auto-claim threshold",

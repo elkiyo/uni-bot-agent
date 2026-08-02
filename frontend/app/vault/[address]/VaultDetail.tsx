@@ -2427,6 +2427,10 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       v={autoCompoundFees ? t("vaultDetail.configOnValue") : t("vaultDetail.configOffValue")}
                     />
                     <ConfigRow
+                      k={t("vaultDetail.configPayoutStableOnly")}
+                      v={payoutFeesInStableOnly ? t("vaultDetail.configOnValue") : t("vaultDetail.configOffValue")}
+                    />
+                    <ConfigRow
                       k={t("vaultDetail.configFeeClaimThreshold")}
                       v={
                         feeClaimThresholdBps && (feeClaimThresholdBps as bigint) > 0n
