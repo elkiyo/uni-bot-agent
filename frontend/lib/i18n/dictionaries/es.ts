@@ -585,6 +585,8 @@ const es = {
 
     partialWithdrawHint:
       "Independiente entre sí — retirá un % de la posición activa, un % de los fondos idle (invertible + reserva), o ambos, sin cerrar el vault.",
+    withdrawAllModalHint:
+      "Retira el 100% de todo lo que tenga el vault — posición, invertible, reserva y reserva de gas — en una sola transacción.",
     fieldPositionPct: "% de la posición",
     fieldIdleFundsPct: "% de fondos idle",
     // Compound (V2) vaults split "fondos idle" en 3 baldes 100%

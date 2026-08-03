@@ -708,17 +708,18 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // feeGrowthGlobal calc PositionNFT.tsx uses — good enough for an
   // estimate, not a money-moving computation, same tolerance already
   // accepted elsewhere in this file (see handleReconfigure).
-  const [manageModal, setManageModal] = useState<"add" | "remove" | "collect" | "deposit" | null>(null);
+  const [manageModal, setManageModal] = useState<"add" | "remove" | "collect" | "deposit" | "withdrawAll" | null>(null);
   const [manageStep, setManageStep] = useState<"input" | "review">("input");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showRiskLimits, setShowRiskLimits] = useState(false);
 
-  // Sync the "Cobrar comisiones" per-call toggle to the persistent
-  // payoutFeesInStableOnly preference every time that modal opens — a
-  // sensible starting point, still overridable just for this claim.
+  // Sync the "Cobrar comisiones"/"Retirar todo" per-call toggles to the
+  // persistent payoutFeesInStableOnly preference every time either modal
+  // opens — a sensible starting point, still overridable just for that call.
   useEffect(() => {
     if (manageModal === "collect") setCollectConvertToStable(payoutFeesInStableOnly);
+    if (manageModal === "withdrawAll") setWithdrawAllConvertToStable(payoutFeesInStableOnly);
   }, [manageModal, payoutFeesInStableOnly]);
 
   // Single choke point for every write in this file — the viewing chain
@@ -1379,6 +1380,52 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     setWithdrawConvertToStable(false);
   }
 
+  async function handleWithdrawAll() {
+    // Standard (V1) vaults: no-arg withdrawAll(). Compound (V3) vaults: 2
+    // SwapInstructions — feeSwapIx always a no-op (withdrawAll() sweeps
+    // whatever payoutFeesInStableOnly already converted, no separate
+    // fee-swap slot), payoutSwapIx sized against the checkbox, same
+    // estimate-and-no-haircut reasoning as handlePartialWithdraw's own
+    // (fees only ever grow between this read and the tx landing).
+    const noSwap = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
+    let payoutSwapIx = noSwap;
+    if (
+      withdrawAllConvertToStable &&
+      positionTicks &&
+      positionLiquidity !== undefined &&
+      positionTokensOwedLive &&
+      currentTick !== undefined
+    ) {
+      const { amount0Raw, amount1Raw } = estimatePositionAmounts({
+        liquidity: positionLiquidity,
+        currentTick,
+        tickLower: positionTicks.tickLower,
+        tickUpper: positionTicks.tickUpper,
+      });
+      const total0 = amount0Raw + Number(positionTokensOwedLive.tokensOwed0);
+      const total1 = amount1Raw + Number(positionTokensOwedLive.tokensOwed1);
+      const volatileRawEstimate = Math.floor(stableIsToken0 ? total1 : total0);
+      if (volatileRawEstimate > 0) {
+        payoutSwapIx = {
+          token0ToToken1: !stableIsToken0,
+          amountIn: BigInt(volatileRawEstimate),
+          amountOutMinimum: 0n,
+          fee: feeTier,
+        };
+      }
+    }
+    await withTx(t("vaultDetail.txWithdrawing"), () =>
+      writeContractAsync({
+        address,
+        abi: vaultAbi,
+        functionName: "withdrawAll",
+        args: isCompound ? [noSwap, payoutSwapIx] : [],
+        chainId: chain.id,
+      }),
+    );
+    setWithdrawAllConvertToStable(false);
+  }
+
   // Owner-only switch — sits right under the "view on Uniswap" link in
   // PositionNFT's own card instead of up in the page header, so it's next to
   // the position's own external links rather than competing with status
@@ -1549,6 +1596,28 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
       }
     : undefined;
 
+  // "Retirar todo" preview — same live-fee-inclusive position estimate as
+  // withdrawPreview above, but always at 100% (independent of whatever's
+  // typed into the partial-withdraw modal's own fields) plus the full
+  // investable/reserve/gas balances, since withdrawAll() sweeps everything.
+  const withdrawAllPreview =
+    hasPosition && positionTicks && positionLiquidity !== undefined && positionTokensOwedLive && currentTick !== undefined
+      ? (() => {
+          const { amount0Raw, amount1Raw } = estimatePositionAmounts({
+            liquidity: positionLiquidity,
+            currentTick,
+            tickLower: positionTicks.tickLower,
+            tickUpper: positionTicks.tickUpper,
+          });
+          const total0 = amount0Raw + Number(positionTokensOwedLive.tokensOwed0);
+          const total1 = amount1Raw + Number(positionTokensOwedLive.tokensOwed1);
+          return {
+            positionStable: (stableIsToken0 ? total0 : total1) * 10 ** -stableDecimals,
+            positionVolatile: (stableIsToken0 ? total1 : total0) * 10 ** -volatileDecimals,
+          };
+        })()
+      : undefined;
+
   return (
     <>
       {capAlert && (
@@ -1577,7 +1646,9 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                     ? t("vaultDetail.removeLiquidityTitle")
                     : manageModal === "collect"
                       ? t("vaultDetail.collectFeesTitle")
-                      : t("vaultDetail.deposit")}
+                      : manageModal === "withdrawAll"
+                        ? t("vaultDetail.withdrawAll")
+                        : t("vaultDetail.deposit")}
               </h3>
               <button
                 onClick={() => setManageModal(null)}
@@ -1994,6 +2065,112 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
               </>
             )}
 
+            {/* ---- Retirar todo — one step, shows every bucket that's
+                about to sweep out (position + invertible + reserva + gas),
+                same review-with-toggle pattern as "Eliminar liquidez"/
+                "Cobrar comisiones". */}
+            {manageModal === "withdrawAll" && (
+              <>
+                <p className="mt-1 text-sm text-black/60">{t("vaultDetail.withdrawAllModalHint")}</p>
+                <div className="mt-5 flex flex-col gap-4 text-sm">
+                  {hasPosition && (
+                    <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                        {t("vaultDetail.withdrawReviewPosition", { pct: "100" })}
+                      </p>
+                      {isCompound && withdrawAllConvertToStable ? (
+                        <p className="mt-1 text-lg font-semibold text-[#050505]">
+                          {withdrawAllPreview && currentTick !== undefined
+                            ? (
+                                withdrawAllPreview.positionStable +
+                                withdrawAllPreview.positionVolatile *
+                                  ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
+                              ).toFixed(2)
+                            : "—"}{" "}
+                          {stableSymbol}
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mt-1 text-lg font-semibold text-[#050505]">
+                            {withdrawAllPreview ? withdrawAllPreview.positionVolatile.toFixed(6) : "—"} {volatileSymbol}
+                          </p>
+                          <p className="text-lg font-semibold text-[#050505]">
+                            {withdrawAllPreview ? withdrawAllPreview.positionStable.toFixed(2) : "—"} {stableSymbol}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {investableAvailable > 0 && (
+                    <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                        {t("vaultDetail.fieldInvestableAmount")}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-[#050505]">
+                        {investableAvailable.toFixed(6)} {stableSymbol}
+                      </p>
+                    </div>
+                  )}
+                  {reserveAvailable > 0 && (
+                    <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                        {t("vaultDetail.fieldReserveAmount")}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-[#050505]">
+                        {reserveAvailable.toFixed(6)} {stableSymbol}
+                      </p>
+                    </div>
+                  )}
+                  {gasReserveAvailable > 0 && (
+                    <div className="rounded-xl border border-black/10 bg-black/5 p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                        {t("vaultDetail.fieldGasReserveAmount")}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-[#050505]">
+                        {gasReserveAvailable.toFixed(6)} {stableSymbol}
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-black/60">
+                    {isCompound && withdrawAllConvertToStable
+                      ? t("vaultDetail.withdrawReviewFeesNoteConverted")
+                      : t("vaultDetail.withdrawReviewFeesNote")}
+                  </p>
+                </div>
+                {isCompound && hasPosition && (
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawAllConvertToStable((v) => !v)}
+                    className={
+                      withdrawAllConvertToStable
+                        ? "mt-4 flex w-full items-center justify-center gap-2 rounded-full border-2 border-[#050505] bg-[#050505] px-4 py-2.5 text-sm font-semibold text-accent-soft transition-opacity hover:opacity-90"
+                        : "mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-black/25 px-4 py-2.5 text-sm font-medium text-[#050505] transition-colors hover:bg-black/5"
+                    }
+                  >
+                    {t("vaultDetail.withdrawConvertToStable", { symbol: stableSymbol })}
+                  </button>
+                )}
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={() => setManageModal(null)}
+                    className="flex-1 rounded-full border border-black/25 py-2.5 font-medium text-[#050505] transition-colors hover:bg-black/5"
+                  >
+                    {t("vaultDetail.withdrawReviewCancel")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setManageModal(null);
+                      handleWithdrawAll();
+                    }}
+                    disabled={Boolean(busy)}
+                    className="flex-1 rounded-full bg-[#050505] py-2.5 font-semibold text-accent-soft transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {t("vaultDetail.withdrawReviewConfirm")}
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* ---- Depositar (invertible / reserva / gas), single step —
                 same fields/validation the inline card used to have, now
                 just relocated behind a button. */}
@@ -2399,6 +2576,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 >
                   {t("vaultDetail.deposit")}
                 </button>
+                <button
+                  onClick={() => setManageModal("withdrawAll")}
+                  disabled={Boolean(busy)}
+                  className="btn-secondary !border-[var(--accent-glow-border)] !bg-[var(--accent-glow-bg)] !text-accent-text"
+                >
+                  {t("vaultDetail.withdrawAll")}
+                </button>
               </div>
             )}
 
@@ -2698,93 +2882,13 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
-                  {/* Reclamar comisiones moved to its own modal, opened via
-                      the "Cobrar comisiones" button right under the
-                      position's own price-range card — see manageModal. */}
-                  {isCompound && (
-                    <button
-                      onClick={handleToggleAutoCompound}
-                      disabled={Boolean(busy)}
-                      className="btn-secondary"
-                      title={t("vaultDetail.autoCompoundToggleHint")}
-                    >
-                      {autoCompoundFees ? t("vaultDetail.autoCompoundToggleOff") : t("vaultDetail.autoCompoundToggleOn")}
-                    </button>
-                  )}
-                  {isCompound && (
-                    <button
-                      onClick={handleTogglePayoutFeesInStableOnly}
-                      disabled={Boolean(busy)}
-                      className="btn-secondary"
-                      title={t("vaultDetail.payoutStableToggleHint", { symbol: stableSymbol })}
-                    >
-                      {payoutFeesInStableOnly
-                        ? t("vaultDetail.payoutStableToggleOff", { symbol: stableSymbol })
-                        : t("vaultDetail.payoutStableToggleOn", { symbol: stableSymbol })}
-                    </button>
-                  )}
-                  <button
-                    onClick={() =>
-                      withTx(t("vaultDetail.txWithdrawing"), () => {
-                        // Standard (V1) vaults: no-arg withdrawAll(). Compound
-                        // (V3) vaults: 2 SwapInstructions — feeSwapIx always a
-                        // no-op (withdrawAll() sweeps whatever payoutFeesInStableOnly
-                        // already converted, no separate fee-swap slot), payoutSwapIx
-                        // sized against the checkbox, same estimate-and-no-haircut
-                        // reasoning as handlePartialWithdraw's own (fees only ever
-                        // grow between this read and the tx landing).
-                        const noSwap = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
-                        let payoutSwapIx = noSwap;
-                        if (
-                          withdrawAllConvertToStable &&
-                          positionTicks &&
-                          positionLiquidity !== undefined &&
-                          positionTokensOwedLive &&
-                          currentTick !== undefined
-                        ) {
-                          const { amount0Raw, amount1Raw } = estimatePositionAmounts({
-                            liquidity: positionLiquidity,
-                            currentTick,
-                            tickLower: positionTicks.tickLower,
-                            tickUpper: positionTicks.tickUpper,
-                          });
-                          const total0 = amount0Raw + Number(positionTokensOwedLive.tokensOwed0);
-                          const total1 = amount1Raw + Number(positionTokensOwedLive.tokensOwed1);
-                          const volatileRawEstimate = Math.floor(stableIsToken0 ? total1 : total0);
-                          if (volatileRawEstimate > 0) {
-                            payoutSwapIx = {
-                              token0ToToken1: !stableIsToken0,
-                              amountIn: BigInt(volatileRawEstimate),
-                              amountOutMinimum: 0n,
-                              fee: feeTier,
-                            };
-                          }
-                        }
-                        return writeContractAsync({
-                          address,
-                          abi: vaultAbi,
-                          functionName: "withdrawAll",
-                          args: isCompound ? [noSwap, payoutSwapIx] : [],
-                          chainId: chain.id,
-                        });
-                      })
-                    }
-                    disabled={Boolean(busy)}
-                    className="btn-secondary"
-                  >
-                    {t("vaultDetail.withdrawAll")}
-                  </button>
-                  {isCompound && (
-                    <label className="flex w-full items-center gap-2.5 text-sm text-foreground/70">
-                      <input
-                        type="checkbox"
-                        checked={withdrawAllConvertToStable}
-                        onChange={(e) => setWithdrawAllConvertToStable(e.target.checked)}
-                        className="h-4 w-4 rounded border-foreground/30 accent-accent"
-                      />
-                      {t("vaultDetail.withdrawConvertToStable", { symbol: stableSymbol })}
-                    </label>
-                  )}
+                  {/* Reclamar comisiones, el toggle de interés compuesto,
+                      el de comisiones-solo-en-stable, y "Retirar todo" ya
+                      viven en otro lado: los dos toggles como pills
+                      destacadas debajo de "Ver posición en Uniswap"
+                      (compoundToggle/payoutStableToggle), y "Retirar todo"
+                      junto al resto de acciones principales con su propio
+                      modal — ver manageModal === "withdrawAll". */}
                   <button
                     onClick={() =>
                       withTx(paused ? t("vaultDetail.txResuming") : t("vaultDetail.txPausing"), () =>

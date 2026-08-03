@@ -577,6 +577,7 @@ const zh: Dictionary = {
 
     partialWithdrawHint:
       "两者相互独立——可提取当前仓位的一定比例、闲置资金（可投资本金 + 储备金）的一定比例，或两者兼有，且无需关闭金库。",
+    withdrawAllModalHint: "一笔交易提取金库中的全部资产——仓位、可投资本金、储备金和 gas 储备金，全部 100% 提取。",
     fieldPositionPct: "仓位提取比例 %",
     fieldIdleFundsPct: "闲置资金提取比例 %",
     fieldInvestableAmount: "要提取的可投资资金",

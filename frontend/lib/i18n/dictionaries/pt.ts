@@ -586,6 +586,8 @@ const pt: Dictionary = {
 
     partialWithdrawHint:
       "Independentes entre si — saque um % da posição ativa, um % dos fundos ociosos (investível + reserva), ou ambos, sem fechar o vault.",
+    withdrawAllModalHint:
+      "Saca 100% de tudo que o vault tem — posição, investível, reserva e reserva de gas — em uma única transação.",
     fieldPositionPct: "% da posição",
     fieldIdleFundsPct: "% de fundos ociosos",
     fieldInvestableAmount: "Investível a sacar",
