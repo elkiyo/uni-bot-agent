@@ -164,7 +164,7 @@ export function FeesHistory({
       </h2>
       <p className="mt-1 text-sm text-muted">{t("feesHistory.subtitle")}</p>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className="rounded-xl border border-hairline/60 p-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("feesHistory.totalManual")}</p>
           <p className="mt-1 font-mono text-base font-semibold text-foreground">{fmtUsd(totalManualUsd)}</p>
@@ -181,10 +181,12 @@ export function FeesHistory({
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">{t("feesHistory.totalPlatform")}</p>
           <p className="mt-1 font-mono text-base font-semibold text-foreground">{fmtUsd(totalPlatformUsd)}</p>
         </div>
+        <div className="rounded-xl border border-accent-fill-border bg-accent-fill-bg/10 p-3">
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-accent-text">{t("feesHistory.totalAll")}</p>
+          <p className="mt-1 font-mono text-base font-semibold text-accent-text">{fmtUsd(grandTotalUsd)}</p>
+          <p className="mt-0.5 font-mono text-[10px] text-faint">{t("feesHistory.totalAllHint", { count: rows.length })}</p>
+        </div>
       </div>
-      <p className="mt-3 font-mono text-xs text-muted">
-        {t("feesHistory.grandTotal", { total: fmtUsd(grandTotalUsd), count: rows.length })}
-      </p>
 
       <div className="mt-6 overflow-x-auto">
         <table className="w-full min-w-[880px] border-collapse text-sm">
