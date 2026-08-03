@@ -2101,14 +2101,44 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       )}
                     </div>
                   )}
-                  {investableAvailable > 0 && (
+                  {/* Unlike partial withdraw() (only ever reads investableUsdt,
+                      see its own field's comment), withdrawAll() reads the
+                      contract's FULL raw balanceOf — any un-ledgered dust
+                      (idleWeth, leftover from a prior mint/increaseLiquidity's
+                      imperfect swap ratio, see the "posible V4" pendiente in
+                      CLAUDE.md) gets swept out too. Shown whenever either is
+                      nonzero, so the total here matches what actually lands
+                      in the owner's wallet. */}
+                  {(investableAvailable > 0 || ((idleWeth as bigint | undefined) ?? 0n) > 0n) && (
                     <div className="rounded-xl border border-black/10 bg-black/5 p-4">
                       <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
                         {t("vaultDetail.fieldInvestableAmount")}
                       </p>
-                      <p className="mt-1 text-lg font-semibold text-[#050505]">
-                        {investableAvailable.toFixed(6)} {stableSymbol}
-                      </p>
+                      {isCompound && withdrawAllConvertToStable ? (
+                        <p className="mt-1 text-lg font-semibold text-[#050505]">
+                          {(
+                            investableAvailable +
+                            (currentTick !== undefined
+                              ? Number((idleWeth as bigint | undefined) ?? 0n) *
+                                10 ** -volatileDecimals *
+                                ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
+                              : 0)
+                          ).toFixed(2)}{" "}
+                          {stableSymbol}
+                        </p>
+                      ) : (
+                        <>
+                          {((idleWeth as bigint | undefined) ?? 0n) > 0n && (
+                            <p className="mt-1 text-lg font-semibold text-[#050505]">
+                              {Number(formatUnits((idleWeth as bigint | undefined) ?? 0n, volatileDecimals)).toFixed(6)}{" "}
+                              {volatileSymbol}
+                            </p>
+                          )}
+                          <p className="text-lg font-semibold text-[#050505]">
+                            {investableAvailable.toFixed(6)} {stableSymbol}
+                          </p>
+                        </>
+                      )}
                     </div>
                   )}
                   {reserveAvailable > 0 && (
