@@ -409,6 +409,18 @@ const en: Dictionary = {
     actionSweepIdleDust: "Idle dust sweep",
     actionHarvestFees: "Automatic fee claim",
   },
+  feesPayoutHistory: {
+    title: "Fee payout history",
+    subtitle: "{{total}} paid to your wallet across {{count}} payouts (automatic rebalances + manual claims).",
+    colDate: "Date",
+    colSource: "Source",
+    colReceived: "Received",
+    colPlatformFee: "Platform fee",
+    colTx: "Tx",
+    sourceManual: "Manual",
+    sourceAuto: "Automatic",
+    platformFeeUnknown: "—",
+  },
   reinjectionHistory: {
     title: "Reinjection history",
     subtitle: "Every time the agent reinjected fees into the position instead of paying them to your wallet.",

@@ -404,6 +404,18 @@ const zh: Dictionary = {
     actionSweepIdleDust: "闲置资产清扫",
     actionHarvestFees: "自动领取手续费",
   },
+  feesPayoutHistory: {
+    title: "手续费领取历史",
+    subtitle: "共 {{count}} 次领取，累计 {{total}} 已支付到你的钱包（自动再平衡 + 手动领取）。",
+    colDate: "日期",
+    colSource: "来源",
+    colReceived: "收到",
+    colPlatformFee: "平台费用",
+    colTx: "交易",
+    sourceManual: "手动",
+    sourceAuto: "自动",
+    platformFeeUnknown: "—",
+  },
   reinjectionHistory: {
     title: "再投入历史",
     subtitle: "每一次代理将手续费再投入仓位，而不是支付到你的钱包。",

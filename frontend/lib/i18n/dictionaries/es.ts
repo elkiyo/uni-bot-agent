@@ -407,6 +407,18 @@ const es = {
     actionSweepIdleDust: "Barrido de sobrante suelto",
     actionHarvestFees: "Reclamo automático de comisiones",
   },
+  feesPayoutHistory: {
+    title: "Historial de comisiones cobradas",
+    subtitle: "{{total}} pagados a tu wallet en {{count}} cobros (rebalanceos automáticos + reclamos manuales).",
+    colDate: "Fecha",
+    colSource: "Origen",
+    colReceived: "Recibido",
+    colPlatformFee: "Comisión plataforma",
+    colTx: "Tx",
+    sourceManual: "Manual",
+    sourceAuto: "Automático",
+    platformFeeUnknown: "—",
+  },
   reinjectionHistory: {
     title: "Historial de reinyecciones",
     subtitle: "Cada vez que el agente reinyectó comisiones a la posición en vez de pagarlas a tu wallet.",

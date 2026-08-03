@@ -409,6 +409,18 @@ const pt: Dictionary = {
     actionSweepIdleDust: "Varredura de sobra",
     actionHarvestFees: "Reclamo automático de comissões",
   },
+  feesPayoutHistory: {
+    title: "Histórico de comissões recebidas",
+    subtitle: "{{total}} pagos à sua carteira em {{count}} recebimentos (rebalanceamentos automáticos + reclamos manuais).",
+    colDate: "Data",
+    colSource: "Origem",
+    colReceived: "Recebido",
+    colPlatformFee: "Comissão da plataforma",
+    colTx: "Tx",
+    sourceManual: "Manual",
+    sourceAuto: "Automático",
+    platformFeeUnknown: "—",
+  },
   reinjectionHistory: {
     title: "Histórico de reinjeções",
     subtitle: "Cada vez que o agente reinjetou comissões na posição em vez de pagá-las à sua carteira.",

@@ -20,6 +20,7 @@ import { useThirdPartyDepositQuote } from "@/lib/useThirdPartyDepositQuote";
 import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
+import { FeesPayoutHistory } from "./FeesPayoutHistory";
 import { ReinjectionHistory } from "./ReinjectionHistory";
 import { CapitalLedger } from "./CapitalLedger";
 import { GasBreakdown } from "./GasBreakdown";
@@ -3037,6 +3038,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <CapitalLedger address={address} chain={chain} vaultAbi={vaultAbi} a1Usd={a1Usd} b1Usd={cumulativeInvestmentUsd} />
             <GasBreakdown address={address} chain={chain} vaultAbi={vaultAbi} />
             <PositionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
+            <FeesPayoutHistory address={address} chain={chain} vaultAbi={vaultAbi} />
             <ReinjectionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
             <ActivityFeed address={address} chain={chain} vaultAbi={vaultAbi} />
           </>
