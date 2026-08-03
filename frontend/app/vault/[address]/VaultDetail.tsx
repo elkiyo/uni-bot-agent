@@ -1496,8 +1496,8 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
         />
       </span>
       {payoutFeesInStableOnly
-        ? t("vaultDetail.payoutStableToggleOff", { symbol: stableSymbol })
-        : t("vaultDetail.payoutStableToggleOn", { symbol: stableSymbol })}
+        ? t("vaultDetail.payoutStableToggleOn", { symbol: stableSymbol })
+        : t("vaultDetail.payoutStableToggleOff", { symbol: stableSymbol })}
     </button>
   );
 
