@@ -653,7 +653,7 @@ export function useProtocolMetrics(chainFilter: number | "all"): ProtocolMetrics
           addGas(row.address, usd);
           // Deliberately NOT pushed to rebalanceEvents — this event also
           // fires on its own for a keeper-triggered fee-harvest/reinject
-          // cycle (no rebalance at all, see ReinjectionHistory.tsx's own
+          // cycle (no rebalance at all, see FeesHistory.tsx's own
           // docstring), and doubles up with the Rebalanced branch below on
           // an actual rebalance (same tx emits both). Counting it here
           // inflated the Dashboard's "Rebalances" chart total to ~3476 vs.

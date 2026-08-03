@@ -20,8 +20,7 @@ import { useThirdPartyDepositQuote } from "@/lib/useThirdPartyDepositQuote";
 import { PositionNFT } from "./PositionNFT";
 import { ActivityFeed } from "./ActivityFeed";
 import { PositionHistory } from "./PositionHistory";
-import { FeesPayoutHistory } from "./FeesPayoutHistory";
-import { ReinjectionHistory } from "./ReinjectionHistory";
+import { FeesHistory } from "./FeesHistory";
 import { CapitalLedger } from "./CapitalLedger";
 import { GasBreakdown } from "./GasBreakdown";
 import { RebalanceCountdown } from "./RebalanceCountdown";
@@ -105,7 +104,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   // Deliberately NOT gated on the connected wallet: it decides which ABI
   // decodes this vault's real events (vaultAbi below feeds every read AND
   // every event-log decode: useVaultEventLogs/useVaultCumulativeInvestment/
-  // PositionHistory/ReinjectionHistory/ActivityFeed all inherit it). Gating
+  // PositionHistory/FeesHistory/ActivityFeed all inherit it). Gating
   // this on isCompoundBetaWallet was a real production bug (confirmed
   // 2026-07-30): a disconnected visitor — or any non-beta wallet — opening
   // a genuine compound vault's page fell back to the standard ABI, which
@@ -3038,8 +3037,7 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
             <CapitalLedger address={address} chain={chain} vaultAbi={vaultAbi} a1Usd={a1Usd} b1Usd={cumulativeInvestmentUsd} />
             <GasBreakdown address={address} chain={chain} vaultAbi={vaultAbi} />
             <PositionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
-            <FeesPayoutHistory address={address} chain={chain} vaultAbi={vaultAbi} />
-            <ReinjectionHistory address={address} chain={chain} vaultAbi={vaultAbi} />
+            <FeesHistory address={address} chain={chain} vaultAbi={vaultAbi} />
             <ActivityFeed address={address} chain={chain} vaultAbi={vaultAbi} />
           </>
         )}
