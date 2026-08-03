@@ -2161,6 +2161,34 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
                       </p>
                     </div>
                   )}
+                  {/* USD total across every bucket — meaningful regardless of
+                      the convert-to-stable toggle, since even raw WETH+USDC
+                      has a real dollar value. reserveAvailable/gasReserveAvailable
+                      are already stable-denominated (no conversion needed);
+                      only the position + idle dust have a volatile leg. */}
+                  {currentTick !== undefined && (
+                    <div className="rounded-xl border-2 border-[#050505]/15 bg-[#050505]/[0.03] p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-black/50">
+                        {t("vaultDetail.withdrawAllTotalUsd")}
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-[#050505]">
+                        $
+                        {(
+                          (withdrawAllPreview
+                            ? withdrawAllPreview.positionStable +
+                              withdrawAllPreview.positionVolatile *
+                                ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals)
+                            : 0) +
+                          investableAvailable +
+                          Number((idleWeth as bigint | undefined) ?? 0n) *
+                            10 ** -volatileDecimals *
+                            ethPriceFromTick(currentTick, stableIsToken0, stableDecimals, volatileDecimals) +
+                          reserveAvailable +
+                          gasReserveAvailable
+                        ).toFixed(2)}
+                      </p>
+                    </div>
+                  )}
                   <p className="text-xs text-black/60">
                     {isCompound && withdrawAllConvertToStable
                       ? t("vaultDetail.withdrawReviewFeesNoteConverted")

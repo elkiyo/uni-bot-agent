@@ -588,6 +588,7 @@ const en: Dictionary = {
       "Independent of each other — withdraw a % of the active position, a % of idle funds (investable + reserve), or both, without closing the vault.",
     withdrawAllModalHint:
       "Withdraws 100% of everything the vault holds — position, investable, reserve, and gas reserve — in a single transaction.",
+    withdrawAllTotalUsd: "Estimated total (USD)",
     fieldPositionPct: "% of the position",
     fieldIdleFundsPct: "% of idle funds",
     fieldInvestableAmount: "Investable to withdraw",
