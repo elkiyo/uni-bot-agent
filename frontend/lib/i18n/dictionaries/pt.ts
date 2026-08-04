@@ -635,7 +635,7 @@ const pt: Dictionary = {
     payoutStableToggleOn: "Cobrar comissões apenas em {{symbol}}",
     payoutStableToggleOff: "Cobrar comissões em ambos os tokens",
     payoutStableToggleHint:
-      "Só se aplica quando os juros compostos estão desativados. Com isso ativo, toda vez que uma comissão for paga direto para sua carteira (rebalanceamento, resgate manual), a parte que não é {{symbol}} é convertida para {{symbol}} na mesma transação.",
+      "Só se aplica quando os juros compostos estão desativados. Em um rebalanceamento automático, isso SEMPRE converte a parte que não é {{symbol}} para {{symbol}} — não precisa fazer mais nada. Em um resgate MANUAL, esse switch só pré-preenche a caixa de seleção do modal 'Cobrar comissões' ao abri-lo — confira se está marcada ali antes de confirmar, já que ativar esse switch bem antes de abrir o modal pode ainda não ter atualizado.",
     compoundSectionLabel: "Juros compostos — resgate automático de comissões",
     hardCeilingSectionLabel: "Teto absoluto de preço",
     hardCeilingHint:

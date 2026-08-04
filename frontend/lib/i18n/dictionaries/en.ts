@@ -635,7 +635,7 @@ const en: Dictionary = {
     payoutStableToggleOn: "Charge fees in {{symbol}} only",
     payoutStableToggleOff: "Charge fees in both tokens",
     payoutStableToggleHint:
-      "Only applies while compounding is off. When on, any fee paid directly to your wallet (rebalance, manual claim) gets its non-{{symbol}} leg converted to {{symbol}} in the same transaction.",
+      "Only applies while compounding is off. On an automatic rebalance, this ALWAYS converts the non-{{symbol}} leg to {{symbol}} — nothing else to do. On a MANUAL claim, this switch only pre-fills the checkbox in the 'Collect fees' modal when it opens — check that it's ticked there before confirming, since flipping this switch right before opening the modal may not have caught up yet.",
     compoundSectionLabel: "Compounding — automatic fee claim",
     hardCeilingSectionLabel: "Hard price ceiling",
     hardCeilingHint:

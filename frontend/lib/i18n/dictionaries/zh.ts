@@ -622,7 +622,8 @@ const zh: Dictionary = {
     autoCompoundToggleHint: "开启后，每次再平衡、手动领取和自动领取产生的手续费都会重新注入头寸，而不是支付到你的钱包。",
     payoutStableToggleOn: "仅以 {{symbol}} 收取手续费",
     payoutStableToggleOff: "以两种代币收取手续费",
-    payoutStableToggleHint: "仅在复利关闭时生效。开启后，每次手续费直接支付到你的钱包时（再平衡、手动领取），非 {{symbol}} 的部分会在同一笔交易中兑换成 {{symbol}}。",
+    payoutStableToggleHint:
+      "仅在复利关闭时生效。自动再平衡时，这个开关会始终自动把非 {{symbol}} 的部分兑换成 {{symbol}}——无需额外操作。手动领取时，这个开关只会在打开「领取手续费」弹窗那一刻，把弹窗里的勾选框预设成这个状态——请在确认前检查弹窗里的勾选框是否真的选中了，因为如果你刚切换完这个开关就立刻打开弹窗，链上状态可能还没刷新过来。",
     compoundSectionLabel: "复利 — 自动领取手续费",
     hardCeilingSectionLabel: "绝对价格上限",
     hardCeilingHint: "如果价格突破此上限，金库会关闭头寸、将全部资产兑换为 {{symbol}}，并暂停运行——在你手动重新启用之前不会再开新仓。",

@@ -640,7 +640,7 @@ const es = {
     payoutStableToggleOn: "Cobrar comisiones solo en {{symbol}}",
     payoutStableToggleOff: "Cobrar comisiones en ambos tokens",
     payoutStableToggleHint:
-      "Solo aplica cuando el interés compuesto está apagado. Con esto activo, cada vez que se pague una comisión directo a tu wallet (rebalanceo, reclamo manual), la parte que no es {{symbol}} se convierte a {{symbol}} en la misma transacción.",
+      "Solo aplica cuando el interés compuesto está apagado. En un rebalanceo automático, esto SIEMPRE convierte la parte que no es {{symbol}} a {{symbol}} — no hace falta hacer nada más. En un reclamo MANUAL, este switch solo precarga el checkbox del modal 'Cobrar comisiones' al abrirlo — revisá que esté marcado ahí antes de confirmar, porque si tocaste este switch justo antes de abrir el modal puede no haberse actualizado todavía.",
     compoundSectionLabel: "Interés compuesto — reclamo automático de comisiones",
     hardCeilingSectionLabel: "Techo absoluto de precio",
     hardCeilingHint:
