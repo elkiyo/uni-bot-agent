@@ -58,6 +58,18 @@
   /* LiquidityDistributionChart's/VolumeChart's stable-token series — the
      volatile series just reuses --accent-text, this is its counterpart. */
   --chart-stable: #5ee6ff;
+  /* FeesHistory's stacked-bar-by-period chart — 4 categorical slots (not
+     status/token colors like the ones above, genuine identity encoding for
+     4 fee destinations). First 4 slots of the dataviz skill's validated
+     8-hue categorical order (blue/orange/aqua/yellow) — passes adjacent-pair
+     CVD separation in both themes for stacked bars specifically. Assigned by
+     how commonly each category actually fires in practice (auto payouts are
+     by far the most frequent event, platform cut the rarest to look at
+     directly), not alphabetically. */
+  --chart-cat-auto: #3987e5;
+  --chart-cat-manual: #d95926;
+  --chart-cat-reinjected: #199e70;
+  --chart-cat-platform: #c98500;
 }
 
 :root[data-theme="light"] {
@@ -94,6 +106,11 @@
   --negative-border-strong: rgba(220, 38, 38, 0.55);
   --shadow-color: rgba(0, 0, 0, 0.12);
   --chart-stable: #0891b2;
+  /* See the dark block's own comment — same 4 slots, light-mode steps. */
+  --chart-cat-auto: #2a78d6;
+  --chart-cat-manual: #eb6834;
+  --chart-cat-reinjected: #1baf7a;
+  --chart-cat-platform: #eda100;
 }
 
 @theme inline {
