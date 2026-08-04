@@ -13,9 +13,9 @@ import { decodeEventLog, encodeFunctionData, formatUnits, parseUnits } from "vie
 import SafeAppsSDK, { type GatewayTransactionDetails } from "@safe-global/safe-apps-sdk";
 import { Header } from "../components/Header";
 import { AlertModal } from "../components/AlertModal";
-import { PairIcon } from "../components/TokenIcon";
+import { PairIcon, TokenIcon } from "../components/TokenIcon";
 import { NetworkSelector } from "../components/NetworkSelector";
-import { DepositTokenSelector, type DepositTokenOption } from "../components/DepositTokenSelector";
+import { type DepositTokenOption } from "../components/DepositTokenSelector";
 import { erc20Abi, uniswapV3PoolAbi, platformConfigAbi } from "@/lib/contracts";
 import { useTaggedWriteContract } from "@/lib/useTaggedWriteContract";
 import { ethPriceFromTick, tickFromEthPrice, alignToTickSpacing } from "@/lib/priceMath";
@@ -1220,8 +1220,7 @@ export default function CreateVault() {
                   suffix={isCompound ? undefined : chain.stableSymbol}
                   topSlot={
                     isCompound ? (
-                      <DepositTokenSelector
-                        size="field"
+                      <DepositTokenDropdown
                         tokens={depositTokenOptions}
                         selected={investDepositToken}
                         onSelect={setInvestDepositToken}
@@ -1261,8 +1260,7 @@ export default function CreateVault() {
                     suffix={isCompound ? undefined : chain.stableSymbol}
                     topSlot={
                       isCompound ? (
-                        <DepositTokenSelector
-                          size="field"
+                        <DepositTokenDropdown
                           tokens={depositTokenOptions}
                           selected={gasReserveDepositToken}
                           onSelect={setGasReserveDepositToken}
@@ -1342,8 +1340,7 @@ export default function CreateVault() {
                       suffix={isCompound ? undefined : chain.stableSymbol}
                       topSlot={
                         isCompound ? (
-                          <DepositTokenSelector
-                            size="field"
+                          <DepositTokenDropdown
                             tokens={depositTokenOptions}
                             selected={reserveDepositToken}
                             onSelect={setReserveDepositToken}
@@ -1658,6 +1655,56 @@ function PriceRangeSlider({
   );
 }
 
+/**
+ * Dropdown variant of DepositTokenSelector (`../components/DepositTokenSelector.tsx`),
+ * local to this page only — VaultDetail.tsx renders the chip version inline
+ * at a different size/variant across 4 call sites, so changing the shared
+ * component would ripple there too. Same DepositTokenOption/balances shape
+ * (still index-aligned, not a Record), so the live-balance data plumbing
+ * (useMultiTokenBalances, depositTokenBalancesUsd) needed zero changes —
+ * only the presentation moved from a row of chips to a single-line
+ * <select>, which is what makes topSlot's height fixed enough for Field's
+ * own min-h fix (below) to actually align all 4 main fields.
+ */
+function DepositTokenDropdown({
+  tokens,
+  selected,
+  onSelect,
+  balances,
+}: {
+  tokens: DepositTokenOption[];
+  selected: `0x${string}`;
+  onSelect: (address: `0x${string}`) => void;
+  balances: (number | undefined)[];
+}) {
+  const selectedToken = tokens.find((t) => t.address.toLowerCase() === selected.toLowerCase()) ?? tokens[0];
+  return (
+    <div className="relative flex items-center gap-2 rounded-xl border border-hairline bg-transparent px-2.5 py-1.5">
+      <TokenIcon symbol={selectedToken.displaySymbol} size={18} />
+      <select
+        value={selected}
+        onChange={(e) => onSelect(e.target.value as `0x${string}`)}
+        className="w-full appearance-none bg-transparent pr-5 font-mono text-xs text-foreground outline-none"
+      >
+        {tokens.map((token, i) => (
+          <option key={token.address} value={token.address} className="bg-background text-foreground">
+            {token.displaySymbol} · {balances[i] !== undefined ? balances[i]!.toFixed(2) : "—"}
+          </option>
+        ))}
+      </select>
+      <svg
+        width="10"
+        height="10"
+        viewBox="0 0 10 10"
+        fill="none"
+        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-faint"
+      >
+        <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
 function Field({
   label,
   value,
@@ -1682,7 +1729,12 @@ function Field({
   return (
     <label className="flex flex-col gap-1.5">
       <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{label}</span>
-      {topSlot}
+      {/* Fixed-height slot regardless of whether topSlot is present — this is
+          what keeps Monto/Precio mínimo/Precio máximo/Presupuesto de gas
+          (and any other Field row) starting their <input> at the same Y
+          position, whether or not that particular field has a token
+          dropdown above it. */}
+      <div className="flex min-h-[34px] items-center">{topSlot}</div>
       <div className="relative">
         <input
           className="field-input"
