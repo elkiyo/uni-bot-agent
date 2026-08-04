@@ -229,6 +229,19 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
   const maxDepositUsd = (maxDepositUsdRaw as bigint) ?? 0n;
   const [capAlert, setCapAlert] = useState<string | null>(null);
 
+  // Needed to size feePayoutSwapIx correctly in handleCollectFees below —
+  // _splitPerformanceFee() cuts this bps off the volatile leg BEFORE
+  // _convertPayoutToStable ever sees it, so sizing against the raw
+  // (pre-cut) tokensOwed would always exceed the real net balance and
+  // revert with InvalidSwapInstruction.
+  const { data: performanceFeeBpsRaw } = useReadContract({
+    address: chain.platformConfigAddress || undefined,
+    abi: platformConfigAbi,
+    functionName: "performanceFeeBps",
+    chainId: chain.id,
+  });
+  const performanceFeeBps = (performanceFeeBpsRaw as bigint) ?? 0n;
+
   // Separate read (not part of the shared `reads()` list above) — only
   // RangeVaultArb has this function at all; calling it against Celo's own
   // ABI (which lacks it entirely) would fail to encode, not just revert.
@@ -1047,14 +1060,21 @@ export function VaultDetail({ address }: { address: `0x${string}` }) {
     // branch (autoCompoundFees off), converting the volatile leg of the
     // accrued fee to the vault's stable token. Sized against the SAME
     // positionTokensOwedLive preview the ratio-matching swap above already
-    // reads, just aimed at 100% conversion instead of ratio-matching.
+    // reads, just aimed at 100% conversion instead of ratio-matching — but
+    // the contract calls _convertPayoutToStable(amount0, amount1, ...) AFTER
+    // _splitPerformanceFee already cut performanceFeeBps off the top, so
+    // sizing amountIn against the raw (pre-cut) tokensOwed always exceeds
+    // the real net volatile balance available at execution time and reverts
+    // with InvalidSwapInstruction — same bug confirmed live in the keeper's
+    // own rebalancer.ts (2026-08-04), fixed here the same way.
     let feePayoutSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: feeTier };
     if (!autoCompoundFees && collectConvertToStable && positionTokensOwedLive) {
-      const volatileOwed = stableIsToken0 ? positionTokensOwedLive.tokensOwed1 : positionTokensOwedLive.tokensOwed0;
-      if (volatileOwed > 0n) {
+      const volatileOwedGross = stableIsToken0 ? positionTokensOwedLive.tokensOwed1 : positionTokensOwedLive.tokensOwed0;
+      const volatileOwedNet = (volatileOwedGross * (10_000n - performanceFeeBps)) / 10_000n;
+      if (volatileOwedNet > 0n) {
         feePayoutSwapIx = {
           token0ToToken1: !stableIsToken0,
-          amountIn: volatileOwed,
+          amountIn: volatileOwedNet,
           amountOutMinimum: 0n,
           fee: feeTier,
         };

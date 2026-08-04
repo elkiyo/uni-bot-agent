@@ -118,6 +118,14 @@ const legacyRebalanceFeeAbi = [
   { type: "function", name: "rebalanceFee", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
 
+// Minimal fragment, same reasoning as legacyRebalanceFeeAbi above — this
+// field IS still on the current PlatformConfig source (unlike rebalanceFee),
+// but a hand-written fragment avoids pulling in the full regenerated ABI
+// just for one view call.
+const performanceFeeBpsAbi = [
+  { type: "function", name: "performanceFeeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+] as const;
+
 /** Live rebalanceFee (token0/USDT, 6 decimals) — only nonzero on vaults
  * whose PlatformConfig still has this field (see legacyRebalanceFeeAbi
  * above). Vaults cloned after the flat fee's removal resolve to 0, making
@@ -1155,19 +1163,27 @@ async function computeRebalanceParams(
   // feePayoutSwapIx sizing — live uncollected fees, same formula/reads as
   // monitor.ts's checkFeeClaimDue (tokensOwed0/1 alone can be stale — see
   // that function's own docstring). Sized to sell 100% of the volatile-leg
-  // fee; no safety haircut needed (unlike withdraw()'s payoutSwapIx sizing)
-  // because real fees only grow monotonically between this read and the tx
-  // landing — the amount measured on-chain at execution time can only be
-  // >= this estimate, never less, so under-sizing here is impossible by
-  // construction.
+  // fee — but _rebalanceCore() calls _convertPayoutToStable(netFee0, netFee1,
+  // feePayoutSwapIx) against the NET fee (AFTER _splitPerformanceFee's cut),
+  // never the gross uncollectedFeesRaw() figure — sizing amountIn against the
+  // gross amount always exceeds the real net volatile balance available at
+  // execution time, reverting every single call with InvalidSwapInstruction
+  // (confirmed live, 2026-08-04: every "Forzar rebalanceo" attempt on a
+  // vault with payoutFeesInStableOnly=true and a nonzero performanceFeeBps
+  // paid uni-lab successfully, then failed this same simulation and
+  // returned null every time). Reducing by performanceFeeBps here mirrors
+  // _splitPerformanceFee's own (fee * bps) / 10_000 exactly, and the
+  // "fees only grow monotonically" reasoning still holds on TOP of that
+  // deterministic reduction — no extra safety haircut needed.
   let feePayoutSwapIx = { token0ToToken1: true, amountIn: 0n, amountOutMinimum: 0n, fee: chain.feeTier };
   if (isCompoundAbi && !autoCompoundFees && payoutFeesInStableOnly && liquidity > 0n) {
-    const [feeGrowthGlobal0X128, feeGrowthGlobal1X128, tickLowerData, tickUpperData] = (await Promise.all([
+    const [feeGrowthGlobal0X128, feeGrowthGlobal1X128, tickLowerData, tickUpperData, performanceFeeBps] = (await Promise.all([
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128" }),
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128" }),
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickLower] }),
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickUpper] }),
-    ])) as [bigint, bigint, readonly bigint[], readonly bigint[]];
+      chain.publicClient.readContract({ address: platformConfig, abi: performanceFeeBpsAbi, functionName: "performanceFeeBps" }),
+    ])) as [bigint, bigint, readonly bigint[], readonly bigint[], bigint];
 
     const { fees0Raw, fees1Raw } = uncollectedFeesRaw({
       liquidity,
@@ -1185,12 +1201,13 @@ async function computeRebalanceParams(
       tickLower: posTickLower,
       tickUpper: posTickUpper,
     });
-    const volatileFeeRaw = Math.max(0, Math.floor(chain.stableIsToken0 ? fees1Raw : fees0Raw));
-    if (volatileFeeRaw > 0) {
+    const volatileFeeGrossRaw = Math.max(0, Math.floor(chain.stableIsToken0 ? fees1Raw : fees0Raw));
+    const volatileFeeNetRaw = (BigInt(volatileFeeGrossRaw) * (10_000n - performanceFeeBps)) / 10_000n;
+    if (volatileFeeNetRaw > 0n) {
       const feeSwapFee = await pickDeepestSwapFee(chain);
       feePayoutSwapIx = {
         token0ToToken1: !chain.stableIsToken0,
-        amountIn: BigInt(volatileFeeRaw),
+        amountIn: volatileFeeNetRaw,
         amountOutMinimum: 0n,
         fee: feeSwapFee,
       };
@@ -1913,12 +1930,13 @@ async function runRebalanceExitTop(
       };
     }
   } else if (isCompoundAbi && !autoCompoundFees && payoutFeesInStableOnly && liquidity > 0n) {
-    const [feeGrowthGlobal0X128, feeGrowthGlobal1X128, tickLowerData, tickUpperData] = (await Promise.all([
+    const [feeGrowthGlobal0X128, feeGrowthGlobal1X128, tickLowerData, tickUpperData, performanceFeeBps] = (await Promise.all([
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal0X128" }),
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "feeGrowthGlobal1X128" }),
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickLower] }),
       chain.publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "ticks", args: [posTickUpper] }),
-    ])) as [bigint, bigint, readonly bigint[], readonly bigint[]];
+      chain.publicClient.readContract({ address: platformConfig, abi: performanceFeeBpsAbi, functionName: "performanceFeeBps" }),
+    ])) as [bigint, bigint, readonly bigint[], readonly bigint[], bigint];
 
     const { fees0Raw, fees1Raw } = uncollectedFeesRaw({
       liquidity,
@@ -1936,11 +1954,14 @@ async function runRebalanceExitTop(
       tickLower: posTickLower,
       tickUpper: posTickUpper,
     });
-    const volatileFeeRaw = Math.max(0, Math.floor(chain.stableIsToken0 ? fees1Raw : fees0Raw));
-    if (volatileFeeRaw > 0) {
+    // Same gross-vs-net fix as computeRebalanceParams above — this branch
+    // is the periodic (non-ceiling) case, identical bug shape.
+    const volatileFeeGrossRaw = Math.max(0, Math.floor(chain.stableIsToken0 ? fees1Raw : fees0Raw));
+    const volatileFeeNetRaw = (BigInt(volatileFeeGrossRaw) * (10_000n - performanceFeeBps)) / 10_000n;
+    if (volatileFeeNetRaw > 0n) {
       feePayoutSwapIx = {
         token0ToToken1: !chain.stableIsToken0,
-        amountIn: BigInt(volatileFeeRaw),
+        amountIn: volatileFeeNetRaw,
         amountOutMinimum: 0n,
         fee: swapFee,
       };
