@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatUnits, type Abi } from "viem";
 import { ethPriceFromTick } from "@/lib/priceMath";
@@ -74,6 +75,7 @@ export function PositionHistory({
 }) {
   const { t, locale } = useTranslation();
   const { data: eventLogs } = useVaultEventLogs(address, chain, vaultAbi);
+  const [expanded, setExpanded] = useState(false);
 
   const { data: positions } = useQuery({
     queryKey: ["vault-position-history", chain.id, address, eventLogs?.length],
@@ -206,6 +208,8 @@ export function PositionHistory({
       </h2>
       <p className="mt-1 text-sm text-muted">{t("positionHistory.subtitle")}</p>
 
+      {expanded ? (
+        <>
       <div className="mt-6 overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-sm">
           <thead>
@@ -318,6 +322,23 @@ export function PositionHistory({
           </tbody>
         </table>
       </div>
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="mt-4 rounded-full border border-hairline px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted transition-colors hover:border-border-medium hover:text-foreground"
+          >
+            {t("positionHistory.hideTable")}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-5 rounded-full border border-accent-fill-border bg-accent-fill-bg px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-accent-fill-text transition-opacity hover:opacity-90"
+        >
+          {t("positionHistory.showTable")}
+        </button>
+      )}
     </div>
   );
 }

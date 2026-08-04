@@ -372,6 +372,8 @@ const es = {
     reinjectionOnOpen: "Reinyección al abrir",
     noReinjection: "sin reinyección",
     openingTx: "tx de apertura: {{hash}} ↗",
+    showTable: "Ver tabla completa",
+    hideTable: "Cancelar",
   },
   capitalLedger: {
     title: "Control de capital (B1)",
@@ -391,6 +393,8 @@ const es = {
     eventFeesReinjected: "Comisiones reinvertidas",
     eventWithdrawn: "Retiro",
     eventEmergencyWithdraw: "Retiro de emergencia",
+    showTable: "Ver tabla completa",
+    hideTable: "Cancelar",
   },
   gasBreakdown: {
     title: "Desglose de gas gastado",
@@ -406,6 +410,8 @@ const es = {
     actionReinjectIntoPosition: "Reinyección manual de reserva",
     actionSweepIdleDust: "Barrido de sobrante suelto",
     actionHarvestFees: "Reclamo automático de comisiones",
+    showTable: "Ver tabla completa",
+    hideTable: "Cancelar",
   },
   feesHistory: {
     title: "Historial desglosado de comisiones",

@@ -370,6 +370,8 @@ const zh: Dictionary = {
     reinjectionOnOpen: "开仓时再注入",
     noReinjection: "无再注入",
     openingTx: "开仓交易：{{hash}} ↗",
+    showTable: "查看完整表格",
+    hideTable: "取消",
   },
   capitalLedger: {
     title: "资金控制台（B1）",
@@ -389,6 +391,8 @@ const zh: Dictionary = {
     eventFeesReinjected: "手续费再投入",
     eventWithdrawn: "提取",
     eventEmergencyWithdraw: "紧急提取",
+    showTable: "查看完整表格",
+    hideTable: "取消",
   },
   gasBreakdown: {
     title: "Gas 花费明细",
@@ -403,6 +407,8 @@ const zh: Dictionary = {
     actionReinjectIntoPosition: "手动再注入储备金",
     actionSweepIdleDust: "闲置资产清扫",
     actionHarvestFees: "自动领取手续费",
+    showTable: "查看完整表格",
+    hideTable: "取消",
   },
   feesHistory: {
     title: "手续费明细历史",

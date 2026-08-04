@@ -374,6 +374,8 @@ const en: Dictionary = {
     reinjectionOnOpen: "Reinjection on open",
     noReinjection: "no reinjection",
     openingTx: "opening tx: {{hash}} ↗",
+    showTable: "View full table",
+    hideTable: "Cancel",
   },
   capitalLedger: {
     title: "Capital ledger (B1)",
@@ -393,6 +395,8 @@ const en: Dictionary = {
     eventFeesReinjected: "Fees reinjected",
     eventWithdrawn: "Withdrawal",
     eventEmergencyWithdraw: "Emergency withdrawal",
+    showTable: "View full table",
+    hideTable: "Cancel",
   },
   gasBreakdown: {
     title: "Gas spent breakdown",
@@ -408,6 +412,8 @@ const en: Dictionary = {
     actionReinjectIntoPosition: "Manual reserve reinjection",
     actionSweepIdleDust: "Idle dust sweep",
     actionHarvestFees: "Automatic fee claim",
+    showTable: "View full table",
+    hideTable: "Cancel",
   },
   feesHistory: {
     title: "Fee breakdown history",

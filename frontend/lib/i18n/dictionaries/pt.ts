@@ -374,6 +374,8 @@ const pt: Dictionary = {
     reinjectionOnOpen: "Reinjeção ao abrir",
     noReinjection: "sem reinjeção",
     openingTx: "tx de abertura: {{hash}} ↗",
+    showTable: "Ver tabela completa",
+    hideTable: "Cancelar",
   },
   capitalLedger: {
     title: "Controle de capital (B1)",
@@ -393,6 +395,8 @@ const pt: Dictionary = {
     eventFeesReinjected: "Comissões reinvestidas",
     eventWithdrawn: "Saque",
     eventEmergencyWithdraw: "Saque de emergência",
+    showTable: "Ver tabela completa",
+    hideTable: "Cancelar",
   },
   gasBreakdown: {
     title: "Detalhamento do gas gasto",
@@ -408,6 +412,8 @@ const pt: Dictionary = {
     actionReinjectIntoPosition: "Reinjeção manual de reserva",
     actionSweepIdleDust: "Varredura de sobra",
     actionHarvestFees: "Reclamo automático de comissões",
+    showTable: "Ver tabela completa",
+    hideTable: "Cancelar",
   },
   feesHistory: {
     title: "Histórico desglosado de comissões",
