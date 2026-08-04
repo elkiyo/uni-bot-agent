@@ -451,12 +451,22 @@ export default function CreateVault() {
       ? parseFloat(gasReserveAmount) || 0
       : Number(formatUnits(gasReserveQuote.expectedStableOut, chain.stableDecimals));
   // The one-time creation fee is only ever pulled directly from the
-  // depositor when AT LEAST ONE field is native (that field's own approve
-  // pads it in — see handleCreate) — for an all-third-party deposit,
-  // depositToken() pays it out of the vault's own post-swap stable balance
-  // instead, so it never counts against any wallet balance check below.
+  // depositor when AT LEAST ONE field is BOTH native AND actually has an
+  // amount typed (matching handleCreate's own nativeTotal below — an empty
+  // field's default token doesn't matter, since it contributes 0n either
+  // way and never triggers the native deposit() call) — for an
+  // all-third-party deposit, depositToken() pays it out of the vault's own
+  // post-swap stable balance instead, so it never counts against any wallet
+  // balance check below. Bug fixed 2026-08-04: this used to check only the
+  // SELECTED token, ignoring the amount — so an untouched Reserva field
+  // (default token = native, amount empty) alone was enough to wrongly
+  // force the native-fee-balance check, blocking creation for anyone
+  // depositing entirely in a third-party token (e.g. all USDT) with just a
+  // small USDC dust balance for gas.
   const anyFieldNative =
-    isNative(investDepositToken) || isNative(reserveDepositToken) || (chain.supportsGasReserve && isNative(gasReserveDepositToken));
+    (isNative(investDepositToken) && (parseFloat(investAmount) || 0) > 0) ||
+    (isNative(reserveDepositToken) && (parseFloat(reserveAmount) || 0) > 0) ||
+    (chain.supportsGasReserve && isNative(gasReserveDepositToken) && (parseFloat(gasReserveAmount) || 0) > 0);
   const totalUsdt =
     investFinalUsd + reserveFinalUsd + gasReserveFinalUsd + (anyFieldNative ? Number(formatUnits(creationFeeUsdt, 6)) : 0);
 
