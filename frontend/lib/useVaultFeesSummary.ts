@@ -3,6 +3,7 @@
 import type { Abi } from "viem";
 import { useVaultEventLogs } from "./useVaultEventLogs";
 import type { ChainDef } from "./chains";
+import { toBigIntSafe } from "./eventArgsCodec";
 
 export interface VaultFeesSummary {
   totalUsdt: bigint; // stable-leg fees paid to owner (LpFeesPaidToOwner + FeesCollected)
@@ -68,27 +69,27 @@ export function useVaultFeesSummary(address: `0x${string}` | undefined, chain: C
         let gasReserveAddedCount = 0;
         for (const log of logs) {
           if (log.eventName === "Deposited") {
-            const args = log.args as { gasReserveAmount?: bigint };
-            if ((args.gasReserveAmount ?? 0n) > 0n) {
-              gasReserveAddedRaw += args.gasReserveAmount ?? 0n;
+            const gasReserveAmount = toBigIntSafe(log.args.gasReserveAmount);
+            if (gasReserveAmount > 0n) {
+              gasReserveAddedRaw += gasReserveAmount;
               gasReserveAddedCount += 1;
             }
           } else if (log.eventName === "LpFeesPaidToOwner" || log.eventName === "FeesCollected") {
-            const args = log.args as { amount0?: bigint; amount1?: bigint };
+            const amount0 = toBigIntSafe(log.args.amount0);
+            const amount1 = toBigIntSafe(log.args.amount1);
             // amount0/amount1 are Uniswap's real token0/token1 — route to
             // stable/volatile based on this chain's actual order.
-            totalUsdt += (chain.stableIsToken0 ? args.amount0 : args.amount1) ?? 0n;
-            totalWeth += (chain.stableIsToken0 ? args.amount1 : args.amount0) ?? 0n;
+            totalUsdt += chain.stableIsToken0 ? amount0 : amount1;
+            totalWeth += chain.stableIsToken0 ? amount1 : amount0;
             payoutCount += 1;
           } else if (log.eventName === "FeesReinjected") {
-            const args = log.args as { netFeeUsd?: bigint };
-            if ((args.netFeeUsd ?? 0n) > 0n) {
-              reinjectedUsdRaw += args.netFeeUsd ?? 0n;
+            const netFeeUsd = toBigIntSafe(log.args.netFeeUsd);
+            if (netFeeUsd > 0n) {
+              reinjectedUsdRaw += netFeeUsd;
               reinjectionCount += 1;
             }
           } else if (log.eventName === "KeeperGasReimbursed") {
-            const args = log.args as { amountUsd?: bigint };
-            gasReimbursedUsdRaw += args.amountUsd ?? 0n;
+            gasReimbursedUsdRaw += toBigIntSafe(log.args.amountUsd);
             gasReimbursedCount += 1;
           }
         }

@@ -35,3 +35,32 @@ export function deserializeArgs(abi: Abi, eventName: string, raw: Record<string,
   }
   return result;
 }
+
+/**
+ * `(args.x as bigint | undefined) ?? 0n` is a compile-time-only assertion —
+ * it does NOT coerce at runtime. When an event isn't declared on the ABI
+ * passed to useVaultEventLogs, deserializeArgs above returns raw (still
+ * stringified) args, so a numeric field can arrive as a non-nullish STRING
+ * that slips straight past that `?? 0n` fallback. VaultDetail.tsx's own
+ * vaultIsCompoundContract race (see that file's own docstring) means every
+ * compound-only-event consumer on that page CAN render at least once with
+ * the standard ABI before the async compound probe resolves — confirmed
+ * live, 2026-08-04: useVaultCumulativeInvestment's `total` silently became
+ * a string via `bigint += string` (JS coerces via concatenation instead of
+ * throwing), and the crash only surfaced later at VaultDetail.tsx's
+ * `formatUnits(cumulativeInvestmentRaw, ...)`, far from the real cause.
+ * Every consumer of a possibly-not-on-this-ABI event field should coerce
+ * through this instead of trusting the assertion.
+ */
+export function toBigIntSafe(v: unknown): bigint {
+  if (typeof v === "bigint") return v;
+  if (typeof v === "number") return BigInt(Math.trunc(v));
+  if (typeof v === "string" && v !== "") {
+    try {
+      return BigInt(v);
+    } catch {
+      return 0n;
+    }
+  }
+  return 0n;
+}

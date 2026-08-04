@@ -3,6 +3,7 @@
 import type { Abi } from "viem";
 import { useVaultEventLogs, type VaultEventLog } from "./useVaultEventLogs";
 import type { ChainDef } from "./chains";
+import { toBigIntSafe } from "./eventArgsCodec";
 
 export interface CapitalLedgerEntry {
   txHash: `0x${string}`;
@@ -92,28 +93,28 @@ function walkCapitalLedger(logs: VaultEventLog[]): CapitalLedgerEntry[] {
     let delta = 0n;
     if (log.eventName === "Deposited") {
       if ((args.positionAlreadyExists as boolean | undefined) !== true) {
-        delta = (args.investableAmount as bigint | undefined) ?? 0n;
+        delta = toBigIntSafe(args.investableAmount);
       }
     } else if (log.eventName === "PositionIncreased") {
-      const usdtAmount = (args.usdtAmount as bigint | undefined) ?? 0n;
+      const usdtAmount = toBigIntSafe(args.usdtAmount);
       delta = usdtAmount;
       // V1 has no consumedUncounted field — falls back to usdtAmount
       // (fully "consumed" this cycle), so leftover is always 0 and
       // this shadow counter never grows for a V1 vault.
-      const consumedThisCycle = (args.consumedUncounted as bigint | undefined) ?? usdtAmount;
+      const consumedThisCycle = args.consumedUncounted === undefined ? usdtAmount : toBigIntSafe(args.consumedUncounted);
       if (usdtAmount > consumedThisCycle) pendingFromIncreasePosition += usdtAmount - consumedThisCycle;
     } else if (log.eventName === "Rebalanced" || log.eventName === "IdleDustSwept") {
-      if (log.eventName === "Rebalanced") delta += (args.reinjectedAmount as bigint | undefined) ?? 0n;
-      const consumed = (args.consumedUncounted as bigint | undefined) ?? 0n;
+      if (log.eventName === "Rebalanced") delta += toBigIntSafe(args.reinjectedAmount);
+      const consumed = toBigIntSafe(args.consumedUncounted);
       const protectedAmount = consumed < pendingFromIncreasePosition ? consumed : pendingFromIncreasePosition;
       pendingFromIncreasePosition -= protectedAmount;
       delta += consumed - protectedAmount;
     } else if (log.eventName === "ReinjectedIntoPosition") {
-      delta = (args.amount as bigint | undefined) ?? 0n;
+      delta = toBigIntSafe(args.amount);
     } else if (log.eventName === "FeesReinjected") {
-      delta = (args.netFeeUsd as bigint | undefined) ?? 0n;
+      delta = toBigIntSafe(args.netFeeUsd);
     } else if (log.eventName === "Withdrawn" || log.eventName === "EmergencyWithdraw") {
-      delta = -((args.principalUsd as bigint | undefined) ?? 0n);
+      delta = -toBigIntSafe(args.principalUsd);
     } else {
       continue;
     }

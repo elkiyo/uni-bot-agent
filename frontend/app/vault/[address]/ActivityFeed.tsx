@@ -5,6 +5,7 @@ import { formatUnits, type Abi } from "viem";
 import { useVaultEventLogs } from "@/lib/useVaultEventLogs";
 import type { ChainDef } from "@/lib/chains";
 import { useTranslation } from "@/lib/i18n/useTranslation";
+import { toBigIntSafe } from "@/lib/eventArgsCodec";
 
 const dateLocale: Record<string, string> = { es: "es", en: "en-US", pt: "pt-BR", zh: "zh-CN" };
 
@@ -133,8 +134,8 @@ function describe(
   args: Record<string, unknown>,
   chain: ChainDef,
 ): Omit<FeedItem, "txHash" | "blockNumber" | "timestamp"> | null {
-  const usdt = (v: unknown) => `${formatUnits((v as bigint) ?? 0n, 6)} ${chain.stableSymbol}`;
-  const weth = (v: unknown) => `${Number(formatUnits((v as bigint) ?? 0n, 18)).toFixed(6)} ${chain.volatileSymbol}`;
+  const usdt = (v: unknown) => `${formatUnits(toBigIntSafe(v), 6)} ${chain.stableSymbol}`;
+  const weth = (v: unknown) => `${Number(formatUnits(toBigIntSafe(v), 18)).toFixed(6)} ${chain.volatileSymbol}`;
   switch (eventName) {
     case "Deposited":
       return {
@@ -165,8 +166,8 @@ function describe(
           maxRebalances: String(args.maxRebalances),
           reinjection: usdt(args.reinjectionAmount),
           hours: Number(args.periodicRebalanceInterval) / 3600,
-          recenterMargin: Number((args.recenterMarginBps as bigint) ?? 0n) / 100,
-          topMargin: Number((args.exitTopCeilingMarginBps as bigint) ?? 0n) / 100,
+          recenterMargin: Number(toBigIntSafe(args.recenterMarginBps)) / 100,
+          topMargin: Number(toBigIntSafe(args.exitTopCeilingMarginBps)) / 100,
         }),
       };
     case "RiskParamsUpdated":
@@ -185,7 +186,7 @@ function describe(
         detail: t("activity.positionInitDetail", { amount0: usdt(args.amount0), amount1: weth(args.amount1) }),
       };
     case "Rebalanced": {
-      const reinjectedAmount = (args.reinjectedAmount as bigint) ?? 0n;
+      const reinjectedAmount = toBigIntSafe(args.reinjectedAmount);
       return {
         kind: "agent",
         title: t("activity.rebalancedTitle", { tokenId: String(args.newTokenId) }),
@@ -203,7 +204,7 @@ function describe(
       };
     }
     case "LpFeesPaidToOwner": {
-      const amount1 = (args.amount1 as bigint) ?? 0n;
+      const amount1 = toBigIntSafe(args.amount1);
       return {
         kind: "money",
         title: t("activity.lpFeesTitle"),
@@ -213,7 +214,7 @@ function describe(
       };
     }
     case "FeesCollected": {
-      const amount1 = (args.amount1 as bigint) ?? 0n;
+      const amount1 = toBigIntSafe(args.amount1);
       return {
         kind: "money",
         title: t("activity.feesCollectedTitle"),
@@ -223,7 +224,7 @@ function describe(
       };
     }
     case "PerformanceFeeCollected": {
-      const amount1 = (args.amount1 as bigint) ?? 0n;
+      const amount1 = toBigIntSafe(args.amount1);
       return {
         kind: "money",
         title: t("activity.performanceFeeTitle"),
@@ -264,7 +265,7 @@ function describe(
     // see RangeVaultArbCompound.sol's FeesReinjected docstring) and real on
     // collectFees()/harvestFees().
     case "FeesReinjected": {
-      const netFee1 = (args.netFee1 as bigint) ?? 0n;
+      const netFee1 = toBigIntSafe(args.netFee1);
       return {
         kind: "agent",
         title: t("activity.feesReinjectedTitle"),
@@ -274,7 +275,7 @@ function describe(
       };
     }
     case "IdleDustSwept": {
-      const used1 = (args.used1 as bigint) ?? 0n;
+      const used1 = toBigIntSafe(args.used1);
       return {
         kind: "agent",
         title: t("activity.dustSweptTitle"),
