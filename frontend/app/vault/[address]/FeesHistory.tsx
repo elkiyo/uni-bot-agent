@@ -31,6 +31,35 @@ interface Row {
 const PERIOD_DAYS: Record<Exclude<PeriodPreset, "all">, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
 /**
+ * `args.xyz as bigint | undefined` is a compile-time-only assertion — it
+ * does NOT coerce at runtime. deserializeArgs (lib/eventArgsCodec.ts) only
+ * converts a field to a real bigint when it finds this exact event
+ * declared in the ABI passed to useVaultEventLogs; VaultDetail.tsx's own
+ * vaultIsCompoundContract race (see that file's own docstring, root-caused
+ * 2026-07-30) means this component CAN render at least once with the
+ * standard ABI before the compound probe resolves — FeesReinjected isn't
+ * declared there at all, so its numeric fields arrive as raw strings for
+ * that one render. A bare `?? 0n` doesn't catch a non-nullish string, and
+ * passing one into formatUnits() throws "Cannot mix BigInt and other
+ * types", crashing the whole page (confirmed live, 2026-08-04, same root
+ * cause as the 2026-07-30 incident that comment describes, just a new
+ * consumer of the same fields). Coerce for real instead of trusting the
+ * assertion.
+ */
+function toBigIntSafe(v: unknown): bigint {
+  if (typeof v === "bigint") return v;
+  if (typeof v === "number") return BigInt(Math.trunc(v));
+  if (typeof v === "string" && v !== "") {
+    try {
+      return BigInt(v);
+    } catch {
+      return 0n;
+    }
+  }
+  return 0n;
+}
+
+/**
  * Every fee-related event a vault has ever emitted, merged into ONE
  * chronological breakdown — replaces the earlier split between
  * FeesPayoutHistory.tsx (LpFeesPaidToOwner/FeesCollected) and
@@ -78,17 +107,15 @@ export function FeesHistory({
   const gasByTxHash = new Map<string, bigint>();
   for (const log of eventLogs ?? []) {
     if (log.eventName === "PerformanceFeeCollected") {
-      const args = log.args as { amount0?: bigint; amount1?: bigint };
-      const amount0 = args.amount0 ?? 0n;
-      const amount1 = args.amount1 ?? 0n;
+      const amount0 = toBigIntSafe(log.args.amount0);
+      const amount1 = toBigIntSafe(log.args.amount1);
       platformFeeByTxHash.set(log.transactionHash, {
         stable: chain.stableIsToken0 ? amount0 : amount1,
         volatile: chain.stableIsToken0 ? amount1 : amount0,
         usd: log.usdValue ?? 0,
       });
     } else if (log.eventName === "KeeperGasReimbursed") {
-      const args = log.args as { amountUsd?: bigint };
-      gasByTxHash.set(log.transactionHash, args.amountUsd ?? 0n);
+      gasByTxHash.set(log.transactionHash, toBigIntSafe(log.args.amountUsd));
     }
   }
 
@@ -99,7 +126,7 @@ export function FeesHistory({
     .filter((log) => log.eventName === "PositionInitialized" || log.eventName === "Rebalanced")
     .map((log) => ({
       blockNumber: log.blockNumber,
-      tokenId: (log.eventName === "PositionInitialized" ? log.args.tokenId : log.args.newTokenId) as bigint,
+      tokenId: toBigIntSafe(log.eventName === "PositionInitialized" ? log.args.tokenId : log.args.newTokenId),
     }))
     .sort((a, b) => (a.blockNumber < b.blockNumber ? -1 : 1));
   function positionAt(blockNumber: bigint): bigint | undefined {
@@ -114,9 +141,8 @@ export function FeesHistory({
   const allRows: Row[] = [];
   for (const log of eventLogs ?? []) {
     if (log.eventName === "LpFeesPaidToOwner" || log.eventName === "FeesCollected") {
-      const args = log.args as { amount0?: bigint; amount1?: bigint };
-      const amount0 = args.amount0 ?? 0n;
-      const amount1 = args.amount1 ?? 0n;
+      const amount0 = toBigIntSafe(log.args.amount0);
+      const amount1 = toBigIntSafe(log.args.amount1);
       const platformFee = platformFeeByTxHash.get(log.transactionHash);
       allRows.push({
         blockTimestamp: log.blockTimestamp,
@@ -130,11 +156,10 @@ export function FeesHistory({
         gasUsd: gasByTxHash.get(log.transactionHash),
       });
     } else if (log.eventName === "FeesReinjected") {
-      const args = log.args as { netFee0?: bigint; netFee1?: bigint; used0?: bigint; used1?: bigint; netFeeUsd?: bigint };
-      const netFee0 = args.netFee0 ?? 0n;
-      const netFee1 = args.netFee1 ?? 0n;
-      const used0 = args.used0 ?? 0n;
-      const used1 = args.used1 ?? 0n;
+      const netFee0 = toBigIntSafe(log.args.netFee0);
+      const netFee1 = toBigIntSafe(log.args.netFee1);
+      const used0 = toBigIntSafe(log.args.used0);
+      const used1 = toBigIntSafe(log.args.used1);
       const platformFee = platformFeeByTxHash.get(log.transactionHash);
       allRows.push({
         blockTimestamp: log.blockTimestamp,
@@ -142,7 +167,7 @@ export function FeesHistory({
         kind: "reinjected",
         amountStable: chain.stableIsToken0 ? netFee0 : netFee1,
         amountVolatile: chain.stableIsToken0 ? netFee1 : netFee0,
-        usdValue: Number(formatUnits(args.netFeeUsd ?? 0n, chain.stableDecimals)),
+        usdValue: Number(formatUnits(toBigIntSafe(log.args.netFeeUsd), chain.stableDecimals)),
         reinjectedStable: chain.stableIsToken0 ? used0 : used1,
         reinjectedVolatile: chain.stableIsToken0 ? used1 : used0,
         positionId: positionAt(log.blockNumber),
