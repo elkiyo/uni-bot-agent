@@ -17,7 +17,11 @@ export type VaultKind = "standard" | "compound";
 export type VaultAction =
   | { kind: "none" }
   | { kind: "init"; reason: string }
-  | { kind: "rebalance"; reason: "out-of-range-top" | "out-of-range-bottom" | "periodic" }
+  // overdueSec = seconds since this vault's own lastRebalanceTimestamp —
+  // used to prioritize tick.ts's sequential Phase 2 queue (see that file's
+  // own docstring) so the most-neglected vault gets processed first instead
+  // of always losing out to whichever vault happens to sort earlier.
+  | { kind: "rebalance"; reason: "out-of-range-top" | "out-of-range-bottom" | "periodic"; overdueSec: number }
   | { kind: "claimFees" }
   | { kind: "sweep" };
 
@@ -139,17 +143,18 @@ export async function checkVault(chain: ChainRuntime, record: VaultRecord, store
   const priceAtTickUpper = ethPriceFromTick(tickUpper, chain.stableIsToken0, chain.stableDecimals, chain.volatileDecimals);
   const priceFloor = Math.min(priceAtTickLower, priceAtTickUpper);
   const priceCeiling = Math.max(priceAtTickLower, priceAtTickUpper);
+  const overdueSec = Number(now - lastRebalanceTimestamp);
   if (ethPriceNow > priceCeiling) {
-    return { kind: "rebalance", reason: "out-of-range-top" };
+    return { kind: "rebalance", reason: "out-of-range-top", overdueSec };
   }
   if (ethPriceNow < priceFloor) {
-    return { kind: "rebalance", reason: "out-of-range-bottom" };
+    return { kind: "rebalance", reason: "out-of-range-bottom", overdueSec };
   }
 
   // Still in range — only now is a periodic recenter (untouched floor, live
   // ceiling) actually valid input for uni-lab.xyz.
   const periodicDue = periodicInterval > 0n && now >= lastRebalanceTimestamp + periodicInterval;
-  if (periodicDue) return { kind: "rebalance", reason: "periodic" };
+  if (periodicDue) return { kind: "rebalance", reason: "periodic", overdueSec };
 
   // Compound-only: scheduled/threshold fee auto-claim. Both knobs
   // (feeClaimThresholdBps/feeClaimIntervalSeconds) are off-chain-only —

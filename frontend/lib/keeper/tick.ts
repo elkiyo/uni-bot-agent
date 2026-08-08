@@ -9,6 +9,41 @@ import { vaultContract } from "./serverContracts";
 import { logEvent } from "./logger";
 import { deployedChains } from "../chains";
 import { mapWithConcurrency } from "../concurrency";
+import type { VaultAction } from "./monitor";
+
+/**
+ * Higher = processed earlier in Phase 2's sequential queue below. Exists
+ * because that queue can run out of the cron's 200s budget partway through
+ * on a bad tick (many vaults needing action at once, or every action taking
+ * longer than usual — e.g. uni-lab.xyz's x402 rail down, forcing every
+ * rebalance through the slower direct-payment fallback) — confirmed live
+ * 2026-08-01 (x402 outage, only ~2 of 30+ out-of-range vaults reached per
+ * tick) and again 2026-08-08 (a single newly-periodic vault starved for
+ * hours because it always sorted after enough other vaults needing action).
+ * Without this, whichever vault happens to sort last in store.listVaults()
+ * (roughly creation order) can get starved indefinitely on a chain that's
+ * consistently near its budget — this makes a bad tick spread the pain
+ * across different vaults instead of always the same ones. Out-of-range
+ * outranks periodic outright (the position is actively mispriced, not just
+ * due for routine maintenance); within either, the longer-neglected vault
+ * (bigger overdueSec) goes first. claimFees/sweep/init are real but less
+ * time-critical than a rebalance, so they sort behind all rebalances but
+ * ahead of nothing needed at all.
+ */
+function actionPriority(action: VaultAction): number {
+  switch (action.kind) {
+    case "rebalance":
+      return (action.reason === "periodic" ? 0 : 1_000_000_000) + action.overdueSec;
+    case "claimFees":
+      return -1;
+    case "sweep":
+      return -2;
+    case "init":
+      return -3;
+    case "none":
+      return -Infinity;
+  }
+}
 
 const TICK_LOCK_TTL_SECONDS = 4 * 60; // < the 5-minute trigger interval
 // See Phase 1's own comment below for why this exists. 10 concurrent reads
@@ -133,8 +168,13 @@ export async function runTick(): Promise<TickSummary[]> {
 
       // Phase 2 — apply actions SEQUENTIALLY, unlike the read-only decisions
       // above: these send real transactions from the SAME operator wallet,
-      // so nonce ordering rules out parallelizing this part.
-      for (const { record, abi, action, error } of decisions) {
+      // so nonce ordering rules out parallelizing this part. Sorted by
+      // actionPriority (most-neglected/urgent first) so a tick that runs out
+      // of budget partway through drops the LEAST urgent vaults, not
+      // whichever ones happen to sort last in store.listVaults() — see that
+      // function's own docstring.
+      const prioritized = [...decisions].sort((a, b) => actionPriority(b.action) - actionPriority(a.action));
+      for (const { record, abi, action, error } of prioritized) {
         summary.vaultsChecked++;
         if (error) {
           logEvent({ level: "error", vault: record.address, chain: chain.name, msg: "vault check failed", err: error });
